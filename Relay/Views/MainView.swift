@@ -33,7 +33,7 @@ struct MainView: View {
             } else if let selectedRoomId,
                       let summary = matrixService.rooms.first(where: { $0.id == selectedRoomId }),
                       let viewModel = matrixService.makeRoomDetailViewModel(roomId: selectedRoomId) {
-                RoomDetailView(roomName: summary.name, viewModel: viewModel)
+                RoomDetailView(roomId: selectedRoomId, roomName: summary.name, viewModel: viewModel)
                     .id(selectedRoomId)
             } else {
                 ContentUnavailableView(

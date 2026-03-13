@@ -8,16 +8,20 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     public private(set) var isLoading = true
     public private(set) var isLoadingMore = false
     public private(set) var hasReachedStart = false
+    public private(set) var firstUnreadMessageId: String?
 
     private let room: Room
     private let currentUserId: String?
+    private let unreadCount: Int
     private var timeline: Timeline?
     private var observationTask: Task<Void, Never>?
     private var timelineItems: [TimelineItem] = []
+    private var hasComputedUnreadMarker = false
 
-    public init(room: Room, currentUserId: String?) {
+    public init(room: Room, currentUserId: String?, unreadCount: Int = 0) {
         self.room = room
         self.currentUserId = currentUserId
+        self.unreadCount = unreadCount
     }
 
     deinit {
@@ -207,6 +211,15 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
         }
 
         messages = result
+
+        if !hasComputedUnreadMarker && unreadCount > 0 && !result.isEmpty {
+            hasComputedUnreadMarker = true
+            let incomingMessages = result.filter { !$0.isOutgoing }
+            if unreadCount <= incomingMessages.count {
+                let markerIndex = incomingMessages.count - unreadCount
+                firstUnreadMessageId = incomingMessages[markerIndex].id
+            }
+        }
     }
 }
 

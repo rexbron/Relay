@@ -22,6 +22,20 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func leaveRoom(id: String) async throws {
         rooms.removeAll { $0.id == id }
     }
+    func markAsRead(roomId: String) async {
+        if let idx = rooms.firstIndex(where: { $0.id == roomId }) {
+            rooms[idx] = RoomSummary(
+                id: rooms[idx].id,
+                name: rooms[idx].name,
+                avatarURL: rooms[idx].avatarURL,
+                lastMessage: rooms[idx].lastMessage,
+                lastMessageTimestamp: rooms[idx].lastMessageTimestamp,
+                unreadCount: 0,
+                unreadMentions: 0,
+                isDirect: rooms[idx].isDirect
+            )
+        }
+    }
     func searchDirectory(query: String) async throws -> [DirectoryRoom] {
         let all = [
             DirectoryRoom(roomId: "!design:matrix.org", name: "Design Team", topic: "UI/UX design discussion", alias: "#design:matrix.org", memberCount: 42),

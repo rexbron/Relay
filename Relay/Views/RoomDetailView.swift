@@ -2,6 +2,8 @@ import RelayCore
 import SwiftUI
 
 struct RoomDetailView: View {
+    @Environment(\.matrixService) private var matrixService
+    let roomId: String
     let roomName: String
     @State var viewModel: any RoomDetailViewModelProtocol
 
@@ -18,6 +20,7 @@ struct RoomDetailView: View {
         .navigationTitle(roomName)
         .task {
             await viewModel.loadTimeline()
+            await matrixService.markAsRead(roomId: roomId)
         }
     }
 
@@ -57,6 +60,9 @@ struct RoomDetailView: View {
                         }
 
                         ForEach(viewModel.messages) { message in
+                            if message.id == viewModel.firstUnreadMessageId {
+                                unreadMarker
+                            }
                             MessageView(message: message)
                                 .id(message.id)
                         }
@@ -75,6 +81,20 @@ struct RoomDetailView: View {
         }
     }
 
+    // MARK: - Unread Marker
+
+    private var unreadMarker: some View {
+        HStack(spacing: 8) {
+            VStack { Divider() }
+            Text("New")
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .foregroundStyle(.red)
+            VStack { Divider() }
+        }
+        .padding(.vertical, 4)
+    }
+
     // MARK: - Send
 
     private func sendMessage() {
@@ -87,24 +107,40 @@ struct RoomDetailView: View {
 
 #Preview("Messages") {
     RoomDetailView(
+        roomId: "!preview:matrix.org",
         roomName: "Design Team",
         viewModel: PreviewRoomDetailViewModel()
     )
+    .environment(\.matrixService, PreviewMatrixService())
+    .frame(width: 500, height: 450)
+}
+
+#Preview("Unread Marker") {
+    RoomDetailView(
+        roomId: "!preview:matrix.org",
+        roomName: "Design Team",
+        viewModel: PreviewRoomDetailViewModel(firstUnreadMessageId: "4")
+    )
+    .environment(\.matrixService, PreviewMatrixService())
     .frame(width: 500, height: 450)
 }
 
 #Preview("Loading") {
     RoomDetailView(
+        roomId: "!preview:matrix.org",
         roomName: "Design Team",
         viewModel: PreviewRoomDetailViewModel(messages: [], isLoading: true)
     )
+    .environment(\.matrixService, PreviewMatrixService())
     .frame(width: 500, height: 450)
 }
 
 #Preview("Empty") {
     RoomDetailView(
+        roomId: "!preview:matrix.org",
         roomName: "New Room",
         viewModel: PreviewRoomDetailViewModel(messages: [])
     )
+    .environment(\.matrixService, PreviewMatrixService())
     .frame(width: 500, height: 450)
 }

@@ -37,6 +37,7 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String
     func leaveRoom(id: String) async throws
     func searchDirectory(query: String) async throws -> [DirectoryRoom]
+    func markAsRead(roomId: String) async
 }
 
 // MARK: - Environment Key
@@ -68,4 +69,5 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String { "" }
     func leaveRoom(id: String) async throws {}
     func searchDirectory(query: String) async throws -> [DirectoryRoom] { [] }
+    func markAsRead(roomId: String) async {}
 }

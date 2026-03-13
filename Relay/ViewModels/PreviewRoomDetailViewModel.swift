@@ -7,15 +7,18 @@ final class PreviewRoomDetailViewModel: RoomDetailViewModelProtocol {
     var isLoading: Bool
     var isLoadingMore = false
     var hasReachedStart: Bool
+    var firstUnreadMessageId: String?
 
     init(
         messages: [TimelineMessage]? = nil,
         isLoading: Bool = false,
-        hasReachedStart: Bool = false
+        hasReachedStart: Bool = false,
+        firstUnreadMessageId: String? = nil
     ) {
         self.messages = messages ?? Self.sampleMessages
         self.isLoading = isLoading
         self.hasReachedStart = hasReachedStart
+        self.firstUnreadMessageId = firstUnreadMessageId
     }
 
     func loadTimeline() async {}

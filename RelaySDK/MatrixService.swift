@@ -339,7 +339,8 @@ public final class MatrixService: MatrixServiceProtocol {
 
     public func makeRoomDetailViewModel(roomId: String) -> (any RoomDetailViewModelProtocol)? {
         guard let room = room(id: roomId) else { return nil }
-        return RoomDetailViewModel(room: room, currentUserId: userId())
+        let unreadCount = rooms.first(where: { $0.id == roomId })?.unreadMessages ?? 0
+        return RoomDetailViewModel(room: room, currentUserId: userId(), unreadCount: Int(unreadCount))
     }
 
     // MARK: - Room Management
@@ -369,6 +370,14 @@ public final class MatrixService: MatrixServiceProtocol {
         guard let room = room(id: id) else { return }
         try await room.leave()
         rooms.removeAll { $0.id == id }
+    }
+
+    // MARK: - Read Receipts
+
+    public func markAsRead(roomId: String) async {
+        guard let room = room(id: roomId) else { return }
+        try? await room.markAsRead(receiptType: .read)
+        await refreshRoomList()
     }
 
     // MARK: - Directory Search
