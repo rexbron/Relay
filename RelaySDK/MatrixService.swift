@@ -237,10 +237,12 @@ public final class MatrixService: MatrixServiceProtocol {
             let name = room.displayName() ?? room.id()
             let avatarUrl = room.avatarUrl()
 
-            var unreadCount: UInt64 = 0
+            var unreadMessages: UInt64 = 0
+            var unreadMentions: UInt64 = 0
             var isDirect = false
             if let info = try? await room.roomInfo() {
-                unreadCount = info.numUnreadNotifications
+                unreadMessages = info.numUnreadMessages
+                unreadMentions = info.numUnreadMentions
                 isDirect = info.isDirect
             }
 
@@ -252,7 +254,8 @@ public final class MatrixService: MatrixServiceProtocol {
                 avatarURL: avatarUrl,
                 lastMessage: lastMessage,
                 lastMessageTimestamp: lastTimestamp,
-                unreadCount: UInt(unreadCount),
+                unreadCount: UInt(unreadMessages),
+                unreadMentions: UInt(unreadMentions),
                 isDirect: isDirect
             ))
         }

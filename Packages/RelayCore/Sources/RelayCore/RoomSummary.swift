@@ -6,7 +6,8 @@ public struct RoomSummary: Identifiable, Hashable, Sendable {
     public var avatarURL: String?
     public var lastMessage: String?
     public var lastMessageTimestamp: Date?
-    public var unreadCount: UInt
+    public var unreadMessages: UInt
+    public var unreadMentions: UInt
     public var isDirect: Bool
 
     public init(
@@ -16,6 +17,7 @@ public struct RoomSummary: Identifiable, Hashable, Sendable {
         lastMessage: String? = nil,
         lastMessageTimestamp: Date? = nil,
         unreadCount: UInt = 0,
+        unreadMentions: UInt = 0,
         isDirect: Bool = false
     ) {
         self.id = id
@@ -23,7 +25,8 @@ public struct RoomSummary: Identifiable, Hashable, Sendable {
         self.avatarURL = avatarURL
         self.lastMessage = lastMessage
         self.lastMessageTimestamp = lastMessageTimestamp
-        self.unreadCount = unreadCount
+        self.unreadMessages = unreadCount
+        self.unreadMentions = unreadMentions
         self.isDirect = isDirect
     }
 }
