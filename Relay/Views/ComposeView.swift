@@ -1,3 +1,4 @@
+import RelayCore
 import SwiftUI
 
 struct ComposeView: View {
@@ -31,8 +32,7 @@ struct ComposeView: View {
             .disabled(!canSend)
             .keyboardShortcut(.return, modifiers: .command)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(12)
     }
 }
 

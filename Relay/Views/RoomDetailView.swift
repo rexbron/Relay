@@ -1,3 +1,4 @@
+import RelayCore
 import SwiftUI
 
 struct RoomDetailView: View {

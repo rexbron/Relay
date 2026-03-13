@@ -1,4 +1,5 @@
 import Foundation
+import RelayCore
 
 @Observable
 final class PreviewRoomDetailViewModel: RoomDetailViewModelProtocol {

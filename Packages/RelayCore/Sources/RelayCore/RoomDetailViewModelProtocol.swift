@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-protocol RoomDetailViewModelProtocol: AnyObject, Observable {
+public protocol RoomDetailViewModelProtocol: AnyObject, Observable {
     var messages: [TimelineMessage] { get }
     var isLoading: Bool { get }
     var isLoadingMore: Bool { get }

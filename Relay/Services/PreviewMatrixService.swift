@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import RelayCore
 
 @Observable
 final class PreviewMatrixService: MatrixServiceProtocol {

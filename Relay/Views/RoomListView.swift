@@ -1,3 +1,4 @@
+import RelayCore
 import SwiftUI
 
 struct RoomListView: View {
@@ -76,23 +77,27 @@ private struct RoomRowView: View {
                     }
                 }
 
-                if let msg = room.lastMessage {
-                    Text(msg)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                HStack {
+                    if let msg = room.lastMessage {
+                        Text(msg)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    Spacer()
+                    if room.unreadCount > 0 {
+                        Text("\(room.unreadCount)")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.accentColor, in: Capsule())
+                    }
                 }
             }
+            .padding(4)
 
-            if room.unreadCount > 0 {
-                Text("\(room.unreadCount)")
-                    .font(.caption2)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.accentColor, in: Capsule())
-            }
         }
         .padding(.vertical, 8)
     }

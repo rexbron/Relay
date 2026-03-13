@@ -1,12 +1,13 @@
 import Foundation
 import MatrixRustSDK
+import RelayCore
 
 @Observable
-final class RoomDetailViewModel: RoomDetailViewModelProtocol {
-    private(set) var messages: [TimelineMessage] = []
-    private(set) var isLoading = true
-    private(set) var isLoadingMore = false
-    private(set) var hasReachedStart = false
+public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
+    public private(set) var messages: [TimelineMessage] = []
+    public private(set) var isLoading = true
+    public private(set) var isLoadingMore = false
+    public private(set) var hasReachedStart = false
 
     private let room: Room
     private let currentUserId: String?
@@ -14,7 +15,7 @@ final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     private var observationTask: Task<Void, Never>?
     private var timelineItems: [TimelineItem] = []
 
-    init(room: Room, currentUserId: String?) {
+    public init(room: Room, currentUserId: String?) {
         self.room = room
         self.currentUserId = currentUserId
     }
@@ -26,7 +27,7 @@ final class RoomDetailViewModel: RoomDetailViewModelProtocol {
 
     // MARK: - Public
 
-    func loadTimeline() async {
+    public func loadTimeline() async {
         observationTask?.cancel()
         messages = []
         timelineItems = []
@@ -43,7 +44,7 @@ final class RoomDetailViewModel: RoomDetailViewModelProtocol {
         }
     }
 
-    func loadMoreHistory() async {
+    public func loadMoreHistory() async {
         guard let timeline, !isLoadingMore, !hasReachedStart else { return }
         isLoadingMore = true
         do {
@@ -53,7 +54,7 @@ final class RoomDetailViewModel: RoomDetailViewModelProtocol {
         isLoadingMore = false
     }
 
-    func send(text: String) async {
+    public func send(text: String) async {
         guard let timeline else { return }
         _ = try? await timeline.send(msg: messageEventContentFromMarkdown(md: text))
     }

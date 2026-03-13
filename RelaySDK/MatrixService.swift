@@ -1,15 +1,16 @@
 import AppKit
 import Foundation
 import MatrixRustSDK
+import RelayCore
 
 @Observable
-final class MatrixService: MatrixServiceProtocol {
+public final class MatrixService: MatrixServiceProtocol {
 
-    private(set) var authState: AuthState = .unknown
-    private(set) var syncState: SyncState = .idle
-    private(set) var rooms: [RoomSummary] = []
+    public private(set) var authState: AuthState = .unknown
+    public private(set) var syncState: SyncState = .idle
+    public private(set) var rooms: [RoomSummary] = []
 
-    var isSyncing: Bool { syncState == .syncing || syncState == .running }
+    public var isSyncing: Bool { syncState == .syncing || syncState == .running }
 
     // MARK: - Private State
 
@@ -47,9 +48,11 @@ final class MatrixService: MatrixServiceProtocol {
         return url
     }
 
+    public init() {}
+
     // MARK: - Session Restore
 
-    func restoreSession() async {
+    public func restoreSession() async {
         guard let data = KeychainService.load(),
               let stored = try? JSONDecoder().decode(StoredSession.self, from: data)
         else {
@@ -88,7 +91,7 @@ final class MatrixService: MatrixServiceProtocol {
 
     // MARK: - Login
 
-    func login(username: String, password: String, homeserver: String) async {
+    public func login(username: String, password: String, homeserver: String) async {
         authState = .loggingIn
 
         do {
@@ -132,7 +135,7 @@ final class MatrixService: MatrixServiceProtocol {
 
     // MARK: - Logout
 
-    func logout() async {
+    public func logout() async {
         roomPollTask?.cancel()
         roomPollTask = nil
         syncStateHandle = nil
@@ -316,11 +319,11 @@ final class MatrixService: MatrixServiceProtocol {
         client?.rooms().first { $0.id() == id }
     }
 
-    func userId() -> String? {
+    public func userId() -> String? {
         try? client?.userId()
     }
 
-    func makeRoomDetailViewModel(roomId: String) -> (any RoomDetailViewModelProtocol)? {
+    public func makeRoomDetailViewModel(roomId: String) -> (any RoomDetailViewModelProtocol)? {
         guard let room = room(id: roomId) else { return nil }
         return RoomDetailViewModel(room: room, currentUserId: userId())
     }
@@ -329,7 +332,7 @@ final class MatrixService: MatrixServiceProtocol {
 
     private static let avatarCache = NSCache<NSString, NSImage>()
 
-    func avatarThumbnail(mxcURL: String, size: CGFloat) async -> NSImage? {
+    public func avatarThumbnail(mxcURL: String, size: CGFloat) async -> NSImage? {
         let scale = 2.0
         let px = UInt64(size * scale)
         let cacheKey = "\(mxcURL)_\(px)" as NSString
