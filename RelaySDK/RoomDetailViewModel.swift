@@ -141,6 +141,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
 
             let msgBody: String
             let msgKind: TimelineMessage.Kind
+            var msgMediaInfo: TimelineMessage.MediaInfo?
             switch event.content {
             case .msgLike(let msgLikeContent):
                 switch msgLikeContent.kind {
@@ -155,9 +156,18 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                     case .notice(let noticeContent):
                         msgBody = noticeContent.body
                         msgKind = .notice
-                    case .image:
-                        msgBody = "Image"
+                    case .image(let imageContent):
+                        msgBody = imageContent.caption ?? "Image"
                         msgKind = .image
+                        msgMediaInfo = .init(
+                            mxcURL: imageContent.source.url(),
+                            filename: imageContent.filename,
+                            mimetype: imageContent.info?.mimetype,
+                            width: imageContent.info?.width,
+                            height: imageContent.info?.height,
+                            size: imageContent.info?.size,
+                            caption: imageContent.caption
+                        )
                     case .video:
                         msgBody = "Video"
                         msgKind = .video
@@ -222,7 +232,8 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                 body: msgBody,
                 timestamp: ts,
                 isOutgoing: event.isOwn,
-                kind: msgKind
+                kind: msgKind,
+                mediaInfo: msgMediaInfo
             ))
         }
 

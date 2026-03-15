@@ -476,6 +476,40 @@ public final class MatrixService: MatrixServiceProtocol {
             return nil
         }
     }
+
+    private static let mediaCache = NSCache<NSString, NSData>()
+
+    public func mediaContent(mxcURL: String) async -> Data? {
+        let cacheKey = mxcURL as NSString
+        if let cached = Self.mediaCache.object(forKey: cacheKey) {
+            return cached as Data
+        }
+        guard let client else { return nil }
+        do {
+            let source = try MediaSource.fromUrl(url: mxcURL)
+            let data = try await client.getMediaContent(mediaSource: source)
+            Self.mediaCache.setObject(data as NSData, forKey: cacheKey)
+            return data
+        } catch {
+            return nil
+        }
+    }
+
+    public func mediaThumbnail(mxcURL: String, width: UInt64, height: UInt64) async -> Data? {
+        let cacheKey = "\(mxcURL)_thumb_\(width)x\(height)" as NSString
+        if let cached = Self.mediaCache.object(forKey: cacheKey) {
+            return cached as Data
+        }
+        guard let client else { return nil }
+        do {
+            let source = try MediaSource.fromUrl(url: mxcURL)
+            let data = try await client.getMediaThumbnail(mediaSource: source, width: width, height: height)
+            Self.mediaCache.setObject(data as NSData, forKey: cacheKey)
+            return data
+        } catch {
+            return nil
+        }
+    }
 }
 
 // MARK: - Sync State Observer Bridge

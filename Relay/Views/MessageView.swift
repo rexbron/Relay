@@ -1,5 +1,6 @@
 import RelayCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct MessageView: View {
     let message: TimelineMessage
@@ -35,7 +36,9 @@ struct MessageView: View {
                         .padding(.bottom, 2)
                 }
 
-                if message.kind == .emote {
+                if message.kind == .image, message.mediaInfo != nil {
+                    ImageMessageView(message: message)
+                } else if message.kind == .emote {
                     emoteContent
                 } else if message.isSpecialType {
                     specialContent
@@ -110,10 +113,6 @@ struct MessageView: View {
         }
     }
 
-    private var styleForKind: HierarchicalShapeStyle {
-        .secondary
-    }
-
     private var foregroundForKind: Color {
         switch message.kind {
         case .encrypted: .orange
@@ -147,6 +146,119 @@ struct MessageView: View {
 
     private var bubbleColor: Color {
         message.isOutgoing ? .accentColor : Color(.systemGray).opacity(0.2)
+    }
+}
+
+// MARK: - Image Message View
+
+private struct ImageMessageView: View {
+    @Environment(\.matrixService) private var matrixService
+    let message: TimelineMessage
+
+    @State private var image: NSImage?
+    @State private var isLoading = true
+    @State private var isHovering = false
+
+    private var mediaInfo: TimelineMessage.MediaInfo {
+        message.mediaInfo!
+    }
+
+    private var displaySize: CGSize {
+        let maxWidth: CGFloat = 280
+        let maxHeight: CGFloat = 320
+        if let w = mediaInfo.width, let h = mediaInfo.height, w > 0, h > 0 {
+            let aspect = CGFloat(w) / CGFloat(h)
+            let width = min(CGFloat(w), maxWidth)
+            let height = width / aspect
+            if height > maxHeight {
+                return CGSize(width: maxHeight * aspect, height: maxHeight)
+            }
+            return CGSize(width: width, height: height)
+        }
+        return CGSize(width: maxWidth, height: 200)
+    }
+
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: displaySize.width, height: displaySize.height)
+                    .clipped()
+            } else {
+                Rectangle()
+                    .fill(Color(.systemGray).opacity(0.15))
+                    .frame(width: displaySize.width, height: displaySize.height)
+                    .overlay {
+                        if isLoading {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "photo")
+                                .font(.title2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .overlay(alignment: .bottomTrailing) {
+            if image != nil {
+                downloadButton
+                    .padding(8)
+                    .opacity(isHovering ? 1 : 0)
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            if let caption = mediaInfo.caption, !caption.isEmpty {
+                Text(caption)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .padding(8)
+            }
+        }
+        .onHover { isHovering = $0 }
+        .animation(.easeInOut(duration: 0.15), value: isHovering)
+        .task(id: mediaInfo.mxcURL) {
+            isLoading = true
+            if let data = await matrixService.mediaThumbnail(
+                mxcURL: mediaInfo.mxcURL,
+                width: UInt64(displaySize.width * 2),
+                height: UInt64(displaySize.height * 2)
+            ) {
+                image = NSImage(data: data)
+            }
+            isLoading = false
+        }
+    }
+
+    private var downloadButton: some View {
+        Button {
+            Task { await saveImage() }
+        } label: {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.title2)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, .black.opacity(0.5))
+                .shadow(radius: 2)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func saveImage() async {
+        guard let data = await matrixService.mediaContent(mxcURL: mediaInfo.mxcURL) else { return }
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = mediaInfo.filename
+        panel.allowedContentTypes = [.image]
+        panel.canCreateDirectories = true
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        try? data.write(to: url)
     }
 }
 
@@ -189,6 +301,39 @@ struct MessageView: View {
     .frame(width: 500)
 }
 
+#Preview("Image Message") {
+    VStack(spacing: 6) {
+        MessageView(
+            message: TimelineMessage(
+                id: "img1", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
+                body: "Image", timestamp: .now, isOutgoing: false, kind: .image,
+                mediaInfo: .init(
+                    mxcURL: "mxc://matrix.org/example",
+                    filename: "photo.jpg",
+                    mimetype: "image/jpeg",
+                    width: 800, height: 600
+                )
+            ),
+            showSenderName: true
+        )
+        MessageView(
+            message: TimelineMessage(
+                id: "img2", senderID: "@me:matrix.org",
+                body: "Check this out", timestamp: .now, isOutgoing: true, kind: .image,
+                mediaInfo: .init(
+                    mxcURL: "mxc://matrix.org/example2",
+                    filename: "screenshot.png",
+                    mimetype: "image/png",
+                    width: 400, height: 700,
+                    caption: "Check this out"
+                )
+            )
+        )
+    }
+    .padding()
+    .frame(width: 500)
+}
+
 #Preview("Special Types") {
     VStack(spacing: 6) {
         MessageView(
@@ -207,16 +352,10 @@ struct MessageView: View {
         )
         MessageView(
             message: TimelineMessage(
-                id: "i1", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
-                body: "Image", timestamp: .now, isOutgoing: false, kind: .image
-            ),
-            showSenderName: true
-        )
-        MessageView(
-            message: TimelineMessage(
                 id: "v1", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
                 body: "Video", timestamp: .now, isOutgoing: false, kind: .video
-            )
+            ),
+            showSenderName: true
         )
         MessageView(
             message: TimelineMessage(

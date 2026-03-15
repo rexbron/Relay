@@ -17,6 +17,34 @@ public struct TimelineMessage: Identifiable, Sendable {
         case other
     }
 
+    public struct MediaInfo: Sendable, Equatable {
+        public var mxcURL: String
+        public var filename: String
+        public var mimetype: String?
+        public var width: UInt64?
+        public var height: UInt64?
+        public var size: UInt64?
+        public var caption: String?
+
+        public init(
+            mxcURL: String,
+            filename: String,
+            mimetype: String? = nil,
+            width: UInt64? = nil,
+            height: UInt64? = nil,
+            size: UInt64? = nil,
+            caption: String? = nil
+        ) {
+            self.mxcURL = mxcURL
+            self.filename = filename
+            self.mimetype = mimetype
+            self.width = width
+            self.height = height
+            self.size = size
+            self.caption = caption
+        }
+    }
+
     public let id: String
     public let senderID: String
     public var senderDisplayName: String?
@@ -25,6 +53,7 @@ public struct TimelineMessage: Identifiable, Sendable {
     public var timestamp: Date
     public var isOutgoing: Bool
     public var kind: Kind
+    public var mediaInfo: MediaInfo?
 
     public init(
         id: String,
@@ -34,7 +63,8 @@ public struct TimelineMessage: Identifiable, Sendable {
         body: String,
         timestamp: Date,
         isOutgoing: Bool,
-        kind: Kind = .text
+        kind: Kind = .text,
+        mediaInfo: MediaInfo? = nil
     ) {
         self.id = id
         self.senderID = senderID
@@ -44,6 +74,7 @@ public struct TimelineMessage: Identifiable, Sendable {
         self.timestamp = timestamp
         self.isOutgoing = isOutgoing
         self.kind = kind
+        self.mediaInfo = mediaInfo
     }
 
     public var displayName: String {

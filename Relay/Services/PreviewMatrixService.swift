@@ -58,6 +58,9 @@ final class PreviewMatrixService: MatrixServiceProtocol {
         )
     }
 
+    func mediaContent(mxcURL: String) async -> Data? { nil }
+    func mediaThumbnail(mxcURL: String, width: UInt64, height: UInt64) async -> Data? { nil }
+
     func searchDirectory(query: String) async throws -> [DirectoryRoom] {
         let all = [
             DirectoryRoom(roomId: "!design:matrix.org", name: "Design Team", topic: "UI/UX design discussion", alias: "#design:matrix.org", memberCount: 42),
