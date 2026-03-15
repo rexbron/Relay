@@ -83,37 +83,46 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     public func sendAttachment(url: URL) async {
         guard let timeline else { return }
 
-        let path = url.path
+        let filename = url.lastPathComponent
+        let utType = UTType(filenameExtension: url.pathExtension) ?? .data
+        let mime = utType.preferredMIMEType
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            logger.error("Failed to read attachment \(filename): \(error)")
+            errorMessage = "Could not read \(filename): \(error.localizedDescription)"
+            return
+        }
+
         let params = UploadParameters(
-            source: .file(filename: path),
+            source: .data(bytes: data, filename: filename),
             caption: nil,
             formattedCaption: nil,
             mentions: nil,
             inReplyTo: nil
         )
-
-        let fileSize = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? UInt64) ?? 0
-        let utType = UTType(filenameExtension: url.pathExtension) ?? .data
-        let mime = utType.preferredMIMEType
+        let fileSize = UInt64(data.count)
 
         do {
             let handle: SendAttachmentJoinHandle
 
             if utType.conforms(to: .image) {
-                var width: UInt64?
-                var height: UInt64?
+                var width: UInt64 = 0
+                var height: UInt64 = 0
                 if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
                    let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
                 {
-                    width = (props[kCGImagePropertyPixelWidth] as? NSNumber)?.uint64Value
-                    height = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.uint64Value
+                    width = (props[kCGImagePropertyPixelWidth] as? NSNumber)?.uint64Value ?? 0
+                    height = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.uint64Value ?? 0
                 }
                 handle = try timeline.sendImage(
                     params: params,
                     thumbnailSource: nil,
                     imageInfo: ImageInfo(
                         height: height, width: width, mimetype: mime, size: fileSize,
-                        thumbnailInfo: nil, thumbnailSource: nil, blurhash: nil, isAnimated: nil
+                        thumbnailInfo: nil, thumbnailSource: nil, blurhash: "000000", isAnimated: nil
                     )
                 )
             } else if utType.conforms(to: .movie) || utType.conforms(to: .video) {
@@ -137,8 +146,8 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
 
             try await handle.join()
         } catch {
-            logger.error("Failed to send attachment \(url.lastPathComponent): \(error)")
-            errorMessage = "Could not send \(url.lastPathComponent): \(error.localizedDescription)"
+            logger.error("Failed to send attachment \(filename): \(error)")
+            errorMessage = "Could not send \(filename): \(error.localizedDescription)"
         }
 
         try? FileManager.default.removeItem(at: url)
