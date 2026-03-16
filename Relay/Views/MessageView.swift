@@ -69,6 +69,22 @@ struct MessageView: View {
                 .padding(.leading, message.isOutgoing ? 0 : 34)
             }
         }
+        .padding(.vertical, message.isHighlighted ? 4 : 0)
+        .padding(.horizontal, message.isHighlighted ? 6 : 0)
+        .background {
+            if message.isHighlighted {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.orange.opacity(0.08))
+                    .overlay(alignment: .trailing) {
+                        UnevenRoundedRectangle(
+                            topLeadingRadius: 0, bottomLeadingRadius: 0,
+                            bottomTrailingRadius: 8, topTrailingRadius: 8
+                        )
+                        .fill(Color.orange)
+                        .frame(width: 3)
+                    }
+            }
+        }
     }
 
     // MARK: - Add Reaction Button
@@ -430,6 +446,18 @@ private struct FlowLayout: Layout {
                     .init(key: "🎉", count: 1, senderIDs: ["@me:matrix.org"], highlightedByCurrentUser: true),
                 ]
             )
+        )
+        MessageView(
+            message: TimelineMessage(
+                id: "3",
+                senderID: "@bob:matrix.org",
+                senderDisplayName: "Bob",
+                body: "Hey @me:matrix.org, can you review the PR when you get a chance?",
+                timestamp: .now.addingTimeInterval(-30),
+                isOutgoing: false,
+                isHighlighted: true
+            ),
+            showSenderName: true
         )
     }
     .padding()

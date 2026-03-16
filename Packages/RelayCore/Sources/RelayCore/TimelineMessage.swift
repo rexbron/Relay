@@ -70,6 +70,7 @@ public struct TimelineMessage: Identifiable, Sendable {
     public var kind: Kind
     public var mediaInfo: MediaInfo?
     public var reactions: [ReactionGroup]
+    public var isHighlighted: Bool
 
     public init(
         id: String,
@@ -81,7 +82,8 @@ public struct TimelineMessage: Identifiable, Sendable {
         isOutgoing: Bool,
         kind: Kind = .text,
         mediaInfo: MediaInfo? = nil,
-        reactions: [ReactionGroup] = []
+        reactions: [ReactionGroup] = [],
+        isHighlighted: Bool = false
     ) {
         self.id = id
         self.senderID = senderID
@@ -93,6 +95,7 @@ public struct TimelineMessage: Identifiable, Sendable {
         self.kind = kind
         self.mediaInfo = mediaInfo
         self.reactions = reactions
+        self.isHighlighted = isHighlighted
     }
 
     public var displayName: String {

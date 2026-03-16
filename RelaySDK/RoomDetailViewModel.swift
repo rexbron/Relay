@@ -313,6 +313,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
             }
 
             var msgReactions: [TimelineMessage.ReactionGroup] = []
+            var isHighlighted = false
             if case .msgLike(let ml) = event.content {
                 msgReactions = ml.reactions.map { reaction in
                     TimelineMessage.ReactionGroup(
@@ -321,6 +322,15 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                         senderIDs: reaction.senders.map(\.senderId),
                         highlightedByCurrentUser: reaction.senders.contains { $0.senderId == currentUserId }
                     )
+                }
+
+                if !event.isOwn, let userId = currentUserId {
+                    if case .message(let mc) = ml.kind, let mentions = mc.mentions {
+                        isHighlighted = mentions.userIds.contains(userId) || mentions.room
+                    }
+                    if !isHighlighted {
+                        isHighlighted = msgBody.contains(userId)
+                    }
                 }
             }
 
@@ -352,7 +362,8 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                 isOutgoing: event.isOwn,
                 kind: msgKind,
                 mediaInfo: msgMediaInfo,
-                reactions: msgReactions
+                reactions: msgReactions,
+                isHighlighted: isHighlighted
             ))
         }
 
