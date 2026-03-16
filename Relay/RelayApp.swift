@@ -20,5 +20,10 @@ struct RelayApp: App {
                 .keyboardShortcut("W", modifiers: [.command, .shift])
             }
         }
+
+        Settings {
+            SettingsView()
+                .environment(\.matrixService, matrixService)
+        }
     }
 }

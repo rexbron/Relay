@@ -337,6 +337,16 @@ public final class MatrixService: MatrixServiceProtocol {
         try? client?.userId()
     }
 
+    public func userDisplayName() async -> String? {
+        guard let client else { return nil }
+        return try? await client.displayName()
+    }
+
+    public func userAvatarURL() async -> String? {
+        guard let client else { return nil }
+        return try? await client.avatarUrl()
+    }
+
     public func makeRoomDetailViewModel(roomId: String) -> (any RoomDetailViewModelProtocol)? {
         guard let room = room(id: roomId) else { return nil }
         let unreadCount = rooms.first(where: { $0.id == roomId })?.unreadMessages ?? 0
