@@ -53,8 +53,8 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
         } catch {
             logger.error("Failed to load timeline: \(error)")
             errorMessage = "Could not load messages: \(error.localizedDescription)"
-            isLoading = false
         }
+        isLoading = false
     }
 
     public func loadMoreHistory() async {
@@ -189,8 +189,6 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
 
             let listener = TimelineListenerProxy(continuation: listenerContinuation)
             let handle = await tl.addListener(listener: listener)
-
-            self.isLoading = false
 
             for await diffs in stream {
                 self.applyDiffs(diffs)

@@ -14,6 +14,9 @@ struct RoomDetailView: View {
     @State private var draftMessage = ""
     @State private var emojiPickerMessageId: String?
 
+    private enum ScrollRequest { case none, afterLoad, afterSend }
+    @State private var scrollRequest: ScrollRequest = .none
+
     private var showErrorAlert: Binding<Bool> {
         Binding(
             get: { viewModel.errorMessage != nil },
@@ -32,6 +35,7 @@ struct RoomDetailView: View {
         .navigationTitle("")
         .task {
             await viewModel.loadTimeline()
+            scrollRequest = .afterLoad
             await matrixService.markAsRead(roomId: roomId)
         }
         .alert("Error", isPresented: showErrorAlert) {
@@ -139,10 +143,20 @@ struct RoomDetailView: View {
                 }
                 .defaultScrollAnchor(.bottom)
                 .onChange(of: viewModel.messages.last?.id) {
-                    if let lastId = viewModel.messages.last?.id {
+                    guard scrollRequest != .none,
+                          let last = viewModel.messages.last
+                    else { return }
+                    switch scrollRequest {
+                    case .afterLoad:
+                        scrollRequest = .none
+                        proxy.scrollTo(last.id, anchor: nil)
+                    case .afterSend:
+                        if last.isOutgoing { scrollRequest = .none }
                         withAnimation(.easeOut(duration: 0.2)) {
-                            proxy.scrollTo(lastId, anchor: .bottom)
+                            proxy.scrollTo(last.id, anchor: nil)
                         }
+                    case .none:
+                        break
                     }
                 }
             }
@@ -222,10 +236,12 @@ struct RoomDetailView: View {
         let text = draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         draftMessage = ""
+        scrollRequest = .afterSend
         Task { await viewModel.send(text: text) }
     }
 
     private func sendAttachments(_ urls: [URL]) {
+        scrollRequest = .afterSend
         let tempDir = FileManager.default.temporaryDirectory
         for url in urls {
             guard url.startAccessingSecurityScopedResource() else {
