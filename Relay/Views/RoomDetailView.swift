@@ -109,6 +109,11 @@ struct RoomDetailView: View {
                                 },
                                 onAddReaction: {
                                     emojiPickerMessageId = message.id
+                                },
+                                onTapReply: { eventID in
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        proxy.scrollTo(eventID, anchor: .center)
+                                    }
                                 }
                             )
                             .id(message.id)

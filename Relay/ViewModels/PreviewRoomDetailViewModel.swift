@@ -47,7 +47,8 @@ final class PreviewRoomDetailViewModel: RoomDetailViewModelProtocol {
               timestamp: .now.addingTimeInterval(-120), isOutgoing: false,
               reactions: [
                 .init(key: "👍", count: 1, senderIDs: ["@me:matrix.org"], highlightedByCurrentUser: true),
-              ]),
+              ],
+              replyDetail: .init(eventID: "3", senderID: "@me:matrix.org", senderDisplayName: "Me", body: "Just pushed a fix for the sync issue.")),
         .init(id: "4b", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
               body: "Image", timestamp: .now.addingTimeInterval(-90), isOutgoing: false, kind: .image),
         .init(id: "5", senderID: "@bob:matrix.org", senderDisplayName: "Bob",

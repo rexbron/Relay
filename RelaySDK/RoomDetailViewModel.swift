@@ -314,6 +314,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
 
             var msgReactions: [TimelineMessage.ReactionGroup] = []
             var isHighlighted = false
+            var msgReplyDetail: TimelineMessage.ReplyDetail?
             if case .msgLike(let ml) = event.content {
                 msgReactions = ml.reactions.map { reaction in
                     TimelineMessage.ReactionGroup(
@@ -330,6 +331,21 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                     }
                     if !isHighlighted {
                         isHighlighted = msgBody.contains(userId)
+                    }
+                }
+
+                if let replyTo = ml.inReplyTo {
+                    let replyEvent = replyTo.event()
+                    if case .ready(let content, let sender, let senderProfile, _, _) = replyEvent {
+                        let replyDisplayName: String? = if case .ready(let name, _, _) = senderProfile { name } else { nil }
+                        let replyBody: String
+                        if case .msgLike(let replyMl) = content,
+                           case .message(let replyMsg) = replyMl.kind {
+                            replyBody = replyMsg.body
+                        } else {
+                            replyBody = "Message"
+                        }
+                        msgReplyDetail = .init(eventID: replyTo.eventId(), senderID: sender, senderDisplayName: replyDisplayName, body: replyBody)
                     }
                 }
             }
@@ -363,7 +379,8 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                 kind: msgKind,
                 mediaInfo: msgMediaInfo,
                 reactions: msgReactions,
-                isHighlighted: isHighlighted
+                isHighlighted: isHighlighted,
+                replyDetail: msgReplyDetail
             ))
         }
 

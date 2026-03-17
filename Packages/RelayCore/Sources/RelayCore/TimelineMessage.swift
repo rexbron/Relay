@@ -32,6 +32,24 @@ public struct TimelineMessage: Identifiable, Sendable {
         }
     }
 
+    public struct ReplyDetail: Sendable, Equatable {
+        public let eventID: String
+        public let senderID: String
+        public var senderDisplayName: String?
+        public let body: String
+
+        public init(eventID: String, senderID: String, senderDisplayName: String? = nil, body: String) {
+            self.eventID = eventID
+            self.senderID = senderID
+            self.senderDisplayName = senderDisplayName
+            self.body = body
+        }
+
+        public var displayName: String {
+            senderDisplayName ?? senderID
+        }
+    }
+
     public struct MediaInfo: Sendable, Equatable {
         public var mxcURL: String
         public var filename: String
@@ -71,6 +89,7 @@ public struct TimelineMessage: Identifiable, Sendable {
     public var mediaInfo: MediaInfo?
     public var reactions: [ReactionGroup]
     public var isHighlighted: Bool
+    public var replyDetail: ReplyDetail?
 
     public init(
         id: String,
@@ -83,7 +102,8 @@ public struct TimelineMessage: Identifiable, Sendable {
         kind: Kind = .text,
         mediaInfo: MediaInfo? = nil,
         reactions: [ReactionGroup] = [],
-        isHighlighted: Bool = false
+        isHighlighted: Bool = false,
+        replyDetail: ReplyDetail? = nil
     ) {
         self.id = id
         self.senderID = senderID
@@ -96,6 +116,7 @@ public struct TimelineMessage: Identifiable, Sendable {
         self.mediaInfo = mediaInfo
         self.reactions = reactions
         self.isHighlighted = isHighlighted
+        self.replyDetail = replyDetail
     }
 
     public var displayName: String {

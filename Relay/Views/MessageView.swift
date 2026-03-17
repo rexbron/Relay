@@ -8,6 +8,7 @@ struct MessageView: View {
     var showSenderName: Bool = false
     var onToggleReaction: ((String) -> Void)?
     var onAddReaction: (() -> Void)?
+    var onTapReply: ((String) -> Void)?
 
     @State private var isHovering = false
 
@@ -42,14 +43,24 @@ struct MessageView: View {
                             .padding(.bottom, 2)
                     }
 
+                    if let reply = message.replyDetail {
+                        replyBubble(reply)
+                            .padding(.bottom, -10)
+                            .zIndex(0)
+                    }
+
                     if message.kind == .image, message.mediaInfo != nil {
                         ImageMessageView(message: message)
+                            .zIndex(1)
                     } else if message.kind == .emote {
                         emoteContent
+                            .zIndex(1)
                     } else if message.isSpecialType {
                         specialContent
+                            .zIndex(1)
                     } else {
                         textContent
+                            .zIndex(1)
                     }
                 }
 
@@ -99,6 +110,35 @@ struct MessageView: View {
         .frame(width: 22, height: 22)
         .opacity(isHovering ? 1 : 0)
         .animation(.easeInOut(duration: 0.15), value: isHovering)
+    }
+
+    // MARK: - Reply Bubble
+
+    private func replyBubble(_ reply: TimelineMessage.ReplyDetail) -> some View {
+        Button {
+            onTapReply?(reply.eventID)
+        } label: {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(reply.displayName)
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text(reply.body)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(maxWidth: 240, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(.systemGray).opacity(0.12))
+            )
+            .padding(.horizontal, 4)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Text Content (with markdown + links)
@@ -444,7 +484,8 @@ private struct FlowLayout: Layout {
                     .init(key: "👍", count: 2, senderIDs: ["@alice:matrix.org", "@bob:matrix.org"], highlightedByCurrentUser: false),
                     .init(key: "❤️", count: 1, senderIDs: ["@alice:matrix.org"], highlightedByCurrentUser: false),
                     .init(key: "🎉", count: 1, senderIDs: ["@me:matrix.org"], highlightedByCurrentUser: true),
-                ]
+                ],
+                replyDetail: .init(eventID: "1", senderID: "@alice:matrix.org", senderDisplayName: "Alice", body: "Hey, check out **this link**: https://matrix.org")
             )
         )
         MessageView(
@@ -455,7 +496,8 @@ private struct FlowLayout: Layout {
                 body: "Hey @me:matrix.org, can you review the PR when you get a chance?",
                 timestamp: .now.addingTimeInterval(-30),
                 isOutgoing: false,
-                isHighlighted: true
+                isHighlighted: true,
+                replyDetail: .init(eventID: "2", senderID: "@me:matrix.org", senderDisplayName: "Me", body: "Nice — I'll take a look.")
             ),
             showSenderName: true
         )
