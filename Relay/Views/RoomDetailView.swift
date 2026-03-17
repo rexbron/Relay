@@ -138,7 +138,7 @@ struct RoomDetailView: View {
                     .padding()
                 }
                 .defaultScrollAnchor(.bottom)
-                .onChange(of: viewModel.messages.count) {
+                .onChange(of: viewModel.messages.last?.id) {
                     if let lastId = viewModel.messages.last?.id {
                         withAnimation(.easeOut(duration: 0.2)) {
                             proxy.scrollTo(lastId, anchor: .bottom)
