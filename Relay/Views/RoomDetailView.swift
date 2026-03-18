@@ -25,14 +25,13 @@ struct RoomDetailView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            messageList
-
-            Divider()
-
-            ComposeView(text: $draftMessage, onSend: sendMessage, onAttach: sendAttachments)
-        }
-        .navigationTitle("")
+        messageList
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                ComposeView(text: $draftMessage, onSend: sendMessage, onAttach: sendAttachments)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+            }
+            .navigationTitle("")
         .task {
             await viewModel.loadTimeline()
             scrollRequest = .afterLoad

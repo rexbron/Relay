@@ -10,25 +10,31 @@ struct ComposeView: View {
     @State private var isShowingFilePicker = false
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            Button { isShowingFilePicker = true } label: {
-                Image(systemName: "plus.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-
-            TextField("Message", text: $text, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...5)
-                .focused($isFocused)
-                .onSubmit {
-                    if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        onSend()
-                    }
+        GlassEffectContainer {
+            HStack(alignment: .center, spacing: 8) {
+                Button { isShowingFilePicker = true } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(width: 32, height: 32)
+                        .contentShape(Circle())
+                        .glassEffect(in: .circle)
                 }
+                .buttonStyle(.plain)
+
+                TextField("Message", text: $text, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...5)
+                    .focused($isFocused)
+                    .onSubmit {
+                        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            onSend()
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .glassEffect()
+            }
         }
-        .padding(12)
         .fileImporter(
             isPresented: $isShowingFilePicker,
             allowedContentTypes: [.image, .movie, .item],
