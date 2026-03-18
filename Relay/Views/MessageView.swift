@@ -1,3 +1,4 @@
+import QuickLook
 import RelayCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -246,6 +247,9 @@ private struct ImageMessageView: View {
     @State private var image: NSImage?
     @State private var isLoading = true
     @State private var isHovering = false
+    @State private var quickLookURL: URL?
+    @State private var isLoadingFullImage = false
+    @State private var errorMessage: String?
 
     private var mediaInfo: TimelineMessage.MediaInfo {
         message.mediaInfo!
@@ -308,6 +312,22 @@ private struct ImageMessageView: View {
                     .padding(8)
             }
         }
+        .onTapGesture(count: 2) {
+            Task { await openQuickLook() }
+        }
+        .overlay {
+            if isLoadingFullImage {
+                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay { ProgressView() }
+            }
+        }
+        .quickLookPreview($quickLookURL)
+        .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
         .onHover { isHovering = $0 }
         .animation(.easeInOut(duration: 0.15), value: isHovering)
         .task(id: mediaInfo.mxcURL) {
@@ -334,6 +354,22 @@ private struct ImageMessageView: View {
                 .shadow(radius: 2)
         }
         .buttonStyle(.plain)
+    }
+
+    private func openQuickLook() async {
+        guard !isLoadingFullImage else { return }
+        isLoadingFullImage = true
+        defer { isLoadingFullImage = false }
+
+        guard let data = await matrixService.mediaContent(mxcURL: mediaInfo.mxcURL) else { return }
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(mediaInfo.filename)
+        do {
+            try data.write(to: url)
+            quickLookURL = url
+        } catch {
+            errorMessage = "Could not preview image: \(error.localizedDescription)"
+        }
     }
 
     private func saveImage() async {
