@@ -17,7 +17,7 @@ struct ComposeView: View {
                 Button { isShowingFilePicker = true } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 15, weight: .semibold))
-                        .frame(width: 36, height: 36)
+                        .frame(width: 32, height: 32)
                         .contentShape(Circle())
                         .glassEffect(in: .circle)
                 }
