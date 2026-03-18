@@ -12,6 +12,7 @@ struct RoomDetailView: View {
     @State var viewModel: any RoomDetailViewModelProtocol
 
     @State private var draftMessage = ""
+    @State private var replyingTo: TimelineMessage?
     @State private var emojiPickerMessageId: String?
 
     private enum ScrollRequest { case none, afterLoad, afterSend }
@@ -27,7 +28,7 @@ struct RoomDetailView: View {
     var body: some View {
         messageList
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                ComposeView(text: $draftMessage, onSend: sendMessage, onAttach: sendAttachments)
+                ComposeView(text: $draftMessage, replyingTo: $replyingTo, onSend: sendMessage, onAttach: sendAttachments)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 8)
             }
@@ -117,6 +118,9 @@ struct RoomDetailView: View {
                                     withAnimation(.easeInOut(duration: 0.3)) {
                                         proxy.scrollTo(eventID, anchor: .center)
                                     }
+                                },
+                                onReply: {
+                                    replyingTo = message
                                 }
                             )
                             .id(message.id)
@@ -181,6 +185,12 @@ struct RoomDetailView: View {
     @ViewBuilder
     private func messageContextMenu(for message: TimelineMessage) -> some View {
         Button {
+            replyingTo = message
+        } label: {
+            Label("Reply", systemImage: "arrowshape.turn.up.left")
+        }
+
+        Button {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(message.body, forType: .string)
         } label: {
@@ -234,9 +244,11 @@ struct RoomDetailView: View {
     private func sendMessage() {
         let text = draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        let replyEventId = replyingTo?.id
         draftMessage = ""
+        replyingTo = nil
         scrollRequest = .afterSend
-        Task { await viewModel.send(text: text) }
+        Task { await viewModel.send(text: text, inReplyTo: replyEventId) }
     }
 
     private func sendAttachments(_ urls: [URL]) {

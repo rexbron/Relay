@@ -10,6 +10,7 @@ struct MessageView: View {
     var onToggleReaction: ((String) -> Void)?
     var onAddReaction: (() -> Void)?
     var onTapReply: ((String) -> Void)?
+    var onReply: (() -> Void)?
 
     @State private var isHovering = false
 
@@ -18,6 +19,7 @@ struct MessageView: View {
             HStack(alignment: .bottom, spacing: 6) {
                 if message.isOutgoing {
                     Spacer(minLength: 60)
+                    replyButton
                     addReactionButton
                 }
 
@@ -44,29 +46,20 @@ struct MessageView: View {
                             .padding(.bottom, 2)
                     }
 
-                    if let reply = message.replyDetail {
-                        replyBubble(reply)
-                            .padding(.bottom, -10)
-                            .zIndex(0)
-                    }
-
                     if message.kind == .image, message.mediaInfo != nil {
-                        ImageMessageView(message: message)
-                            .zIndex(1)
+                        imageContent
                     } else if message.kind == .emote {
                         emoteContent
-                            .zIndex(1)
                     } else if message.isSpecialType {
                         specialContent
-                            .zIndex(1)
                     } else {
                         textContent
-                            .zIndex(1)
                     }
                 }
 
                 if !message.isOutgoing {
                     addReactionButton
+                    replyButton
                     Spacer(minLength: 60)
                 }
             }
@@ -99,7 +92,7 @@ struct MessageView: View {
         }
     }
 
-    // MARK: - Add Reaction Button
+    // MARK: - Hover Buttons
 
     private var addReactionButton: some View {
         Button { onAddReaction?() } label: {
@@ -113,73 +106,115 @@ struct MessageView: View {
         .animation(.easeInOut(duration: 0.15), value: isHovering)
     }
 
-    // MARK: - Reply Bubble
+    private var replyButton: some View {
+        Button { onReply?() } label: {
+            Image(systemName: "arrowshape.turn.up.left")
+                .font(.system(size: 14))
+                .foregroundStyle(.tertiary)
+        }
+        .buttonStyle(.plain)
+        .frame(width: 22, height: 22)
+        .opacity(isHovering ? 1 : 0)
+        .animation(.easeInOut(duration: 0.15), value: isHovering)
+    }
 
-    private func replyBubble(_ reply: TimelineMessage.ReplyDetail) -> some View {
+    // MARK: - Inline Reply
+
+    @ViewBuilder
+    private func inlineReply(_ reply: TimelineMessage.ReplyDetail, outgoing: Bool) -> some View {
         Button {
             onTapReply?(reply.eventID)
         } label: {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(reply.displayName)
-                    .font(.caption2)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Text(reply.body)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+            HStack(alignment: .top, spacing: 6) {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(outgoing ? Color.white.opacity(0.5) : Color.accentColor)
+                    .frame(width: 3, height: 28)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(reply.displayName)
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(outgoing ? .white.opacity(0.8) : Color.accentColor)
+                        .lineLimit(1)
+                    Text(reply.body)
+                        .font(.caption)
+                        .foregroundStyle(outgoing ? .white.opacity(0.6) : .secondary)
+                        .lineLimit(2)
+                }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .frame(maxWidth: 240, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color(.systemGray).opacity(0.12))
-            )
-            .padding(.horizontal, 4)
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Image Content
+
+    private var imageContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let reply = message.replyDetail {
+                inlineReply(reply, outgoing: message.isOutgoing)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+                    .background(bubbleColor)
+            }
+            ImageMessageView(message: message)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
     }
 
     // MARK: - Text Content (with markdown + links)
 
     private var textContent: some View {
-        Text(markdownBody)
-            .tint(message.isOutgoing ? .white.opacity(0.9) : .accentColor)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(bubbleColor)
-            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-            .foregroundStyle(message.isOutgoing ? .white : .primary)
-            .textSelection(.enabled)
+        VStack(alignment: .leading, spacing: 4) {
+            if let reply = message.replyDetail {
+                inlineReply(reply, outgoing: message.isOutgoing)
+            }
+            Text(markdownBody)
+                .tint(message.isOutgoing ? .white.opacity(0.9) : .accentColor)
+                .textSelection(.enabled)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(bubbleColor)
+        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .foregroundStyle(message.isOutgoing ? .white : .primary)
     }
 
     // MARK: - Emote Content
 
     private var emoteContent: some View {
-        Text("*\(message.displayName)* \(markdownBody)")
-            .tint(.accentColor)
-            .italic()
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(Color.purple.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-            .foregroundStyle(.primary)
-            .textSelection(.enabled)
+        VStack(alignment: .leading, spacing: 4) {
+            if let reply = message.replyDetail {
+                inlineReply(reply, outgoing: false)
+            }
+            Text("*\(message.displayName)* \(markdownBody)")
+                .tint(.accentColor)
+                .italic()
+                .textSelection(.enabled)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(Color.purple.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .foregroundStyle(.primary)
     }
 
     // MARK: - Special Content (media, redacted, encrypted, etc.)
 
     private var specialContent: some View {
-        Label {
-            Text(message.body)
-                .font(.callout)
-        } icon: {
-            Image(systemName: iconForKind)
-                .font(.callout)
+        VStack(alignment: .leading, spacing: 4) {
+            if let reply = message.replyDetail {
+                inlineReply(reply, outgoing: message.isOutgoing)
+            }
+            Label {
+                Text(message.body)
+                    .font(.callout)
+            } icon: {
+                Image(systemName: iconForKind)
+                    .font(.callout)
+            }
+            .foregroundStyle(foregroundForKind.opacity(0.6))
         }
-        .foregroundStyle(foregroundForKind.opacity(0.6))
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(backgroundForKind)
@@ -293,7 +328,6 @@ private struct ImageMessageView: View {
                     }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
         .overlay(alignment: .bottomTrailing) {
             if image != nil {
                 downloadButton
@@ -317,7 +351,7 @@ private struct ImageMessageView: View {
         }
         .overlay {
             if isLoadingFullImage {
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                Rectangle()
                     .fill(.ultraThinMaterial)
                     .overlay { ProgressView() }
             }

@@ -24,7 +24,7 @@ final class PreviewRoomDetailViewModel: RoomDetailViewModelProtocol {
 
     func loadTimeline() async {}
     func loadMoreHistory() async {}
-    func send(text: String) async {}
+    func send(text: String, inReplyTo eventId: String?) async {}
     func sendAttachment(url: URL) async {}
     func toggleReaction(messageId: String, key: String) async {}
 

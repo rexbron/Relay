@@ -1,8 +1,10 @@
+import RelayCore
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct ComposeView: View {
     @Binding var text: String
+    @Binding var replyingTo: TimelineMessage?
     var onSend: () -> Void
     var onAttach: ([URL]) -> Void
 
@@ -11,28 +13,34 @@ struct ComposeView: View {
 
     var body: some View {
         GlassEffectContainer {
-            HStack(alignment: .center, spacing: 8) {
+            HStack(alignment: .bottom, spacing: 8) {
                 Button { isShowingFilePicker = true } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 15, weight: .semibold))
-                        .frame(width: 32, height: 32)
+                        .frame(width: 36, height: 36)
                         .contentShape(Circle())
                         .glassEffect(in: .circle)
                 }
                 .buttonStyle(.plain)
 
-                TextField("Message", text: $text, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .lineLimit(1...5)
-                    .focused($isFocused)
-                    .onSubmit {
-                        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            onSend()
-                        }
+                VStack(alignment: .leading, spacing: 0) {
+                    if let reply = replyingTo {
+                        replyBanner(reply)
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .glassEffect()
+
+                    TextField("Message", text: $text, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .lineLimit(1...5)
+                        .focused($isFocused)
+                        .onSubmit {
+                            if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                onSend()
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                }
+                .glassEffect(in: .rect(cornerRadius: replyingTo != nil ? 16 : 20))
             }
         }
         .fileImporter(
@@ -44,15 +52,68 @@ struct ComposeView: View {
                 onAttach(urls)
             }
         }
+        .onChange(of: replyingTo) {
+            if replyingTo != nil { isFocused = true }
+        }
+    }
+
+    // MARK: - Reply Banner
+
+    private func replyBanner(_ message: TimelineMessage) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(Color.accentColor)
+                .frame(width: 3, height: 28)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(message.displayName)
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.accentColor)
+                    .lineLimit(1)
+                Text(message.body)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) { replyingTo = nil }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
     }
 }
 
 #Preview("Empty") {
-    ComposeView(text: .constant(""), onSend: {}, onAttach: { _ in })
+    ComposeView(text: .constant(""), replyingTo: .constant(nil), onSend: {}, onAttach: { _ in })
         .frame(width: 400)
 }
 
 #Preview("With Text") {
-    ComposeView(text: .constant("Hello, world!"), onSend: {}, onAttach: { _ in })
+    ComposeView(text: .constant("Hello, world!"), replyingTo: .constant(nil), onSend: {}, onAttach: { _ in })
         .frame(width: 400)
+}
+
+#Preview("Replying") {
+    ComposeView(
+        text: .constant(""),
+        replyingTo: .constant(TimelineMessage(
+            id: "1", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
+            body: "Nice, rooms are loading way faster now.",
+            timestamp: .now, isOutgoing: false
+        )),
+        onSend: {},
+        onAttach: { _ in }
+    )
+    .frame(width: 400)
 }

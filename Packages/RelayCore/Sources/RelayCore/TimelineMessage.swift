@@ -1,6 +1,6 @@
 import Foundation
 
-public struct TimelineMessage: Identifiable, Sendable {
+public struct TimelineMessage: Identifiable, Sendable, Equatable {
     public enum Kind: Sendable, Equatable {
         case text
         case emote

@@ -70,10 +70,15 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
         isLoadingMore = false
     }
 
-    public func send(text: String) async {
+    public func send(text: String, inReplyTo eventId: String? = nil) async {
         guard let timeline else { return }
+        let msg = messageEventContentFromMarkdown(md: text)
         do {
-            _ = try await timeline.send(msg: messageEventContentFromMarkdown(md: text))
+            if let eventId {
+                try await timeline.sendReply(msg: msg, eventId: eventId)
+            } else {
+                _ = try await timeline.send(msg: msg)
+            }
         } catch {
             logger.error("Failed to send message: \(error)")
             errorMessage = "Could not send message: \(error.localizedDescription)"
