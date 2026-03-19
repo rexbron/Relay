@@ -64,6 +64,19 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func setDisplayName(_ name: String) async throws {}
     func userAvatarURL() async -> String? { nil }
 
+    func getDefaultNotificationMode(isOneToOne: Bool) async throws -> DefaultNotificationMode {
+        isOneToOne ? .allMessages : .mentionsAndKeywordsOnly
+    }
+    func setDefaultNotificationMode(isOneToOne: Bool, mode: DefaultNotificationMode) async throws {}
+    func isCallNotificationEnabled() async throws -> Bool { true }
+    func setCallNotificationEnabled(_ enabled: Bool) async throws {}
+    func isInviteNotificationEnabled() async throws -> Bool { true }
+    func setInviteNotificationEnabled(_ enabled: Bool) async throws {}
+    func isRoomMentionEnabled() async throws -> Bool { true }
+    func setRoomMentionEnabled(_ enabled: Bool) async throws {}
+    func isUserMentionEnabled() async throws -> Bool { true }
+    func setUserMentionEnabled(_ enabled: Bool) async throws {}
+
     func searchDirectory(query: String) async throws -> [DirectoryRoom] {
         let all = [
             DirectoryRoom(roomId: "!design:matrix.org", name: "Design Team", topic: "UI/UX design discussion", alias: "#design:matrix.org", memberCount: 42),

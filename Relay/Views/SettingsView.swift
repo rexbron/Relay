@@ -128,55 +128,175 @@ private struct GeneralSettingsTab: View {
 
 // MARK: - Notification Settings
 
-private enum NotificationMode: String, CaseIterable {
-    case allMessages
-    case directAndMentions
-    case mentionsOnly
+@Observable
+private final class NotificationSettingsViewModel {
+    var directMessagesMode: DefaultNotificationMode = .allMessages
+    var groupRoomsMode: DefaultNotificationMode = .mentionsAndKeywordsOnly
+    var callsEnabled = true
+    var invitesEnabled = true
+    var roomMentionsEnabled = true
+    var userMentionsEnabled = true
+    var isLoading = true
+    var errorMessage: String?
 
-    var label: String {
-        switch self {
-        case .allMessages: "All messages"
-        case .directAndMentions: "Direct messages, mentions, and keywords"
-        case .mentionsOnly: "Mentions and keywords only"
+    private var matrixService: (any MatrixServiceProtocol)?
+
+    @MainActor
+    func load(service: any MatrixServiceProtocol) async {
+        matrixService = service
+        do {
+            directMessagesMode = try await service.getDefaultNotificationMode(isOneToOne: true)
+            groupRoomsMode = try await service.getDefaultNotificationMode(isOneToOne: false)
+            callsEnabled = try await service.isCallNotificationEnabled()
+            invitesEnabled = try await service.isInviteNotificationEnabled()
+            roomMentionsEnabled = try await service.isRoomMentionEnabled()
+            userMentionsEnabled = try await service.isUserMentionEnabled()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isLoading = false
+    }
+
+    @MainActor
+    func update(_ block: @escaping (any MatrixServiceProtocol) async throws -> Void) {
+        guard let matrixService else { return }
+        Task {
+            do {
+                try await block(matrixService)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 }
 
 private struct NotificationSettingsTab: View {
-    @AppStorage("notifications.accountEnabled") private var accountEnabled = true
+    @Environment(\.matrixService) private var matrixService
+    @State private var viewModel = NotificationSettingsViewModel()
     @AppStorage("notifications.sessionEnabled") private var sessionEnabled = true
-    @AppStorage("notifications.mode") private var notificationMode = NotificationMode.directAndMentions
 
     var body: some View {
         Form {
-            Section("Enable Notifications") {
-                Toggle("Enable for This Account", isOn: $accountEnabled)
-                Toggle("Enable for This Session", isOn: $sessionEnabled)
-            }
-
-            Section {
-                Picker("Default Level", selection: $notificationMode) {
-                    ForEach(NotificationMode.allCases, id: \.self) { mode in
-                        Text(mode.label).tag(mode)
-                    }
+            if viewModel.isLoading {
+                Section {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                 }
-                .pickerStyle(.radioGroup)
-            } header: {
-                Text("Default Notification Level")
-            } footer: {
-                Text("Controls which messages trigger notifications in rooms without specific rules.")
-            }
+            } else {
+                Section {
+                    Toggle("Enable on this device", isOn: $sessionEnabled)
+                }
 
-            Section {
-                Text("No keywords configured.")
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Keywords")
-            } footer: {
-                Text("Messages containing a keyword will trigger a notification. Matching is case-insensitive.")
+                Section {
+                    Picker("Direct Messages", selection: directMessagesBinding) {
+                        ForEach(DefaultNotificationMode.allCases, id: \.self) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
+                } header: {
+                    Text("Direct Messages")
+                    Text("Default notification level for one-to-one conversations.")
+                }
+
+                Section {
+                    Picker("Group Rooms", selection: groupRoomsBinding) {
+                        ForEach(DefaultNotificationMode.allCases, id: \.self) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
+                } header: {
+                    Text("Group Rooms")
+                    Text("Default notification level for rooms with more than two members.")
+                }
+
+                Section("Other Notifications") {
+                    Toggle("Invitations", isOn: invitesBinding)
+                    Toggle("@room Mentions", isOn: roomMentionsBinding)
+                    Toggle("@user Mentions", isOn: userMentionsBinding)
+                }
             }
         }
         .formStyle(.grouped)
+        .task { await viewModel.load(service: matrixService) }
+        .alert("Notification Settings Error", isPresented: showErrorBinding) {
+            Button("OK", role: .cancel) { viewModel.errorMessage = nil }
+        } message: {
+            Text(viewModel.errorMessage ?? "")
+        }
+    }
+
+    // MARK: - Bindings
+
+    private var directMessagesBinding: Binding<DefaultNotificationMode> {
+        Binding(
+            get: { viewModel.directMessagesMode },
+            set: { newValue in
+                viewModel.directMessagesMode = newValue
+                viewModel.update { try await $0.setDefaultNotificationMode(isOneToOne: true, mode: newValue) }
+            }
+        )
+    }
+
+    private var groupRoomsBinding: Binding<DefaultNotificationMode> {
+        Binding(
+            get: { viewModel.groupRoomsMode },
+            set: { newValue in
+                viewModel.groupRoomsMode = newValue
+                viewModel.update { try await $0.setDefaultNotificationMode(isOneToOne: false, mode: newValue) }
+            }
+        )
+    }
+
+    private var callsBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.callsEnabled },
+            set: { newValue in
+                viewModel.callsEnabled = newValue
+                viewModel.update { try await $0.setCallNotificationEnabled(newValue) }
+            }
+        )
+    }
+
+    private var invitesBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.invitesEnabled },
+            set: { newValue in
+                viewModel.invitesEnabled = newValue
+                viewModel.update { try await $0.setInviteNotificationEnabled(newValue) }
+            }
+        )
+    }
+
+    private var roomMentionsBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.roomMentionsEnabled },
+            set: { newValue in
+                viewModel.roomMentionsEnabled = newValue
+                viewModel.update { try await $0.setRoomMentionEnabled(newValue) }
+            }
+        )
+    }
+
+    private var userMentionsBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.userMentionsEnabled },
+            set: { newValue in
+                viewModel.userMentionsEnabled = newValue
+                viewModel.update { try await $0.setUserMentionEnabled(newValue) }
+            }
+        )
+    }
+
+    private var showErrorBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )
     }
 }
 
@@ -287,6 +407,7 @@ private struct EncryptionSettingsTab: View {
         NotificationSettingsTab()
             .tabItem { Label("Notifications", systemImage: "bell") }
     }
+    .environment(\.matrixService, PreviewMatrixService())
     .frame(width: 480)
 }
 

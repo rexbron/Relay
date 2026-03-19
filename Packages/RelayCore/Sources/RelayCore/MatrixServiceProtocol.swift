@@ -18,6 +18,20 @@ public enum SyncState: Equatable, Sendable {
     case error
 }
 
+public enum DefaultNotificationMode: Sendable, Equatable, CaseIterable {
+    case allMessages
+    case mentionsAndKeywordsOnly
+    case mute
+
+    public var label: String {
+        switch self {
+        case .allMessages: "All Messages"
+        case .mentionsAndKeywordsOnly: "Mentions and Keywords Only"
+        case .mute: "Mute"
+        }
+    }
+}
+
 // MARK: - Protocol
 
 @MainActor
@@ -44,6 +58,18 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     func userDisplayName() async -> String?
     func setDisplayName(_ name: String) async throws
     func userAvatarURL() async -> String?
+
+    // MARK: Notification Settings (synced via push rules)
+    func getDefaultNotificationMode(isOneToOne: Bool) async throws -> DefaultNotificationMode
+    func setDefaultNotificationMode(isOneToOne: Bool, mode: DefaultNotificationMode) async throws
+    func isCallNotificationEnabled() async throws -> Bool
+    func setCallNotificationEnabled(_ enabled: Bool) async throws
+    func isInviteNotificationEnabled() async throws -> Bool
+    func setInviteNotificationEnabled(_ enabled: Bool) async throws
+    func isRoomMentionEnabled() async throws -> Bool
+    func setRoomMentionEnabled(_ enabled: Bool) async throws
+    func isUserMentionEnabled() async throws -> Bool
+    func setUserMentionEnabled(_ enabled: Bool) async throws
 }
 
 // MARK: - Environment Key
@@ -82,4 +108,14 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func userDisplayName() async -> String? { nil }
     func setDisplayName(_ name: String) async throws {}
     func userAvatarURL() async -> String? { nil }
+    func getDefaultNotificationMode(isOneToOne: Bool) async throws -> DefaultNotificationMode { .mentionsAndKeywordsOnly }
+    func setDefaultNotificationMode(isOneToOne: Bool, mode: DefaultNotificationMode) async throws {}
+    func isCallNotificationEnabled() async throws -> Bool { true }
+    func setCallNotificationEnabled(_ enabled: Bool) async throws {}
+    func isInviteNotificationEnabled() async throws -> Bool { true }
+    func setInviteNotificationEnabled(_ enabled: Bool) async throws {}
+    func isRoomMentionEnabled() async throws -> Bool { true }
+    func setRoomMentionEnabled(_ enabled: Bool) async throws {}
+    func isUserMentionEnabled() async throws -> Bool { true }
+    func setUserMentionEnabled(_ enabled: Bool) async throws {}
 }

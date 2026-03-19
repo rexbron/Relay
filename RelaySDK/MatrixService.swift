@@ -531,6 +531,74 @@ public final class MatrixService: MatrixServiceProtocol {
             return nil
         }
     }
+
+    // MARK: - Notification Settings
+
+    private func notificationSettings() async throws -> NotificationSettings {
+        guard let client else { throw MatrixServiceError.notLoggedIn }
+        return await client.getNotificationSettings()
+    }
+
+    private func sdkMode(from mode: DefaultNotificationMode) -> RoomNotificationMode {
+        switch mode {
+        case .allMessages: .allMessages
+        case .mentionsAndKeywordsOnly: .mentionsAndKeywordsOnly
+        case .mute: .mute
+        }
+    }
+
+    private func appMode(from mode: RoomNotificationMode) -> DefaultNotificationMode {
+        switch mode {
+        case .allMessages: .allMessages
+        case .mentionsAndKeywordsOnly: .mentionsAndKeywordsOnly
+        case .mute: .mute
+        }
+    }
+
+    public func getDefaultNotificationMode(isOneToOne: Bool) async throws -> DefaultNotificationMode {
+        let settings = try await notificationSettings()
+        let mode = await settings.getDefaultRoomNotificationMode(isEncrypted: true, isOneToOne: isOneToOne)
+        return appMode(from: mode)
+    }
+
+    public func setDefaultNotificationMode(isOneToOne: Bool, mode: DefaultNotificationMode) async throws {
+        let settings = try await notificationSettings()
+        let sdkMode = sdkMode(from: mode)
+        try await settings.setDefaultRoomNotificationMode(isEncrypted: true, isOneToOne: isOneToOne, mode: sdkMode)
+        try await settings.setDefaultRoomNotificationMode(isEncrypted: false, isOneToOne: isOneToOne, mode: sdkMode)
+    }
+
+    public func isCallNotificationEnabled() async throws -> Bool {
+        try await notificationSettings().isCallEnabled()
+    }
+
+    public func setCallNotificationEnabled(_ enabled: Bool) async throws {
+        try await notificationSettings().setCallEnabled(enabled: enabled)
+    }
+
+    public func isInviteNotificationEnabled() async throws -> Bool {
+        try await notificationSettings().isInviteForMeEnabled()
+    }
+
+    public func setInviteNotificationEnabled(_ enabled: Bool) async throws {
+        try await notificationSettings().setInviteForMeEnabled(enabled: enabled)
+    }
+
+    public func isRoomMentionEnabled() async throws -> Bool {
+        try await notificationSettings().isRoomMentionEnabled()
+    }
+
+    public func setRoomMentionEnabled(_ enabled: Bool) async throws {
+        try await notificationSettings().setRoomMentionEnabled(enabled: enabled)
+    }
+
+    public func isUserMentionEnabled() async throws -> Bool {
+        try await notificationSettings().isUserMentionEnabled()
+    }
+
+    public func setUserMentionEnabled(_ enabled: Bool) async throws {
+        try await notificationSettings().setUserMentionEnabled(enabled: enabled)
+    }
 }
 
 // MARK: - Sync State Observer Bridge
