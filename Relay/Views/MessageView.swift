@@ -3,6 +3,19 @@ import RelayCore
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - Media Auto-Reveal Environment
+
+private struct MediaAutoRevealKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var mediaAutoReveal: Bool {
+        get { self[MediaAutoRevealKey.self] }
+        set { self[MediaAutoRevealKey.self] = newValue }
+    }
+}
+
 struct MessageView: View {
     let message: TimelineMessage
     var isLastInGroup: Bool = true
@@ -277,6 +290,7 @@ struct MessageView: View {
 
 private struct ImageMessageView: View {
     @Environment(\.matrixService) private var matrixService
+    @Environment(\.mediaAutoReveal) private var autoReveal
     let message: TimelineMessage
 
     @State private var image: NSImage?
@@ -285,6 +299,7 @@ private struct ImageMessageView: View {
     @State private var quickLookURL: URL?
     @State private var isLoadingFullImage = false
     @State private var errorMessage: String?
+    @State private var isRevealed = false
 
     private var mediaInfo: TimelineMessage.MediaInfo {
         message.mediaInfo!
@@ -305,38 +320,57 @@ private struct ImageMessageView: View {
         return CGSize(width: maxWidth, height: 200)
     }
 
+    private var shouldShow: Bool { autoReveal || isRevealed }
+
     var body: some View {
         ZStack {
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: displaySize.width, height: displaySize.height)
-                    .clipped()
+            if shouldShow {
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: displaySize.width, height: displaySize.height)
+                        .clipped()
+                } else {
+                    Rectangle()
+                        .fill(Color(.systemGray).opacity(0.15))
+                        .frame(width: displaySize.width, height: displaySize.height)
+                        .overlay {
+                            if isLoading {
+                                ProgressView()
+                            } else {
+                                Image(systemName: "photo")
+                                    .font(.title2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                }
             } else {
                 Rectangle()
                     .fill(Color(.systemGray).opacity(0.15))
                     .frame(width: displaySize.width, height: displaySize.height)
                     .overlay {
-                        if isLoading {
-                            ProgressView()
-                        } else {
-                            Image(systemName: "photo")
+                        VStack(spacing: 6) {
+                            Image(systemName: "eye.slash")
                                 .font(.title2)
+                                .foregroundStyle(.secondary)
+                            Text("Media Hidden")
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .onTapGesture { isRevealed = true }
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if image != nil {
+            if shouldShow, image != nil {
                 downloadButton
                     .padding(8)
                     .opacity(isHovering ? 1 : 0)
             }
         }
         .overlay(alignment: .bottomLeading) {
-            if let caption = mediaInfo.caption, !caption.isEmpty {
+            if shouldShow, let caption = mediaInfo.caption, !caption.isEmpty {
                 Text(caption)
                     .font(.caption)
                     .padding(.horizontal, 8)
@@ -347,7 +381,9 @@ private struct ImageMessageView: View {
             }
         }
         .onTapGesture(count: 2) {
-            Task { await openQuickLook() }
+            if shouldShow {
+                Task { await openQuickLook() }
+            }
         }
         .overlay {
             if isLoadingFullImage {
@@ -364,7 +400,8 @@ private struct ImageMessageView: View {
         }
         .onHover { isHovering = $0 }
         .animation(.easeInOut(duration: 0.15), value: isHovering)
-        .task(id: mediaInfo.mxcURL) {
+        .task(id: shouldShow ? mediaInfo.mxcURL : nil) {
+            guard shouldShow else { return }
             isLoading = true
             if let data = await matrixService.mediaThumbnail(
                 mxcURL: mediaInfo.mxcURL,

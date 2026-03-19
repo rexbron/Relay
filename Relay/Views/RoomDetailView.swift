@@ -20,6 +20,10 @@ struct RoomDetailView: View {
     @State private var pendingScrollToBottom = false
     @State private var hasTriggeredPagination = false
 
+    @AppStorage("safety.sendReadReceipts") private var sendReadReceipts = true
+    @AppStorage("safety.sendTypingNotifications") private var sendTypingNotifications = true
+    @AppStorage("safety.mediaPreviewMode") private var mediaPreviewMode = "privateOnly"
+
     private var showErrorAlert: Binding<Bool> {
         Binding(
             get: { viewModel.errorMessage != nil },
@@ -27,8 +31,15 @@ struct RoomDetailView: View {
         )
     }
 
+    private var shouldAutoRevealMedia: Bool {
+        if mediaPreviewMode == "allRooms" { return true }
+        let isDirect = matrixService.rooms.first(where: { $0.id == roomId })?.isDirect ?? false
+        return isDirect
+    }
+
     var body: some View {
         messageList
+            .environment(\.mediaAutoReveal, shouldAutoRevealMedia)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 ComposeView(text: $draftMessage, replyingTo: $replyingTo, onSend: sendMessage, onAttach: sendAttachments)
                     .padding(.horizontal, 16)
@@ -37,7 +48,22 @@ struct RoomDetailView: View {
             .navigationTitle("")
         .task {
             await viewModel.loadTimeline()
-            await matrixService.markAsRead(roomId: roomId)
+            await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts)
+        }
+        .onDisappear {
+            if sendTypingNotifications {
+                Task { await matrixService.sendTypingNotice(roomId: roomId, isTyping: false) }
+            }
+        }
+        .onChange(of: draftMessage) { oldValue, newValue in
+            guard sendTypingNotifications else { return }
+            let wasEmpty = oldValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let isEmpty = newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if wasEmpty && !isEmpty {
+                Task { await matrixService.sendTypingNotice(roomId: roomId, isTyping: true) }
+            } else if !wasEmpty && isEmpty {
+                Task { await matrixService.sendTypingNotice(roomId: roomId, isTyping: false) }
+            }
         }
         .alert("Error", isPresented: showErrorAlert) {
             Button("OK") { viewModel.errorMessage = nil }
@@ -269,7 +295,12 @@ struct RoomDetailView: View {
         draftMessage = ""
         replyingTo = nil
         pendingScrollToBottom = true
-        Task { await viewModel.send(text: text, inReplyTo: replyEventId) }
+        Task {
+            if sendTypingNotifications {
+                await matrixService.sendTypingNotice(roomId: roomId, isTyping: false)
+            }
+            await viewModel.send(text: text, inReplyTo: replyEventId)
+        }
     }
 
     private func sendAttachments(_ urls: [URL]) {

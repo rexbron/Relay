@@ -22,7 +22,8 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func leaveRoom(id: String) async throws {
         rooms.removeAll { $0.id == id }
     }
-    func markAsRead(roomId: String) async {
+    func sendTypingNotice(roomId: String, isTyping: Bool) async {}
+    func markAsRead(roomId: String, sendPublicReceipt: Bool) async {
         if let idx = rooms.firstIndex(where: { $0.id == roomId }) {
             rooms[idx] = RoomSummary(
                 id: rooms[idx].id,

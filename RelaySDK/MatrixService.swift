@@ -393,12 +393,18 @@ public final class MatrixService: MatrixServiceProtocol {
         roomViewModels.removeValue(forKey: id)
     }
 
-    // MARK: - Read Receipts
+    // MARK: - Read Receipts & Typing
 
-    public func markAsRead(roomId: String) async {
+    public func markAsRead(roomId: String, sendPublicReceipt: Bool) async {
         guard let room = room(id: roomId) else { return }
-        try? await room.markAsRead(receiptType: .read)
+        let receiptType: ReceiptType = sendPublicReceipt ? .read : .readPrivate
+        try? await room.markAsRead(receiptType: receiptType)
         await refreshRoomList()
+    }
+
+    public func sendTypingNotice(roomId: String, isTyping: Bool) async {
+        guard let room = room(id: roomId) else { return }
+        try? await room.typingNotice(isTyping: isTyping)
     }
 
     // MARK: - Room Details

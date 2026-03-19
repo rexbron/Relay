@@ -51,7 +51,8 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String
     func leaveRoom(id: String) async throws
     func searchDirectory(query: String) async throws -> [DirectoryRoom]
-    func markAsRead(roomId: String) async
+    func markAsRead(roomId: String, sendPublicReceipt: Bool) async
+    func sendTypingNotice(roomId: String, isTyping: Bool) async
     func roomDetails(roomId: String) async -> RoomDetails?
     func mediaContent(mxcURL: String) async -> Data?
     func mediaThumbnail(mxcURL: String, width: UInt64, height: UInt64) async -> Data?
@@ -101,7 +102,8 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String { "" }
     func leaveRoom(id: String) async throws {}
     func searchDirectory(query: String) async throws -> [DirectoryRoom] { [] }
-    func markAsRead(roomId: String) async {}
+    func markAsRead(roomId: String, sendPublicReceipt: Bool) async {}
+    func sendTypingNotice(roomId: String, isTyping: Bool) async {}
     func roomDetails(roomId: String) async -> RoomDetails? { nil }
     func mediaContent(mxcURL: String) async -> Data? { nil }
     func mediaThumbnail(mxcURL: String, width: UInt64, height: UInt64) async -> Data? { nil }

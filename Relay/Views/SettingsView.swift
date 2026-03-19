@@ -335,7 +335,6 @@ private struct SafetySettingsTab: View {
                 .pickerStyle(.radioGroup)
             } header: {
                 Text("Media Previews")
-            } footer: {
                 Text("Hidden previews can always be revealed by clicking on the media.")
             }
         }
