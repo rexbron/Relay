@@ -15,6 +15,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     public private(set) var isLoadingMore = false
     public private(set) var hasReachedStart = false
     public private(set) var firstUnreadMessageId: String?
+    public private(set) var typingUserDisplayNames: [String] = []
     public var errorMessage: String?
 
     private let room: Room
@@ -23,6 +24,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     private let unreadCount: Int
     private var timeline: Timeline?
     private var observationTask: Task<Void, Never>?
+    private var typingTask: Task<Void, Never>?
     private var timelineItems: [TimelineItem] = []
     private var hasComputedUnreadMarker = false
     private var saveCacheTask: Task<Void, Never>?
@@ -36,8 +38,9 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     }
 
     deinit {
-        let task = MainActor.assumeIsolated { observationTask }
-        task?.cancel()
+        let tasks = MainActor.assumeIsolated { (observationTask, typingTask) }
+        tasks.0?.cancel()
+        tasks.1?.cancel()
     }
 
     // MARK: - Public
@@ -57,6 +60,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
             let tl = try await room.timeline()
             timeline = tl
             observeTimeline(tl)
+            observeTypingNotifications()
             await paginateInitialHistory(tl)
         } catch {
             logger.error("Failed to load timeline: \(error)")
@@ -217,6 +221,33 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
             for await diffs in stream {
                 self.applyDiffs(diffs)
                 self.rebuildMessages()
+            }
+
+            _ = handle
+        }
+    }
+
+    private func observeTypingNotifications() {
+        typingTask = Task { [weak self] in
+            guard let self else { return }
+
+            var continuation: AsyncStream<[String]>.Continuation!
+            let stream = AsyncStream<[String]> { continuation = $0 }
+
+            let listener = TypingNotificationsListenerProxy(continuation: continuation)
+            let handle = room.subscribeToTypingNotifications(listener: listener)
+
+            for await userIds in stream {
+                let filtered = userIds.filter { $0 != self.currentUserId }
+                var names: [String] = []
+                for userId in filtered {
+                    if let name = try? await self.room.memberDisplayName(userId: userId), !name.isEmpty {
+                        names.append(name)
+                    } else {
+                        names.append(userId)
+                    }
+                }
+                self.typingUserDisplayNames = names
             }
 
             _ = handle
@@ -459,5 +490,17 @@ nonisolated final class TimelineListenerProxy: TimelineListener, @unchecked Send
 
     func onUpdate(diff: [TimelineDiff]) {
         continuation.yield(diff)
+    }
+}
+
+nonisolated final class TypingNotificationsListenerProxy: TypingNotificationsListener, @unchecked Sendable {
+    private let continuation: AsyncStream<[String]>.Continuation
+
+    init(continuation: AsyncStream<[String]>.Continuation) {
+        self.continuation = continuation
+    }
+
+    func call(typingUserIds: [String]) {
+        continuation.yield(typingUserIds)
     }
 }

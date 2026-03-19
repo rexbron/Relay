@@ -169,6 +169,11 @@ struct RoomDetailView: View {
                             }
                         }
                     }
+
+                    if !viewModel.typingUserDisplayNames.isEmpty {
+                        typingIndicator
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
                 }
                 .scrollTargetLayout()
                 .padding()
@@ -210,6 +215,31 @@ struct RoomDetailView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
+        }
+    }
+
+    // MARK: - Typing Indicator
+
+    private var typingIndicator: some View {
+        HStack(spacing: 4) {
+            TypingBubble()
+            Text(typingLabel)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 4)
+    }
+
+    private var typingLabel: String {
+        let names = viewModel.typingUserDisplayNames
+        switch names.count {
+        case 1:
+            return "\(names[0]) is typing…"
+        case 2:
+            return "\(names[0]) and \(names[1]) are typing…"
+        default:
+            return "\(names[0]) and \(names.count - 1) others are typing…"
         }
     }
 
@@ -327,6 +357,41 @@ struct RoomDetailView: View {
     }
 }
 
+// MARK: - Typing Bubble Animation
+
+private struct TypingBubble: View {
+    @State private var phase = 0.0
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(0..<3) { index in
+                Circle()
+                    .fill(.secondary)
+                    .frame(width: 4, height: 4)
+                    .scaleEffect(dotScale(for: index))
+                    .opacity(dotOpacity(for: index))
+            }
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                phase = 1.0
+            }
+        }
+    }
+
+    private func dotScale(for index: Int) -> Double {
+        let offset = Double(index) * 0.15
+        let t = (phase + offset).truncatingRemainder(dividingBy: 1.0)
+        return 0.6 + 0.4 * sin(t * .pi)
+    }
+
+    private func dotOpacity(for index: Int) -> Double {
+        let offset = Double(index) * 0.15
+        let t = (phase + offset).truncatingRemainder(dividingBy: 1.0)
+        return 0.4 + 0.6 * sin(t * .pi)
+    }
+}
+
 #Preview("Messages") {
     NavigationStack {
         RoomDetailView(
@@ -357,6 +422,18 @@ struct RoomDetailView: View {
             roomId: "!preview:matrix.org",
             roomName: "Design Team",
             viewModel: PreviewRoomDetailViewModel(messages: [], isLoading: true)
+        )
+    }
+    .environment(\.matrixService, PreviewMatrixService())
+    .frame(width: 500, height: 450)
+}
+
+#Preview("Typing Indicator") {
+    NavigationStack {
+        RoomDetailView(
+            roomId: "!preview:matrix.org",
+            roomName: "Design Team",
+            viewModel: PreviewRoomDetailViewModel(typingUserDisplayNames: ["Alice", "Bob"])
         )
     }
     .environment(\.matrixService, PreviewMatrixService())
