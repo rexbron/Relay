@@ -42,6 +42,7 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     func mediaContent(mxcURL: String) async -> Data?
     func mediaThumbnail(mxcURL: String, width: UInt64, height: UInt64) async -> Data?
     func userDisplayName() async -> String?
+    func setDisplayName(_ name: String) async throws
     func userAvatarURL() async -> String?
 }
 
@@ -79,5 +80,6 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func mediaContent(mxcURL: String) async -> Data? { nil }
     func mediaThumbnail(mxcURL: String, width: UInt64, height: UInt64) async -> Data? { nil }
     func userDisplayName() async -> String? { nil }
+    func setDisplayName(_ name: String) async throws {}
     func userAvatarURL() async -> String? { nil }
 }

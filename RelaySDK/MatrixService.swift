@@ -344,6 +344,11 @@ public final class MatrixService: MatrixServiceProtocol {
         return try? await client.displayName()
     }
 
+    public func setDisplayName(_ name: String) async throws {
+        guard let client else { return }
+        try await client.setDisplayName(name: name)
+    }
+
     public func userAvatarURL() async -> String? {
         guard let client else { return nil }
         return try? await client.avatarUrl()

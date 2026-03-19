@@ -37,8 +37,10 @@ private struct GeneralSettingsTab: View {
     @Environment(\.matrixService) private var matrixService
 
     @State private var displayName = ""
+    @State private var savedDisplayName = ""
     @State private var avatarURL: String?
     @State private var showLogoutConfirmation = false
+    @State private var displayNameSaveTask: Task<Void, Never>?
 
     private var userId: String? { matrixService.userId() }
 
@@ -64,6 +66,11 @@ private struct GeneralSettingsTab: View {
                     }
                 }
                 .padding(.vertical, 4)
+
+                Button("Log Out…", role: .destructive) {
+                    showLogoutConfirmation = true
+                }
+                .controlSize(.small)
             }
 
             Section("Profile") {
@@ -89,21 +96,24 @@ private struct GeneralSettingsTab: View {
                     }
                 }
             }
-
-            Section {
-                HStack {
-                    Spacer()
-                    Button("Log Out…", role: .destructive) {
-                        showLogoutConfirmation = true
-                    }
-                    Spacer()
-                }
-            }
         }
         .formStyle(.grouped)
         .task {
-            displayName = await matrixService.userDisplayName() ?? ""
+            let name = await matrixService.userDisplayName() ?? ""
+            displayName = name
+            savedDisplayName = name
             avatarURL = await matrixService.userAvatarURL()
+        }
+        .onChange(of: displayName) { _, newValue in
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed != savedDisplayName else { return }
+            displayNameSaveTask?.cancel()
+            displayNameSaveTask = Task {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                try? await matrixService.setDisplayName(trimmed)
+                savedDisplayName = trimmed
+            }
         }
         .alert("Log Out", isPresented: $showLogoutConfirmation) {
             Button("Cancel", role: .cancel) {}

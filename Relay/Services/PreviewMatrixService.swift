@@ -61,6 +61,7 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func mediaContent(mxcURL: String) async -> Data? { nil }
     func mediaThumbnail(mxcURL: String, width: UInt64, height: UInt64) async -> Data? { nil }
     func userDisplayName() async -> String? { "John Appleseed" }
+    func setDisplayName(_ name: String) async throws {}
     func userAvatarURL() async -> String? { nil }
 
     func searchDirectory(query: String) async throws -> [DirectoryRoom] {
