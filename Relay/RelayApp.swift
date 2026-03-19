@@ -20,14 +20,6 @@ struct RelayApp: App {
                 }
         }
         .defaultSize(width: 900, height: 600)
-        .commands {
-            CommandGroup(after: .appSettings) {
-                Button("Sign Out…") {
-                    Task { await matrixService.logout() }
-                }
-                .keyboardShortcut("W", modifiers: [.command, .shift])
-            }
-        }
 
         Settings {
             SettingsView()
