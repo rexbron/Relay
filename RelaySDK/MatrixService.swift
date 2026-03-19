@@ -30,6 +30,7 @@ public final class MatrixService: MatrixServiceProtocol {
     private var roomPollTask: Task<Void, Never>?
     private var syncStateHandle: TaskHandle?
     private var roomViewModels: [String: RoomDetailViewModel] = [:]
+    private var verificationController: SessionVerificationController?
 
     // MARK: - Persistence Model
 
@@ -161,6 +162,7 @@ public final class MatrixService: MatrixServiceProtocol {
 
         client = nil
         syncService = nil
+        verificationController = nil
         rooms = []
         roomViewModels = [:]
         syncState = .idle
@@ -184,6 +186,7 @@ public final class MatrixService: MatrixServiceProtocol {
             syncService = service
 
             await waitForFirstSync()
+            verificationController = try? await client.getSessionVerificationController()
             await refreshRoomList()
             startPollingRooms()
         } catch {
@@ -604,6 +607,18 @@ public final class MatrixService: MatrixServiceProtocol {
 
     public func setUserMentionEnabled(_ enabled: Bool) async throws {
         try await notificationSettings().setUserMentionEnabled(enabled: enabled)
+    }
+
+    // MARK: - Session Verification
+
+    public func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)? {
+        guard let controller = verificationController else { return nil }
+        return SessionVerificationViewModel(controller: controller)
+    }
+
+    public func isCurrentSessionVerified() async -> Bool {
+        guard let client else { return false }
+        return client.encryption().verificationState() == .verified
     }
 
     // MARK: - Devices

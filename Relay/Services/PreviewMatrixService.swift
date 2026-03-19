@@ -78,6 +78,12 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func isUserMentionEnabled() async throws -> Bool { true }
     func setUserMentionEnabled(_ enabled: Bool) async throws {}
 
+    func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)? {
+        PreviewSessionVerificationViewModel()
+    }
+
+    func isCurrentSessionVerified() async -> Bool { true }
+
     func getDevices() async throws -> [DeviceInfo] {
         [
             DeviceInfo(id: "ABCDEF1234", displayName: "Relay (macOS)", lastSeenIP: "203.0.113.42", lastSeenTimestamp: .now.addingTimeInterval(-60), isCurrentDevice: true),

@@ -60,8 +60,10 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     func setDisplayName(_ name: String) async throws
     func userAvatarURL() async -> String?
 
-    // MARK: Devices
+    // MARK: Devices & Verification
     func getDevices() async throws -> [DeviceInfo]
+    func isCurrentSessionVerified() async -> Bool
+    func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)?
 
     // MARK: Notification Settings (synced via push rules)
     func getDefaultNotificationMode(isOneToOne: Bool) async throws -> DefaultNotificationMode
@@ -114,6 +116,8 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func setDisplayName(_ name: String) async throws {}
     func userAvatarURL() async -> String? { nil }
     func getDevices() async throws -> [DeviceInfo] { [] }
+    func isCurrentSessionVerified() async -> Bool { false }
+    func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)? { nil }
     func getDefaultNotificationMode(isOneToOne: Bool) async throws -> DefaultNotificationMode { .mentionsAndKeywordsOnly }
     func setDefaultNotificationMode(isOneToOne: Bool, mode: DefaultNotificationMode) async throws {}
     func isCallNotificationEnabled() async throws -> Bool { true }

@@ -349,32 +349,42 @@ private struct SafetySettingsTab: View {
 @Observable
 private final class SessionsSettingsViewModel {
     var devices: [DeviceInfo] = []
+    var isSessionVerified = false
     var isLoading = true
     var errorMessage: String?
 
     @MainActor
     func load(service: any MatrixServiceProtocol) async {
         do {
-            devices = try await service.getDevices().sorted { lhs, rhs in
-                if lhs.isCurrentDevice { return true }
-                if rhs.isCurrentDevice { return false }
-                switch (lhs.lastSeenTimestamp, rhs.lastSeenTimestamp) {
-                case (.some(let l), .some(let r)): return l > r
-                case (.some, .none): return true
-                case (.none, .some): return false
-                case (.none, .none): return lhs.id < rhs.id
-                }
-            }
+            async let devicesTask = service.getDevices()
+            async let verifiedTask = service.isCurrentSessionVerified()
+            devices = try await devicesTask.sorted(by: Self.deviceOrder)
+            isSessionVerified = await verifiedTask
         } catch {
             errorMessage = error.localizedDescription
         }
         isLoading = false
     }
+
+    nonisolated static func deviceOrder(_ lhs: DeviceInfo, _ rhs: DeviceInfo) -> Bool {
+        if lhs.isCurrentDevice { return true }
+        if rhs.isCurrentDevice { return false }
+        if let l = lhs.lastSeenTimestamp, let r = rhs.lastSeenTimestamp { return l > r }
+        if lhs.lastSeenTimestamp != nil { return true }
+        if rhs.lastSeenTimestamp != nil { return false }
+        return lhs.id < rhs.id
+    }
+}
+
+private struct VerificationItem: Identifiable {
+    let id = UUID()
+    let viewModel: any SessionVerificationViewModelProtocol
 }
 
 private struct SessionsSettingsTab: View {
     @Environment(\.matrixService) private var matrixService
     @State private var viewModel = SessionsSettingsViewModel()
+    @State private var verificationItem: VerificationItem?
 
     var body: some View {
         Form {
@@ -398,7 +408,27 @@ private struct SessionsSettingsTab: View {
 
                 if let device = current.first {
                     Section("Current Session") {
-                        DeviceRow(device: device)
+                        DeviceRow(device: device, isVerified: viewModel.isSessionVerified)
+                    }
+                }
+
+                if others.count > 0 {
+                    Section {
+                        Button {
+                            Task {
+                                do {
+                                    if let vm = try await matrixService.makeSessionVerificationViewModel() {
+                                        verificationItem = VerificationItem(viewModel: vm)
+                                    }
+                                } catch {
+                                    viewModel.errorMessage = error.localizedDescription
+                                }
+                            }
+                        } label: {
+                            Label("Verify with Another Device", systemImage: "checkmark.shield")
+                        }
+                    } footer: {
+                        Text("Compare emoji on both devices to confirm your identity.")
                     }
                 }
 
@@ -418,6 +448,205 @@ private struct SessionsSettingsTab: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
+        .sheet(item: $verificationItem) { item in
+            VerificationSheet(viewModel: item.viewModel)
+        }
+    }
+
+    private var showErrorBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )
+    }
+}
+
+// MARK: - Verification Sheet
+
+private struct VerificationSheet: View {
+    var viewModel: any SessionVerificationViewModelProtocol
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            switch viewModel.state {
+            case .idle:
+                idleView
+            case .requesting, .waitingForOtherDevice, .sasStarted:
+                waitingView
+            case .showingEmojis:
+                emojiView
+            case .verified:
+                resultView(
+                    icon: "checkmark.circle.fill",
+                    color: .green,
+                    title: "Verified!",
+                    detail: "This session has been successfully verified."
+                )
+            case .cancelled:
+                resultView(
+                    icon: "xmark.circle.fill",
+                    color: .secondary,
+                    title: "Cancelled",
+                    detail: "Verification was cancelled."
+                )
+            case .failed(let message):
+                resultView(
+                    icon: "exclamationmark.triangle.fill",
+                    color: .red,
+                    title: "Verification Failed",
+                    detail: message
+                )
+            }
+        }
+        .frame(width: 380, height: 340)
+        .alert("Error", isPresented: showErrorBinding) {
+            Button("OK", role: .cancel) { viewModel.errorMessage = nil }
+        } message: {
+            Text(viewModel.errorMessage ?? "")
+        }
+    }
+
+    // MARK: - Idle
+
+    private var idleView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "checkmark.shield")
+                .font(.system(size: 48))
+                .foregroundStyle(.tint)
+            Text("Verify Session")
+                .font(.title2)
+                .fontWeight(.semibold)
+            Text("Confirm your identity by comparing emoji on this device and another signed-in session.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Spacer()
+            HStack {
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Start Verification") {
+                    Task { await viewModel.requestVerification() }
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding()
+        }
+    }
+
+    // MARK: - Waiting
+
+    private var waitingView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            ProgressView()
+                .controlSize(.large)
+            Text("Waiting for Other Device")
+                .font(.title3)
+                .fontWeight(.medium)
+            Text("Accept the verification request on your other device.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Spacer()
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    Task { await viewModel.cancelVerification() }
+                }
+            }
+            .padding()
+        }
+    }
+
+    // MARK: - Emoji Comparison
+
+    private var emojiView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Text("Compare Emoji")
+                .font(.title2)
+                .fontWeight(.semibold)
+            Text("Confirm that the following emoji appear on both devices, in the same order.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+
+            VStack(spacing: 12) {
+                let topRow = Array(viewModel.emojis.prefix(4))
+                let bottomRow = Array(viewModel.emojis.dropFirst(4))
+                HStack(spacing: 0) {
+                    ForEach(topRow) { emoji in
+                        emojiCell(emoji)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                HStack(spacing: 0) {
+                    ForEach(bottomRow) { emoji in
+                        emojiCell(emoji)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            Spacer()
+            HStack {
+                Button("They Don\u{2019}t Match", role: .destructive) {
+                    Task { await viewModel.declineVerification() }
+                }
+                Spacer()
+                Button("They Match") {
+                    Task { await viewModel.approveVerification() }
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding()
+        }
+    }
+
+    private func emojiCell(_ emoji: VerificationEmoji) -> some View {
+        VStack(spacing: 4) {
+            Text(emoji.symbol)
+                .font(.system(size: 32))
+            Text(emoji.label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+        }
+    }
+
+    // MARK: - Result
+
+    private func resultView(icon: String, color: Color, title: String, detail: String) -> some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: icon)
+                .font(.system(size: 48))
+                .foregroundStyle(color)
+            Text(title)
+                .font(.title2)
+                .fontWeight(.semibold)
+            Text(detail)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Spacer()
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding()
+        }
     }
 
     private var showErrorBinding: Binding<Bool> {
@@ -430,6 +659,7 @@ private struct SessionsSettingsTab: View {
 
 private struct DeviceRow: View {
     let device: DeviceInfo
+    var isVerified: Bool?
 
     private static let relativeDateFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
@@ -437,11 +667,25 @@ private struct DeviceRow: View {
         return f
     }()
 
+    private var iconName: String {
+        if device.isCurrentDevice {
+            return (isVerified == true) ? "checkmark.shield.fill" : "xmark.shield.fill"
+        }
+        return "desktopcomputer"
+    }
+
+    private var iconColor: Color {
+        if device.isCurrentDevice {
+            return (isVerified == true) ? .green : .red
+        }
+        return .secondary
+    }
+
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: device.isCurrentDevice ? "checkmark.circle.fill" : "desktopcomputer")
+            Image(systemName: iconName)
                 .font(.title2)
-                .foregroundStyle(device.isCurrentDevice ? .green : .secondary)
+                .foregroundStyle(iconColor)
                 .frame(width: 32)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -567,6 +811,19 @@ private struct EncryptionSettingsTab: View {
     }
     .environment(\.matrixService, PreviewMatrixService())
     .frame(width: 480)
+}
+
+#Preview("Verification — Emoji") {
+    VerificationSheet(
+        viewModel: PreviewSessionVerificationViewModel(
+            state: .showingEmojis,
+            emojis: PreviewSessionVerificationViewModel.sampleEmojis
+        )
+    )
+}
+
+#Preview("Verification — Idle") {
+    VerificationSheet(viewModel: PreviewSessionVerificationViewModel())
 }
 
 #Preview("Encryption") {

@@ -28,7 +28,6 @@ A native macOS chat app built with SwiftUI that wraps the [Matrix Rust SDK](http
 - [ ] Thread support
 - [ ] User info detail/card view
 - [ ] Notification sync
-- [ ] Emoji verification
 - [ ] OAuth login
 - [ ] End-to-end encryption (full)
 
