@@ -19,8 +19,6 @@ A native macOS chat app built with SwiftUI that wraps the [Matrix Rust SDK](http
 
 ### In Progress
 
-- [ ] Room creation
-- [ ] Direct/private messaging
 - [ ] Message scrollback sync
 
 ### Planned
