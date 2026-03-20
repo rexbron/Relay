@@ -19,7 +19,7 @@ struct RelayApp: App {
                     await requestNotificationPermission()
                 }
         }
-        .defaultSize(width: 900, height: 600)
+        .defaultSize(width: 880, height: 560)
 
         Settings {
             SettingsView()
