@@ -60,9 +60,22 @@
 		3BAE76A72F6A43BA000EC1E6 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		3BDCC1512F6E468200BA8E23 /* Exceptions for "Relay" folder in "Relay" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 3B4AFD882F638A35001F0EA1 /* Relay */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		3B4AFD8B2F638A35001F0EA1 /* Relay */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				3BDCC1512F6E468200BA8E23 /* Exceptions for "Relay" folder in "Relay" target */,
+			);
 			path = Relay;
 			sourceTree = "<group>";
 		};
