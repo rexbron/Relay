@@ -3,26 +3,42 @@ import SwiftUI
 
 // MARK: - Shared Enums
 
+/// The authentication state of the Matrix client.
 public enum AuthState: Equatable, Sendable {
+    /// The session state has not yet been determined (app just launched).
     case unknown
+    /// No active session; the user needs to sign in.
     case loggedOut
+    /// A login attempt is currently in progress.
     case loggingIn
+    /// The user is authenticated. The associated value is the Matrix user ID (e.g. `"@alice:matrix.org"`).
     case loggedIn(userId: String)
+    /// Authentication failed. The associated value is a human-readable error message.
     case error(String)
 }
 
+/// The synchronization state of the Matrix client with the homeserver.
 public enum SyncState: Equatable, Sendable {
+    /// The sync service has not been started.
     case idle
+    /// The initial sync is in progress (first connection after login or restore).
     case syncing
+    /// The sync service is running and continuously receiving updates.
     case running
+    /// The sync service encountered an error and stopped.
     case error
 }
 
+/// The default notification mode for rooms, corresponding to Matrix push rule presets.
 public enum DefaultNotificationMode: Sendable, Equatable, CaseIterable {
+    /// Notify for every message in the room.
     case allMessages
+    /// Notify only when the user is mentioned or a keyword matches.
     case mentionsAndKeywordsOnly
+    /// Suppress all notifications from the room.
     case mute
 
+    /// A human-readable label for display in settings UI.
     public var label: String {
         switch self {
         case .allMessages: "All Messages"
@@ -34,50 +50,195 @@ public enum DefaultNotificationMode: Sendable, Equatable, CaseIterable {
 
 // MARK: - Protocol
 
+/// The central protocol for interacting with the Matrix homeserver.
+///
+/// ``MatrixServiceProtocol`` defines the contract that both the real ``MatrixService``
+/// (backed by the Matrix Rust SDK) and preview/mock implementations conform to. It covers
+/// authentication, sync, room management, media retrieval, user profile management,
+/// device/session management, encryption state, and notification settings.
+///
+/// All requirements are `@MainActor`-isolated. Implementations must be `Observable` so
+/// that SwiftUI views can react to state changes.
 @MainActor
 public protocol MatrixServiceProtocol: AnyObject, Observable {
+    /// The current authentication state of the client.
     var authState: AuthState { get }
+
+    /// The current synchronization state with the homeserver.
     var syncState: SyncState { get }
+
+    /// The list of joined rooms, sorted by most recent activity.
     var rooms: [RoomSummary] { get }
+
+    /// Whether the client is actively syncing (`syncing` or `running`).
     var isSyncing: Bool { get }
 
+    /// Attempts to restore a previously saved session from the keychain.
     func restoreSession() async
+
+    /// Authenticates with the homeserver using a username and password.
+    ///
+    /// - Parameters:
+    ///   - username: The Matrix username (local part, without `@` prefix).
+    ///   - password: The account password.
+    ///   - homeserver: The homeserver URL or server name.
     func login(username: String, password: String, homeserver: String) async
+
+    /// Initiates an OAuth/OIDC login flow via the system browser.
+    ///
+    /// - Parameter homeserver: The homeserver URL or server name.
+    /// - Throws: If the homeserver doesn't support OIDC or the browser flow fails.
     func startOAuthLogin(homeserver: String) async throws
+
+    /// Signs out, clears the session, and resets local data.
     func logout() async
+
+    /// Starts the background sync service if it is not already running.
     func startSyncIfNeeded()
+
+    /// Returns the Matrix user ID of the currently authenticated user, if any.
     func userId() -> String?
+
+    /// Downloads and returns a thumbnail of a Matrix media URL as an `NSImage`.
+    ///
+    /// Results are cached in memory to avoid redundant network requests.
+    ///
+    /// - Parameters:
+    ///   - mxcURL: The `mxc://` URL of the media.
+    ///   - size: The desired display size in points (the actual download is at 2x scale).
+    /// - Returns: The thumbnail image, or `nil` if the download failed.
     func avatarThumbnail(mxcURL: String, size: CGFloat) async -> NSImage?
+
+    /// Creates (or returns a cached) view model for displaying a room's message timeline.
+    ///
+    /// - Parameter roomId: The Matrix room identifier.
+    /// - Returns: A ``RoomDetailViewModelProtocol`` instance, or `nil` if the room is not found.
     func makeRoomDetailViewModel(roomId: String) -> (any RoomDetailViewModelProtocol)?
+
+    /// Joins a room by its ID or alias.
+    ///
+    /// - Parameter idOrAlias: A room ID (e.g. `"!abc:matrix.org"`) or alias (e.g. `"#room:matrix.org"`).
     func joinRoom(idOrAlias: String) async throws
+
+    /// Creates a new room and returns its room ID.
+    ///
+    /// - Parameters:
+    ///   - name: The display name for the room.
+    ///   - topic: An optional topic description.
+    ///   - isPublic: Whether the room should be publicly joinable. Public rooms are not encrypted.
+    /// - Returns: The Matrix room ID of the newly created room.
     func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String
+
+    /// Leaves a room and removes it from the local room list.
+    ///
+    /// - Parameter id: The Matrix room identifier.
     func leaveRoom(id: String) async throws
+
+    /// Searches the public room directory for rooms matching the query.
+    ///
+    /// - Parameter query: The search string to match against room names and aliases.
+    /// - Returns: A list of matching ``DirectoryRoom`` results.
     func searchDirectory(query: String) async throws -> [DirectoryRoom]
+
+    /// Sends a read receipt for the latest message in a room.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - sendPublicReceipt: Whether to send a public read receipt (visible to other users).
     func markAsRead(roomId: String, sendPublicReceipt: Bool) async
+
+    /// Sends or clears a typing notification in a room.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - isTyping: `true` to indicate the user is typing, `false` to stop.
     func sendTypingNotice(roomId: String, isTyping: Bool) async
+
+    /// Fetches the full details and member list for a room.
+    ///
+    /// - Parameter roomId: The Matrix room identifier.
+    /// - Returns: A ``RoomDetails`` snapshot, or `nil` if the room is not found.
     func roomDetails(roomId: String) async -> RoomDetails?
+
+    /// Downloads the full-resolution content of a Matrix media URL.
+    ///
+    /// - Parameter mxcURL: The `mxc://` URL of the media.
+    /// - Returns: The raw media data, or `nil` if the download failed.
     func mediaContent(mxcURL: String) async -> Data?
+
+    /// Downloads a thumbnail of a Matrix media URL at the specified dimensions.
+    ///
+    /// - Parameters:
+    ///   - mxcURL: The `mxc://` URL of the media.
+    ///   - width: The desired thumbnail width in pixels.
+    ///   - height: The desired thumbnail height in pixels.
+    /// - Returns: The thumbnail data, or `nil` if the download failed.
     func mediaThumbnail(mxcURL: String, width: UInt64, height: UInt64) async -> Data?
+
+    /// Returns the display name of the currently authenticated user.
     func userDisplayName() async -> String?
+
+    /// Updates the display name of the currently authenticated user.
+    ///
+    /// - Parameter name: The new display name.
     func setDisplayName(_ name: String) async throws
+
+    /// Returns the `mxc://` avatar URL of the currently authenticated user.
     func userAvatarURL() async -> String?
 
     // MARK: Devices & Verification
+
+    /// Fetches the list of all devices (sessions) associated with the current user's account.
     func getDevices() async throws -> [DeviceInfo]
+
+    /// Returns whether the current session has been verified via cross-signing.
     func isCurrentSessionVerified() async -> Bool
+
+    /// Returns the current encryption, key backup, and recovery state.
     func encryptionState() async -> EncryptionStatus
+
+    /// Creates a view model for performing interactive session verification (SAS emoji comparison).
+    ///
+    /// - Returns: A ``SessionVerificationViewModelProtocol`` instance, or `nil` if the
+    ///   verification controller is not available.
     func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)?
 
     // MARK: Notification Settings (synced via push rules)
+
+    /// Returns the default notification mode for rooms of the given type.
+    ///
+    /// - Parameter isOneToOne: `true` for direct message rooms, `false` for group rooms.
     func getDefaultNotificationMode(isOneToOne: Bool) async throws -> DefaultNotificationMode
+
+    /// Sets the default notification mode for rooms of the given type.
+    ///
+    /// - Parameters:
+    ///   - isOneToOne: `true` for direct message rooms, `false` for group rooms.
+    ///   - mode: The notification mode to apply.
     func setDefaultNotificationMode(isOneToOne: Bool, mode: DefaultNotificationMode) async throws
+
+    /// Returns whether notifications for incoming calls are enabled.
     func isCallNotificationEnabled() async throws -> Bool
+
+    /// Enables or disables notifications for incoming calls.
     func setCallNotificationEnabled(_ enabled: Bool) async throws
+
+    /// Returns whether notifications for room invitations are enabled.
     func isInviteNotificationEnabled() async throws -> Bool
+
+    /// Enables or disables notifications for room invitations.
     func setInviteNotificationEnabled(_ enabled: Bool) async throws
+
+    /// Returns whether notifications for `@room` mentions are enabled.
     func isRoomMentionEnabled() async throws -> Bool
+
+    /// Enables or disables notifications for `@room` mentions.
     func setRoomMentionEnabled(_ enabled: Bool) async throws
+
+    /// Returns whether notifications for `@user` mentions are enabled.
     func isUserMentionEnabled() async throws -> Bool
+
+    /// Enables or disables notifications for `@user` mentions.
     func setUserMentionEnabled(_ enabled: Bool) async throws
 }
 
@@ -87,7 +248,9 @@ private struct MatrixServiceKey: @preconcurrency EnvironmentKey {
     @MainActor static let defaultValue: any MatrixServiceProtocol = PlaceholderMatrixService()
 }
 
+/// SwiftUI environment accessor for the shared ``MatrixServiceProtocol`` instance.
 public extension EnvironmentValues {
+    /// The Matrix service used throughout the app for homeserver communication.
     var matrixService: any MatrixServiceProtocol {
         get { self[MatrixServiceKey.self] }
         set { self[MatrixServiceKey.self] = newValue }

@@ -1,15 +1,47 @@
 import Foundation
 
+/// A lightweight summary of a Matrix room for display in the room list sidebar.
+///
+/// ``RoomSummary`` contains just enough information to render a room row in the
+/// sidebar -- the room name, avatar, last message preview, unread counts, and
+/// whether it is a direct message conversation. The full room state is available
+/// via ``RoomDetails``.
 public struct RoomSummary: Identifiable, Hashable, Sendable {
+    /// The Matrix room identifier (e.g. `"!abc123:matrix.org"`).
     public let id: String
+
+    /// The display name of the room.
     public var name: String
+
+    /// The `mxc://` URL of the room's avatar image, if set.
     public var avatarURL: String?
+
+    /// A short text preview of the most recent message in the room.
     public var lastMessage: String?
+
+    /// The timestamp of the most recent message, used for sorting the room list.
     public var lastMessageTimestamp: Date?
+
+    /// The number of unread messages in this room.
     public var unreadMessages: UInt
+
+    /// The number of unread messages that mention the current user.
     public var unreadMentions: UInt
+
+    /// Whether this room is a direct message (one-to-one) conversation.
     public var isDirect: Bool
 
+    /// Creates a new ``RoomSummary`` value.
+    ///
+    /// - Parameters:
+    ///   - id: The Matrix room identifier.
+    ///   - name: The room display name.
+    ///   - avatarURL: The `mxc://` URL for the room avatar.
+    ///   - lastMessage: A text preview of the most recent message.
+    ///   - lastMessageTimestamp: The timestamp of the most recent message.
+    ///   - unreadCount: The number of unread messages.
+    ///   - unreadMentions: The number of unread mentions.
+    ///   - isDirect: Whether this is a direct message conversation.
     public init(
         id: String,
         name: String,
