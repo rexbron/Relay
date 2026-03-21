@@ -1,7 +1,20 @@
 import CoreGraphics
 
-/// Encodes a CGImage as a BlurHash string with the given number of components.
-/// Adapted from https://github.com/woltapp/blurhash (MIT license).
+/// Encodes a `CGImage` as a [BlurHash](https://blurha.sh) string.
+///
+/// BlurHash is a compact representation of an image placeholder, encoding the image's
+/// color information into a short ASCII string that can be stored alongside media metadata.
+/// Relay uses this when uploading images so that recipients can display a blurred preview
+/// while the full image downloads.
+///
+/// Adapted from [woltapp/blurhash](https://github.com/woltapp/blurhash) (MIT license).
+///
+/// - Parameters:
+///   - cgImage: The source image to encode.
+///   - components: The number of DCT components as `(horizontal, vertical)`.
+///     Higher values produce more detailed placeholders but longer strings.
+///     Defaults to `(4, 3)`.
+/// - Returns: The BlurHash string, or `nil` if the image has zero dimensions or cannot be rasterized.
 func blurHash(from cgImage: CGImage, numberOfComponents components: (Int, Int) = (4, 3)) -> String? {
     let width = cgImage.width
     let height = cgImage.height
@@ -70,6 +83,11 @@ func blurHash(from cgImage: CGImage, numberOfComponents components: (Int, Int) =
 
 // MARK: - Private
 
+/// Computes the DCT coefficient for a single basis function over the entire image.
+///
+/// Iterates every pixel, converting from sRGB to linear color space and multiplying
+/// by the cosine basis function. The result is a linear-space (R, G, B) tuple
+/// normalized by pixel count.
 private func multiplyBasisFunction(
     pixels: UnsafePointer<UInt8>,
     width: Int, height: Int, bytesPerRow: Int,
@@ -94,10 +112,12 @@ private func multiplyBasisFunction(
     return (r * scale, g * scale, b * scale)
 }
 
+/// Encodes the DC (average color) component as a single packed integer.
 private func encodeDC(_ value: (Float, Float, Float)) -> Int {
     (linearToSRGB(value.0) << 16) + (linearToSRGB(value.1) << 8) + linearToSRGB(value.2)
 }
 
+/// Encodes an AC (detail) component, quantizing each channel relative to the maximum AC value.
 private func encodeAC(_ value: (Float, Float, Float), maximumValue: Float) -> Int {
     let quantR = Int(max(0, min(18, floor(signPow(value.0 / maximumValue, 0.5) * 9 + 9.5))))
     let quantG = Int(max(0, min(18, floor(signPow(value.1 / maximumValue, 0.5) * 9 + 9.5))))
@@ -105,28 +125,33 @@ private func encodeAC(_ value: (Float, Float, Float), maximumValue: Float) -> In
     return quantR * 19 * 19 + quantG * 19 + quantB
 }
 
+/// Raises `value` to `exp`, preserving the original sign (used for AC quantization).
 private func signPow(_ value: Float, _ exp: Float) -> Float {
     copysign(pow(abs(value), exp), value)
 }
 
+/// Converts a linear-space color component (0...1) to an sRGB byte value (0...255).
 private func linearToSRGB(_ value: Float) -> Int {
     let v = max(0, min(1, value))
     if v <= 0.0031308 { return Int(v * 12.92 * 255 + 0.5) }
     return Int((1.055 * pow(v, 1 / 2.4) - 0.055) * 255 + 0.5)
 }
 
+/// Converts an sRGB byte value (0...255) to a linear-space color component (0...1).
 private func sRGBToLinear(_ value: UInt8) -> Float {
     let v = Float(value) / 255
     if v <= 0.04045 { return v / 12.92 }
     return pow((v + 0.055) / 1.055, 2.4)
 }
 
+/// The 83-character alphabet used by the BlurHash base-83 encoding scheme.
 private let base83Characters: [String] = {
     "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~"
         .map { String($0) }
 }()
 
 private extension Int {
+    /// Encodes this integer as a base-83 string of the given fixed length.
     func encode83(length: Int) -> String {
         var result = ""
         for i in 1...length {
@@ -138,6 +163,7 @@ private extension Int {
     }
 }
 
+/// Integer exponentiation (base^exponent) without floating-point conversion.
 private func intPow(_ base: Int, _ exponent: Int) -> Int {
     (0 ..< exponent).reduce(1) { val, _ in val * base }
 }

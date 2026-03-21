@@ -8,6 +8,12 @@ import UniformTypeIdentifiers
 
 private let logger = Logger(subsystem: "RelaySDK", category: "RoomDetail")
 
+/// Concrete implementation of ``RoomDetailViewModelProtocol`` backed by the Matrix Rust SDK.
+///
+/// ``RoomDetailViewModel`` manages a single room's message timeline. It subscribes to live
+/// timeline diffs from the SDK, converts them into ``TimelineMessage`` models, handles
+/// backward pagination, caches messages via ``MessageStore``, computes the unread marker
+/// position, and observes typing notifications.
 @Observable
 public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     public private(set) var messages: [TimelineMessage] = []
@@ -30,6 +36,12 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     private var saveCacheTask: Task<Void, Never>?
     private var fetchedReplyEventIds: Set<String> = []
 
+    /// Creates a new view model for the given room.
+    ///
+    /// - Parameters:
+    ///   - room: The Matrix Rust SDK `Room` object.
+    ///   - currentUserId: The Matrix user ID of the signed-in user, used for highlight detection.
+    ///   - unreadCount: The number of unread messages, used to position the "New" divider.
     public init(room: Room, currentUserId: String?, unreadCount: Int = 0) {
         self.room = room
         self.roomId = room.id()
@@ -481,6 +493,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
 
 // MARK: - Timeline Listener Bridge
 
+/// Bridges `TimelineListener` callbacks from the Matrix Rust SDK into an `AsyncStream` of diffs.
 nonisolated final class TimelineListenerProxy: TimelineListener, @unchecked Sendable {
     private let continuation: AsyncStream<[TimelineDiff]>.Continuation
 
@@ -493,6 +506,7 @@ nonisolated final class TimelineListenerProxy: TimelineListener, @unchecked Send
     }
 }
 
+/// Bridges `TypingNotificationsListener` callbacks from the Matrix Rust SDK into an `AsyncStream` of user IDs.
 nonisolated final class TypingNotificationsListenerProxy: TypingNotificationsListener, @unchecked Sendable {
     private let continuation: AsyncStream<[String]>.Continuation
 

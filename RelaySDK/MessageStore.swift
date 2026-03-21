@@ -7,6 +7,10 @@ private let logger = Logger(subsystem: "RelaySDK", category: "MessageStore")
 
 // MARK: - SwiftData Model
 
+/// A SwiftData model that persists a ``TimelineMessage`` for offline access and fast room loads.
+///
+/// ``CachedMessage`` stores the essential fields of a timeline event in a local database.
+/// Media attachments are not cached -- only text bodies, reactions, and reply metadata.
 @Model
 final class CachedMessage {
     @Attribute(.unique) var eventId: String
@@ -59,6 +63,7 @@ final class CachedMessage {
         self.replyBody = replyBody
     }
 
+    /// Converts this cached record back into a ``TimelineMessage`` for display in the UI.
     func toTimelineMessage() -> TimelineMessage {
         TimelineMessage(
             id: eventId,
@@ -75,6 +80,11 @@ final class CachedMessage {
         )
     }
 
+    /// Creates a ``CachedMessage`` from a ``TimelineMessage`` for persistence.
+    ///
+    /// - Parameters:
+    ///   - message: The timeline message to cache.
+    ///   - roomId: The Matrix room identifier this message belongs to.
     static func from(_ message: TimelineMessage, roomId: String) -> CachedMessage {
         CachedMessage(
             eventId: message.id,
@@ -116,6 +126,7 @@ final class CachedMessage {
         return try? JSONEncoder().encode(stored)
     }
 
+    /// Decodes JSON-encoded reaction data back into ``TimelineMessage/ReactionGroup`` values.
     static func decodeReactions(_ data: Data?) -> [TimelineMessage.ReactionGroup] {
         guard let data else { return [] }
         guard let stored = try? JSONDecoder().decode([StoredReaction].self, from: data) else { return [] }
@@ -173,8 +184,14 @@ nonisolated private func kindFromRaw(_ raw: String) -> TimelineMessage.Kind {
 
 // MARK: - Message Store
 
+/// A singleton store that caches timeline messages locally using SwiftData.
+///
+/// ``MessageStore`` provides fast offline access to recent messages so the UI can
+/// display cached content while the live timeline loads from the server. Messages
+/// are automatically pruned to prevent unbounded database growth.
 @MainActor
 final class MessageStore {
+    /// The shared singleton instance.
     static let shared = MessageStore()
 
     private let container: ModelContainer
@@ -189,6 +206,12 @@ final class MessageStore {
         }
     }
 
+    /// Loads cached messages for a room, sorted by timestamp.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - limit: The maximum number of messages to return. Defaults to 200.
+    /// - Returns: An array of cached ``TimelineMessage`` values.
     func loadMessages(roomId: String, limit: Int = 200) -> [TimelineMessage] {
         let descriptor = FetchDescriptor<CachedMessage>(
             predicate: #Predicate<CachedMessage> { $0.roomId == roomId },
@@ -205,6 +228,14 @@ final class MessageStore {
         }
     }
 
+    /// Saves a snapshot of messages for a room, replacing any stale cached entries.
+    ///
+    /// Messages not present in the new snapshot are deleted from the cache to keep
+    /// the stored data in sync with the live timeline.
+    ///
+    /// - Parameters:
+    ///   - messages: The current timeline messages to cache.
+    ///   - roomId: The Matrix room identifier.
     func save(_ messages: [TimelineMessage], roomId: String) {
         guard !messages.isEmpty else { return }
 
@@ -229,6 +260,11 @@ final class MessageStore {
         }
     }
 
+    /// Removes old cached messages for a room, keeping only the most recent entries.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - keepLast: The number of most recent messages to retain. Defaults to 500.
     func pruneOldMessages(roomId: String, keepLast: Int = 500) {
         var descriptor = FetchDescriptor<CachedMessage>(
             predicate: #Predicate<CachedMessage> { $0.roomId == roomId },

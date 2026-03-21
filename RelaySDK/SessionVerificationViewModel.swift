@@ -24,8 +24,13 @@ nonisolated(unsafe) private let logger = Logger(subsystem: "RelaySDK", category:
 /// dispatches state updates back to the `@MainActor`.
 @Observable
 public final class SessionVerificationViewModel: SessionVerificationViewModelProtocol {
+    /// The current phase of the verification flow.
     public fileprivate(set) var state: RelayCore.VerificationState = .idle
+
+    /// The SAS emoji to display for comparison during the `.showingEmojis` state.
     public fileprivate(set) var emojis: [RelayCore.VerificationEmoji] = []
+
+    /// A user-facing error message from the most recent failed operation, if any.
     public var errorMessage: String?
 
     fileprivate let controller: SessionVerificationController
@@ -43,6 +48,7 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
 
     // MARK: - Actions
 
+    /// Sends a verification request to another device and transitions to the waiting state.
     @MainActor
     public func requestVerification() async {
         state = .requesting
@@ -57,6 +63,7 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
         }
     }
 
+    /// Confirms that the displayed emoji match on both devices, completing verification.
     @MainActor
     public func approveVerification() async {
         do {
@@ -69,6 +76,7 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
         }
     }
 
+    /// Declines the verification because the emoji do not match.
     @MainActor
     public func declineVerification() async {
         do {
@@ -81,6 +89,7 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
         }
     }
 
+    /// Cancels the verification flow entirely.
     @MainActor
     public func cancelVerification() async {
         do {

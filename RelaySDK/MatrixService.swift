@@ -8,7 +8,9 @@ import Synchronization
 
 private let logger = Logger(subsystem: "RelaySDK", category: "MatrixService")
 
+/// Errors that can be thrown by ``MatrixService`` operations.
 public enum MatrixServiceError: LocalizedError {
+    /// The operation requires an authenticated session but the user is not logged in.
     case notLoggedIn
 
     public var errorDescription: String? {
@@ -18,6 +20,15 @@ public enum MatrixServiceError: LocalizedError {
     }
 }
 
+/// The concrete implementation of ``MatrixServiceProtocol`` backed by the Matrix Rust SDK.
+///
+/// ``MatrixService`` manages the full lifecycle of a Matrix client session: authentication
+/// (password and OAuth/OIDC), session persistence via ``KeychainService``, background sync
+/// via the SDK's `SyncService`, room list polling, media caching, notification settings,
+/// and device/session verification.
+///
+/// This class is `@Observable` and `@MainActor`-isolated so that SwiftUI views can bind
+/// directly to its published state.
 @Observable
 public final class MatrixService: MatrixServiceProtocol {
 
@@ -67,6 +78,8 @@ public final class MatrixService: MatrixServiceProtocol {
         return url
     }
 
+    /// Creates a new ``MatrixService``. Call ``restoreSession()`` after initialization to
+    /// attempt automatic sign-in from a previously saved keychain session.
     public init() {}
 
     private static func resetLocalSessionData() {
@@ -451,6 +464,10 @@ public final class MatrixService: MatrixServiceProtocol {
 
     // MARK: - Room Access
 
+    /// Looks up a joined room by its Matrix room identifier.
+    ///
+    /// - Parameter id: The Matrix room ID.
+    /// - Returns: The SDK `Room` object, or `nil` if not found.
     func room(id: String) -> Room? {
         client?.rooms().first { $0.id() == id }
     }
@@ -788,6 +805,7 @@ public final class MatrixService: MatrixServiceProtocol {
 
 // MARK: - Sync State Observer Bridge
 
+/// Bridges `SyncServiceStateObserver` callbacks from the Matrix Rust SDK to a Swift closure.
 nonisolated final class SyncStateObserverProxy: SyncServiceStateObserver, @unchecked Sendable {
     private let handler: @Sendable (SyncServiceState) -> Void
 
@@ -843,6 +861,7 @@ nonisolated private final class DirectorySearchCollector: Sendable {
 
 // MARK: - Directory Search Listener Bridge
 
+/// Bridges `RoomDirectorySearchEntriesListener` callbacks from the Matrix Rust SDK to a Swift closure.
 nonisolated final class DirectorySearchListenerProxy: RoomDirectorySearchEntriesListener, @unchecked Sendable {
     private let handler: @Sendable ([RoomDirectorySearchEntryUpdate]) -> Void
 
@@ -858,6 +877,7 @@ nonisolated final class DirectorySearchListenerProxy: RoomDirectorySearchEntries
 // MARK: - RoomDescription → DirectoryRoom
 
 extension DirectoryRoom {
+    /// Converts a Matrix Rust SDK `RoomDescription` into a ``DirectoryRoom`` model.
     nonisolated static func from(_ desc: RoomDescription) -> DirectoryRoom {
         DirectoryRoom(
             roomId: desc.roomId,
