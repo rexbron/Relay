@@ -2,10 +2,22 @@ import RelayCore
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// The message composition bar at the bottom of the room detail view.
+///
+/// ``ComposeView`` includes a text field for typing messages, an attachment button for
+/// sending files and images, and an inline reply banner when replying to a specific message.
+/// It uses a glass-effect background for a translucent macOS-native appearance.
 struct ComposeView: View {
+    /// The current draft message text, bound to the parent view's state.
     @Binding var text: String
+
+    /// The message being replied to, or `nil` for a new message. Shows an inline reply banner.
     @Binding var replyingTo: TimelineMessage?
+
+    /// Called when the user submits the message (presses Return).
     var onSend: () -> Void
+
+    /// Called when the user selects files to attach via the file picker.
     var onAttach: ([URL]) -> Void
 
     @FocusState private var isFocused: Bool

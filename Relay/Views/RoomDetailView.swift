@@ -4,12 +4,27 @@ import SwiftUI
 
 private let logger = Logger(subsystem: "Relay", category: "RoomDetail")
 
+/// The main chat view for a selected room, displaying the message timeline and compose bar.
+///
+/// ``RoomDetailView`` loads the room timeline, supports backward pagination, manages
+/// scroll anchoring, handles typing notifications, and provides context menus and
+/// emoji reaction popovers for individual messages.
 struct RoomDetailView: View {
     @Environment(\.matrixService) private var matrixService
+
+    /// The Matrix room identifier for the displayed room.
     let roomId: String
+
+    /// The display name of the room, shown in navigation context.
     let roomName: String
+
+    /// The `mxc://` URL of the room's avatar, if available.
     var roomAvatarURL: String?
+
+    /// The view model managing the room's timeline state and actions.
     @State var viewModel: any RoomDetailViewModelProtocol
+
+    /// Called when a user's profile should be shown (e.g. after double-tapping an avatar).
     var onUserTap: ((UserProfile) -> Void)?
 
     @State private var draftMessage = ""

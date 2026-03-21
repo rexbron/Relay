@@ -10,20 +10,39 @@ private struct MediaAutoRevealKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
+    /// Controls whether media attachments in messages are shown immediately or hidden behind a tap-to-reveal overlay.
     var mediaAutoReveal: Bool {
         get { self[MediaAutoRevealKey.self] }
         set { self[MediaAutoRevealKey.self] = newValue }
     }
 }
 
+/// Renders a single chat bubble for a timeline message, with support for text, images,
+/// emotes, special types (encrypted, redacted, etc.), reactions, and inline reply context.
 struct MessageView: View {
+    /// The timeline message to render.
     let message: TimelineMessage
+
+    /// Whether this message is the last in a consecutive group from the same sender.
+    /// Controls avatar visibility.
     var isLastInGroup: Bool = true
+
+    /// Whether to display the sender's name above the bubble (for the first message in a group).
     var showSenderName: Bool = false
+
+    /// Called when a reaction emoji is tapped to toggle it on the message.
     var onToggleReaction: ((String) -> Void)?
+
+    /// Called when the "add reaction" button is tapped to open the emoji picker.
     var onAddReaction: (() -> Void)?
+
+    /// Called when the inline reply preview is tapped, with the event ID to scroll to.
     var onTapReply: ((String) -> Void)?
+
+    /// Called when the user chooses to reply to this message.
     var onReply: (() -> Void)?
+
+    /// Called when the user double-taps the sender's avatar to open their profile.
     var onAvatarDoubleTap: (() -> Void)?
 
     @State private var isHovering = false

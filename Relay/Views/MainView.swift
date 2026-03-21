@@ -1,6 +1,11 @@
 import RelayCore
 import SwiftUI
 
+/// The primary navigation view shown after login, with a room list sidebar and detail area.
+///
+/// ``MainView`` uses a `NavigationSplitView` with the room list in the sidebar and the
+/// selected room's detail view (or compose view) in the detail area. An optional inspector
+/// panel on the trailing edge shows room info or a selected user's profile.
 struct MainView: View {
     @Environment(\.matrixService) private var matrixService
     @State private var selectedRoomId: String?

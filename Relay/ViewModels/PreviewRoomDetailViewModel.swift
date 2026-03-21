@@ -1,6 +1,10 @@
 import Foundation
 import RelayCore
 
+/// A mock implementation of ``RoomDetailViewModelProtocol`` for use in SwiftUI previews.
+///
+/// All actions are no-ops. The view model is initialized with configurable sample data
+/// to allow previewing different states (loaded, loading, empty, with typing indicators, etc.).
 @Observable
 final class PreviewRoomDetailViewModel: RoomDetailViewModelProtocol {
     var messages: [TimelineMessage]

@@ -1,10 +1,21 @@
 import RelayCore
 import SwiftUI
 
+/// A circular avatar that displays a user's or room's profile image, falling back to colored initials.
+///
+/// When an `mxcURL` is provided, the view asynchronously loads a thumbnail from the Matrix
+/// homeserver. If no URL is available or the download fails, a deterministic colored circle
+/// with the entity's initials is shown instead.
 struct AvatarView: View {
     @Environment(\.matrixService) private var matrixService
+
+    /// The display name used to generate initials and the fallback background color.
     let name: String
+
+    /// The `mxc://` URL for the avatar image, or `nil` to always show initials.
     let mxcURL: String?
+
+    /// The diameter of the avatar circle in points.
     let size: CGFloat
 
     @State private var image: NSImage?

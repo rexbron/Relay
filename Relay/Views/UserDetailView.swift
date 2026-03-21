@@ -1,13 +1,24 @@
 import RelayCore
 import SwiftUI
 
-/// Lightweight user identifier used as a navigation value.
+/// Lightweight user identifier used as a navigation value for the inspector panel.
+///
+/// ``UserProfile`` can be constructed from a ``RoomMemberDetails`` (tapping a member in
+/// room info) or from a ``TimelineMessage`` (double-tapping an avatar in the timeline).
 struct UserProfile: Hashable {
+    /// The Matrix user ID (e.g. `"@alice:matrix.org"`).
     let userId: String
+
+    /// The user's display name, if known.
     let displayName: String?
+
+    /// The `mxc://` URL of the user's avatar, if available.
     let avatarURL: String?
+
+    /// The user's role within the room context, if applicable.
     let role: RoomMemberDetails.Role?
 
+    /// Creates a ``UserProfile`` with explicit values.
     init(userId: String, displayName: String? = nil, avatarURL: String? = nil, role: RoomMemberDetails.Role? = nil) {
         self.userId = userId
         self.displayName = displayName
@@ -15,6 +26,7 @@ struct UserProfile: Hashable {
         self.role = role
     }
 
+    /// Creates a ``UserProfile`` from a room member's details.
     init(member: RoomMemberDetails) {
         self.userId = member.userId
         self.displayName = member.displayName
@@ -22,6 +34,7 @@ struct UserProfile: Hashable {
         self.role = member.role
     }
 
+    /// Creates a ``UserProfile`` from a timeline message's sender information.
     init(message: TimelineMessage) {
         self.userId = message.senderID
         self.displayName = message.senderDisplayName
@@ -30,7 +43,9 @@ struct UserProfile: Hashable {
     }
 }
 
+/// An inspector panel that displays a user's avatar, display name, Matrix ID, and room role.
 struct UserDetailView: View {
+    /// The user profile to display.
     let profile: UserProfile
 
     private var name: String {

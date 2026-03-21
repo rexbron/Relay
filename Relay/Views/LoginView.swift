@@ -2,12 +2,18 @@ import AppKit
 import RelayCore
 import SwiftUI
 
+/// The sign-in screen that supports both password and OAuth/OIDC authentication flows.
+///
+/// The user enters their full Matrix ID (e.g. `@user:homeserver.org`) and either signs in
+/// with a password or initiates an OAuth flow via the system browser. A link to discover
+/// public homeservers is provided for new users.
 struct LoginView: View {
     @Environment(\.matrixService) private var matrixService
     @State private var matrixID = MatrixID()
     @State private var password = ""
     @State private var errorMessage: String?
 
+    /// An error message to display immediately on load (e.g. from a failed session restore).
     var initialError: String?
 
     var body: some View {

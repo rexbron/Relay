@@ -3,6 +3,8 @@ import SwiftUI
 
 // MARK: - Settings View
 
+/// The settings window, organized into tabs for general profile, notifications, safety/privacy,
+/// session management, and encryption status.
 struct SettingsView: View {
     @Environment(\.matrixService) private var matrixService
 

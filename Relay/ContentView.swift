@@ -1,6 +1,7 @@
 import RelayCore
 import SwiftUI
 
+/// The root view that switches between login, loading, and main content based on ``AuthState``.
 struct ContentView: View {
     @Environment(\.matrixService) private var matrixService
 

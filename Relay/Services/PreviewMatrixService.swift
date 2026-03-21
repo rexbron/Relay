@@ -2,6 +2,10 @@ import AppKit
 import Foundation
 import RelayCore
 
+/// A mock implementation of ``MatrixServiceProtocol`` for use in SwiftUI previews.
+///
+/// Returns static sample data for rooms, members, devices, and directory search results.
+/// All mutating operations are no-ops (or operate only on the in-memory sample data).
 @Observable
 final class PreviewMatrixService: MatrixServiceProtocol {
     var authState: AuthState = .loggedIn(userId: "@preview:matrix.org")
@@ -107,6 +111,7 @@ final class PreviewMatrixService: MatrixServiceProtocol {
         return all.filter { ($0.name ?? "").localizedCaseInsensitiveContains(query) || ($0.alias ?? "").localizedCaseInsensitiveContains(query) }
     }
 
+    /// Sample room data used to populate the room list in previews.
     static let sampleRooms: [RoomSummary] = [
         RoomSummary(
             id: "!design:matrix.org",

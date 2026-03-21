@@ -1,6 +1,7 @@
 import RelayCore
 import SwiftUI
 
+/// The sidebar list of joined rooms with unread indicators, search filtering, and swipe-to-leave.
 struct RoomListView: View {
     @Environment(\.matrixService) private var matrixService
     @Binding var selectedRoomId: String?

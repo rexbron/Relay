@@ -1,7 +1,12 @@
 import AppKit
 import SwiftUI
 
+/// A compact popover for quickly selecting emoji reactions.
+///
+/// Displays a grid of common emoji and a button to open the system Character Palette
+/// for access to the full emoji catalog.
 struct EmojiPickerPopover: View {
+    /// Called with the selected emoji string when the user taps an emoji.
     let onSelect: (String) -> Void
 
     @State private var openCharacterPalette = false

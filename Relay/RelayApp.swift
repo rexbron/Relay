@@ -3,6 +3,11 @@ import RelaySDK
 import SwiftUI
 import UserNotifications
 
+/// The main entry point for the Relay macOS application.
+///
+/// ``RelayApp`` creates the ``MatrixService``, injects it into the SwiftUI environment,
+/// manages the dock badge for unread counts, and posts local notifications for new
+/// mentions and direct messages.
 @main
 struct RelayApp: App {
     @State private var matrixService = MatrixService()

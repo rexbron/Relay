@@ -1,9 +1,15 @@
 import RelayCore
 import SwiftUI
 
+/// An inspector panel that displays detailed information about a room -- avatar, name,
+/// topic, encryption status, member list, and room ID.
 struct RoomInfoView: View {
     @Environment(\.matrixService) private var matrixService
+
+    /// The Matrix room identifier to display information for.
     let roomId: String
+
+    /// Called when a member row is tapped to show their user profile.
     var onMemberTap: ((UserProfile) -> Void)?
 
     @State private var details: RoomDetails?

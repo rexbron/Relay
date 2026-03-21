@@ -1,6 +1,10 @@
 import Foundation
 import RelayCore
 
+/// A mock implementation of ``SessionVerificationViewModelProtocol`` for use in SwiftUI previews.
+///
+/// Simulates the verification flow with short delays, progressing through requesting,
+/// waiting, emoji comparison, and verified states.
 @Observable
 final class PreviewSessionVerificationViewModel: SessionVerificationViewModelProtocol {
     var state: VerificationState
@@ -34,6 +38,7 @@ final class PreviewSessionVerificationViewModel: SessionVerificationViewModelPro
         state = .cancelled
     }
 
+    /// Sample emoji data for previewing the emoji comparison step.
     static let sampleEmojis: [VerificationEmoji] = [
         .init(id: 0, symbol: "🐶", label: "Dog"),
         .init(id: 1, symbol: "🔑", label: "Key"),

@@ -1,6 +1,11 @@
 import RelayCore
 import SwiftUI
 
+/// A view for finding and joining existing rooms or creating new ones.
+///
+/// ``ComposeRoomView`` provides a search field that queries the public room directory
+/// with debounced input, displays matching results, and allows the user to join a room
+/// by alias/ID or create a new private room with the entered name.
 struct ComposeRoomView: View {
     @Environment(\.matrixService) private var matrixService
     @Binding var selectedRoomId: String?
