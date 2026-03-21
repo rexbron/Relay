@@ -72,7 +72,7 @@ struct ComposeView: View {
     // MARK: - Reply Banner
 
     private func replyBanner(_ message: TimelineMessage) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .center, spacing: 8) {
             RoundedRectangle(cornerRadius: 1.5)
                 .fill(Color.accentColor)
                 .frame(width: 3, height: 28)
@@ -94,8 +94,9 @@ struct ComposeView: View {
             Button {
                 withAnimation(.easeOut(duration: 0.15)) { replyingTo = nil }
             } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 14))
+                Image(systemName: "xmark")
+                    .font(.title3)
+                    .frame(width: 20, height: 20)
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
