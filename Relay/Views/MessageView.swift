@@ -1,3 +1,4 @@
+import AVFoundation
 import QuickLook
 import RelayCore
 import SwiftUI
@@ -72,6 +73,10 @@ struct MessageView: View {
 
                     if message.kind == .image, message.mediaInfo != nil {
                         imageContent
+                    } else if message.kind == .video, message.mediaInfo != nil {
+                        videoContent
+                    } else if message.kind == .audio, message.mediaInfo != nil {
+                        audioContent
                     } else if message.kind == .emote {
                         emoteContent
                     } else if message.isSpecialType {
@@ -152,6 +157,38 @@ struct MessageView: View {
                     .background(bubbleColor)
             }
             ImageMessageView(message: message)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+    }
+
+    // MARK: - Video Content
+
+    private var videoContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let reply = message.replyDetail {
+                inlineReply(reply, outgoing: message.isOutgoing)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+                    .background(bubbleColor)
+            }
+            VideoMessageView(message: message)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+    }
+
+    // MARK: - Audio Content
+
+    private var audioContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let reply = message.replyDetail {
+                inlineReply(reply, outgoing: message.isOutgoing)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+                    .background(bubbleColor)
+            }
+            AudioMessageView(message: message)
         }
         .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
     }
@@ -435,6 +472,401 @@ private struct ImageMessageView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         try? data.write(to: url)
+    }
+}
+
+// MARK: - Video Message View
+
+/// Renders a video attachment with a thumbnail preview, play button overlay,
+/// download button, and QuickLook support on double-click.
+private struct VideoMessageView: View {
+    @Environment(\.matrixService) private var matrixService
+    @Environment(\.mediaAutoReveal) private var autoReveal
+    let message: TimelineMessage
+
+    @State private var thumbnail: NSImage?
+    @State private var isLoading = true
+    @State private var isHovering = false
+    @State private var quickLookURL: URL?
+    @State private var isLoadingMedia = false
+    @State private var errorMessage: String?
+    @State private var isRevealed = false
+    @State private var cachedVideoFileURL: URL?
+
+    private var mediaInfo: TimelineMessage.MediaInfo {
+        message.mediaInfo!
+    }
+
+    private var displaySize: CGSize {
+        let maxWidth: CGFloat = 280
+        let maxHeight: CGFloat = 320
+        if let w = mediaInfo.width, let h = mediaInfo.height, w > 0, h > 0 {
+            let aspect = CGFloat(w) / CGFloat(h)
+            let width = min(CGFloat(w), maxWidth)
+            let height = width / aspect
+            if height > maxHeight {
+                return CGSize(width: maxHeight * aspect, height: maxHeight)
+            }
+            return CGSize(width: width, height: height)
+        }
+        return CGSize(width: maxWidth, height: 180)
+    }
+
+    private var shouldShow: Bool { autoReveal || isRevealed }
+
+    var body: some View {
+        ZStack {
+            if shouldShow {
+                if let thumbnail {
+                    Image(nsImage: thumbnail)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: displaySize.width, height: displaySize.height)
+                        .clipped()
+                } else {
+                    Rectangle()
+                        .fill(Color(.systemGray).opacity(0.15))
+                        .frame(width: displaySize.width, height: displaySize.height)
+                        .overlay {
+                            if isLoading {
+                                ProgressView()
+                            } else {
+                                Image(systemName: "play.rectangle")
+                                    .font(.title2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                }
+            } else {
+                Rectangle()
+                    .fill(Color(.systemGray).opacity(0.15))
+                    .frame(width: displaySize.width, height: displaySize.height)
+                    .overlay {
+                        VStack(spacing: 6) {
+                            Image(systemName: "eye.slash")
+                                .font(.title2)
+                                .foregroundStyle(.secondary)
+                            Text("Media Hidden")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .onTapGesture { isRevealed = true }
+            }
+        }
+        .overlay {
+            if shouldShow, !isLoadingMedia, thumbnail != nil {
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 44))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, .black.opacity(0.4))
+                    .shadow(radius: 4)
+                    .allowsHitTesting(false)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if shouldShow {
+                HStack(spacing: 4) {
+                    if let duration = mediaInfo.duration, duration > 0 {
+                        Text(formatDuration(duration))
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.black.opacity(0.5))
+                            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    }
+                    if isHovering {
+                        downloadButton
+                    }
+                }
+                .padding(8)
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            if shouldShow, let caption = mediaInfo.caption, !caption.isEmpty {
+                Text(caption)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .padding(8)
+            }
+        }
+        .onTapGesture(count: 2) {
+            if shouldShow {
+                Task { await openQuickLook() }
+            }
+        }
+        .overlay {
+            if isLoadingMedia {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .overlay { ProgressView() }
+            }
+        }
+        .quickLookPreview($quickLookURL)
+        .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+        .onHover { isHovering = $0 }
+        .animation(.easeInOut(duration: 0.15), value: isHovering)
+        .task(id: shouldShow ? mediaInfo.mxcURL : nil) {
+            guard shouldShow else { return }
+            isLoading = true
+
+            // Try server-side thumbnail first.
+            if let data = await matrixService.mediaThumbnail(
+                mxcURL: mediaInfo.mxcURL,
+                width: UInt64(displaySize.width * 2),
+                height: UInt64(displaySize.height * 2)
+            ) {
+                thumbnail = NSImage(data: data)
+            }
+
+            // Fall back to extracting a frame from the video locally.
+            if thumbnail == nil, let data = await matrixService.mediaContent(mxcURL: mediaInfo.mxcURL) {
+                let tempURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(mediaInfo.filename)
+                if let _ = try? data.write(to: tempURL) {
+                    cachedVideoFileURL = tempURL
+                    let asset = AVURLAsset(url: tempURL)
+                    let generator = AVAssetImageGenerator(asset: asset)
+                    generator.appliesPreferredTrackTransform = true
+                    generator.maximumSize = CGSize(
+                        width: displaySize.width * 2,
+                        height: displaySize.height * 2
+                    )
+                    if let cgImage = try? await generator.image(at: .zero).image {
+                        thumbnail = NSImage(cgImage: cgImage, size: .zero)
+                    }
+                }
+            }
+
+            isLoading = false
+        }
+    }
+
+    private var downloadButton: some View {
+        Button {
+            Task { await saveMedia() }
+        } label: {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.title2)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, .black.opacity(0.5))
+                .shadow(radius: 2)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func openQuickLook() async {
+        guard !isLoadingMedia else { return }
+        isLoadingMedia = true
+        defer { isLoadingMedia = false }
+
+        let url: URL
+        if let cached = cachedVideoFileURL, FileManager.default.fileExists(atPath: cached.path) {
+            url = cached
+        } else {
+            guard let data = await matrixService.mediaContent(mxcURL: mediaInfo.mxcURL) else { return }
+            url = FileManager.default.temporaryDirectory.appendingPathComponent(mediaInfo.filename)
+            do {
+                try data.write(to: url)
+                cachedVideoFileURL = url
+            } catch {
+                errorMessage = "Could not preview video: \(error.localizedDescription)"
+                return
+            }
+        }
+        quickLookURL = url
+    }
+
+    private func saveMedia() async {
+        let data: Data
+        if let cached = cachedVideoFileURL, let d = try? Data(contentsOf: cached) {
+            data = d
+        } else if let d = await matrixService.mediaContent(mxcURL: mediaInfo.mxcURL) {
+            data = d
+        } else {
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = mediaInfo.filename
+        panel.allowedContentTypes = [.movie, .video, .mpeg4Movie, .quickTimeMovie]
+        panel.canCreateDirectories = true
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        try? data.write(to: url)
+    }
+
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        let totalSeconds = Int(seconds)
+        let mins = totalSeconds / 60
+        let secs = totalSeconds % 60
+        if mins >= 60 {
+            let hours = mins / 60
+            let remainingMins = mins % 60
+            return String(format: "%d:%02d:%02d", hours, remainingMins, secs)
+        }
+        return String(format: "%d:%02d", mins, secs)
+    }
+}
+
+// MARK: - Audio Message View
+
+/// Renders an audio attachment as a compact bubble with waveform icon, filename,
+/// duration, download button, and QuickLook support on double-click.
+private struct AudioMessageView: View {
+    @Environment(\.matrixService) private var matrixService
+    let message: TimelineMessage
+
+    @State private var quickLookURL: URL?
+    @State private var isLoadingMedia = false
+    @State private var isHovering = false
+    @State private var errorMessage: String?
+
+    private var mediaInfo: TimelineMessage.MediaInfo {
+        message.mediaInfo!
+    }
+
+    private var bubbleColor: Color {
+        message.isOutgoing ? .accentColor : Color(.systemGray).opacity(0.2)
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(message.isOutgoing ? Color.white.opacity(0.2) : Color.accentColor.opacity(0.15))
+                    .frame(width: 40, height: 40)
+                Image(systemName: "waveform")
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .foregroundStyle(message.isOutgoing ? .white : .accentColor)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(mediaInfo.filename)
+                    .font(.callout)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                HStack(spacing: 6) {
+                    if let duration = mediaInfo.duration, duration > 0 {
+                        Text(formatDuration(duration))
+                            .font(.caption)
+                    }
+                    if let size = mediaInfo.size, size > 0 {
+                        if mediaInfo.duration != nil && mediaInfo.duration! > 0 {
+                            Text("·")
+                                .font(.caption)
+                        }
+                        Text(formatFileSize(size))
+                            .font(.caption)
+                    }
+                }
+                .foregroundStyle(message.isOutgoing ? .white.opacity(0.7) : .secondary)
+            }
+
+            Spacer(minLength: 0)
+
+            if isHovering {
+                downloadButton
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(minWidth: 200, maxWidth: 300)
+        .background(bubbleColor)
+        .foregroundStyle(message.isOutgoing ? .white : .primary)
+        .onTapGesture(count: 2) {
+            Task { await openQuickLook() }
+        }
+        .overlay {
+            if isLoadingMedia {
+                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay { ProgressView() }
+            }
+        }
+        .quickLookPreview($quickLookURL)
+        .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+        .onHover { isHovering = $0 }
+        .animation(.easeInOut(duration: 0.15), value: isHovering)
+    }
+
+    private var downloadButton: some View {
+        Button {
+            Task { await saveMedia() }
+        } label: {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.title2)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(
+                    message.isOutgoing ? .white : .primary,
+                    message.isOutgoing ? .white.opacity(0.25) : Color(.systemGray).opacity(0.2)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func openQuickLook() async {
+        guard !isLoadingMedia else { return }
+        isLoadingMedia = true
+        defer { isLoadingMedia = false }
+
+        guard let data = await matrixService.mediaContent(mxcURL: mediaInfo.mxcURL) else { return }
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(mediaInfo.filename)
+        do {
+            try data.write(to: url)
+            quickLookURL = url
+        } catch {
+            errorMessage = "Could not preview audio: \(error.localizedDescription)"
+        }
+    }
+
+    private func saveMedia() async {
+        guard let data = await matrixService.mediaContent(mxcURL: mediaInfo.mxcURL) else { return }
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = mediaInfo.filename
+        panel.allowedContentTypes = [.audio, .mp3, .mpeg4Audio, .wav, .aiff]
+        panel.canCreateDirectories = true
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        try? data.write(to: url)
+    }
+
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        let totalSeconds = Int(seconds)
+        let mins = totalSeconds / 60
+        let secs = totalSeconds % 60
+        if mins >= 60 {
+            let hours = mins / 60
+            let remainingMins = mins % 60
+            return String(format: "%d:%02d:%02d", hours, remainingMins, secs)
+        }
+        return String(format: "%d:%02d", mins, secs)
+    }
+
+    private func formatFileSize(_ bytes: UInt64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(bytes))
     }
 }
 
@@ -940,9 +1372,43 @@ private struct FlowLayout: Layout {
         MessageView(
             message: TimelineMessage(
                 id: "v1", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
-                body: "Video", timestamp: .now, isOutgoing: false, kind: .video
+                body: "vacation.mp4", timestamp: .now, isOutgoing: false, kind: .video,
+                mediaInfo: .init(
+                    mxcURL: "mxc://matrix.org/video1",
+                    filename: "vacation.mp4",
+                    mimetype: "video/mp4",
+                    width: 1920, height: 1080,
+                    duration: 127
+                )
             ),
             showSenderName: true
+        )
+        MessageView(
+            message: TimelineMessage(
+                id: "a1", senderID: "@bob:matrix.org", senderDisplayName: "Bob",
+                body: "voice-note.ogg", timestamp: .now, isOutgoing: false, kind: .audio,
+                mediaInfo: .init(
+                    mxcURL: "mxc://matrix.org/audio1",
+                    filename: "voice-note.ogg",
+                    mimetype: "audio/ogg",
+                    size: 245_000,
+                    duration: 42
+                )
+            ),
+            showSenderName: true
+        )
+        MessageView(
+            message: TimelineMessage(
+                id: "a2", senderID: "@me:matrix.org",
+                body: "podcast-clip.mp3", timestamp: .now, isOutgoing: true, kind: .audio,
+                mediaInfo: .init(
+                    mxcURL: "mxc://matrix.org/audio2",
+                    filename: "podcast-clip.mp3",
+                    mimetype: "audio/mpeg",
+                    size: 3_200_000,
+                    duration: 185
+                )
+            )
         )
         MessageView(
             message: TimelineMessage(

@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -131,24 +132,6 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
         let utType = UTType(filenameExtension: url.pathExtension) ?? .data
         let mime = utType.preferredMIMEType
 
-        let data: Data
-        do {
-            data = try Data(contentsOf: url)
-        } catch {
-            logger.error("Failed to read attachment \(filename): \(error)")
-            errorMessage = "Could not read \(filename): \(error.localizedDescription)"
-            return
-        }
-
-        let params = UploadParameters(
-            source: .data(bytes: data, filename: filename),
-            caption: nil,
-            formattedCaption: nil,
-            mentions: nil,
-            inReplyTo: nil
-        )
-        let fileSize = UInt64(data.count)
-
         do {
             let handle: SendAttachmentJoinHandle
 
@@ -156,10 +139,26 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
                let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
             {
+                let data: Data
+                do {
+                    data = try Data(contentsOf: url)
+                } catch {
+                    logger.error("Failed to read attachment \(filename): \(error)")
+                    errorMessage = "Could not read \(filename): \(error.localizedDescription)"
+                    return
+                }
+                let fileSize = UInt64(data.count)
                 let width = UInt64(cgImage.width)
                 let height = UInt64(cgImage.height)
                 let hash = blurHash(from: cgImage) ?? "000000"
 
+                let params = UploadParameters(
+                    source: .data(bytes: data, filename: filename),
+                    caption: nil,
+                    formattedCaption: nil,
+                    mentions: nil,
+                    inReplyTo: nil
+                )
                 handle = try timeline.sendImage(
                     params: params,
                     thumbnailSource: nil,
@@ -169,15 +168,85 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                     )
                 )
             } else if utType.conforms(to: .movie) || utType.conforms(to: .video) {
+                let fileSize = UInt64((try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64) ?? 0)
+
+                let asset = AVURLAsset(url: url)
+                let videoWidth: UInt64
+                let videoHeight: UInt64
+                if let track = try? await asset.loadTracks(withMediaType: .video).first {
+                    let size = try? await track.load(.naturalSize)
+                    videoWidth = UInt64(size?.width ?? 0)
+                    videoHeight = UInt64(size?.height ?? 0)
+                } else {
+                    videoWidth = 0
+                    videoHeight = 0
+                }
+                let cmDuration = try? await asset.load(.duration)
+                let duration = cmDuration.map { CMTimeGetSeconds($0) } ?? 0
+
+                let generator = AVAssetImageGenerator(asset: asset)
+                generator.appliesPreferredTrackTransform = true
+                generator.maximumSize = CGSize(width: 32, height: 32)
+                let hash: String
+                if let cgImage = try? await generator.image(at: .zero).image {
+                    hash = blurHash(from: cgImage) ?? "000000"
+                } else {
+                    hash = "000000"
+                }
+
+                let params = UploadParameters(
+                    source: .file(filename: url.path),
+                    caption: nil,
+                    formattedCaption: nil,
+                    mentions: nil,
+                    inReplyTo: nil
+                )
                 handle = try timeline.sendVideo(
                     params: params,
                     thumbnailSource: nil,
                     videoInfo: VideoInfo(
-                        duration: nil, height: nil, width: nil, mimetype: mime, size: fileSize,
-                        thumbnailInfo: nil, thumbnailSource: nil, blurhash: nil
+                        duration: duration, height: videoHeight, width: videoWidth,
+                        mimetype: mime, size: fileSize,
+                        thumbnailInfo: nil, thumbnailSource: nil, blurhash: hash
+                    )
+                )
+            } else if utType.conforms(to: .audio) {
+                let fileSize = UInt64((try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64) ?? 0)
+
+                let asset = AVURLAsset(url: url)
+                let cmDuration = try? await asset.load(.duration)
+                let duration = cmDuration.map { CMTimeGetSeconds($0) } ?? 0
+
+                let params = UploadParameters(
+                    source: .file(filename: url.path),
+                    caption: nil,
+                    formattedCaption: nil,
+                    mentions: nil,
+                    inReplyTo: nil
+                )
+                handle = try timeline.sendAudio(
+                    params: params,
+                    audioInfo: AudioInfo(
+                        duration: duration, size: fileSize, mimetype: mime
                     )
                 )
             } else {
+                let data: Data
+                do {
+                    data = try Data(contentsOf: url)
+                } catch {
+                    logger.error("Failed to read attachment \(filename): \(error)")
+                    errorMessage = "Could not read \(filename): \(error.localizedDescription)"
+                    return
+                }
+                let fileSize = UInt64(data.count)
+                let params = UploadParameters(
+                    source: .data(bytes: data, filename: filename),
+                    caption: nil,
+                    formattedCaption: nil,
+                    mentions: nil,
+                    inReplyTo: nil
+                )
                 handle = try timeline.sendFile(
                     params: params,
                     fileInfo: FileInfo(
@@ -340,15 +409,40 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                             size: imageContent.info?.size,
                             caption: imageContent.caption
                         )
-                    case .video:
-                        msgBody = "Video"
+                    case .video(let videoContent):
+                        msgBody = videoContent.caption ?? videoContent.filename
                         msgKind = .video
-                    case .audio:
-                        msgBody = "Audio"
+                        msgMediaInfo = .init(
+                            mxcURL: videoContent.source.url(),
+                            filename: videoContent.filename,
+                            mimetype: videoContent.info?.mimetype,
+                            width: videoContent.info?.width,
+                            height: videoContent.info?.height,
+                            size: videoContent.info?.size,
+                            caption: videoContent.caption,
+                            duration: videoContent.info?.duration
+                        )
+                    case .audio(let audioContent):
+                        msgBody = audioContent.caption ?? audioContent.filename
                         msgKind = .audio
-                    case .file:
-                        msgBody = "File"
+                        msgMediaInfo = .init(
+                            mxcURL: audioContent.source.url(),
+                            filename: audioContent.filename,
+                            mimetype: audioContent.info?.mimetype,
+                            size: audioContent.info?.size,
+                            caption: audioContent.caption,
+                            duration: audioContent.info?.duration
+                        )
+                    case .file(let fileContent):
+                        msgBody = fileContent.caption ?? fileContent.filename
                         msgKind = .file
+                        msgMediaInfo = .init(
+                            mxcURL: fileContent.source.url(),
+                            filename: fileContent.filename,
+                            mimetype: fileContent.info?.mimetype,
+                            size: fileContent.info?.size,
+                            caption: fileContent.caption
+                        )
                     case .location:
                         msgBody = "Location"
                         msgKind = .location

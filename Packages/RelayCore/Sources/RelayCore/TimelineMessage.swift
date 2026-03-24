@@ -125,6 +125,9 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         /// An optional text caption attached to the media.
         public var caption: String?
 
+        /// The duration of the media in seconds, if applicable (audio/video).
+        public var duration: TimeInterval?
+
         /// Creates a new ``MediaInfo`` value.
         ///
         /// - Parameters:
@@ -135,6 +138,7 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         ///   - height: The height in pixels.
         ///   - size: The file size in bytes.
         ///   - caption: An optional text caption.
+        ///   - duration: The duration in seconds (audio/video).
         public init(
             mxcURL: String,
             filename: String,
@@ -142,7 +146,8 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
             width: UInt64? = nil,
             height: UInt64? = nil,
             size: UInt64? = nil,
-            caption: String? = nil
+            caption: String? = nil,
+            duration: TimeInterval? = nil
         ) {
             self.mxcURL = mxcURL
             self.filename = filename
@@ -151,6 +156,7 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
             self.height = height
             self.size = size
             self.caption = caption
+            self.duration = duration
         }
     }
 

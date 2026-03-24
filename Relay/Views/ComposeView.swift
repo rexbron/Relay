@@ -57,7 +57,7 @@ struct ComposeView: View {
         }
         .fileImporter(
             isPresented: $isShowingFilePicker,
-            allowedContentTypes: [.image, .movie, .item],
+            allowedContentTypes: [.image, .movie, .audio, .item],
             allowsMultipleSelection: true
         ) { result in
             if case .success(let urls) = result, !urls.isEmpty {
