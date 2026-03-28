@@ -199,7 +199,25 @@ final class MessageStore {
 
     private init() {
         do {
-            container = try ModelContainer(for: CachedMessage.self)
+            let storeURL = FileManager.default
+                .urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                .appendingPathComponent("Relay", isDirectory: true)
+#if DEBUG
+                .appendingPathComponent("RelayDebug.Store")
+#else
+                .appendingPathComponent("Relay.store")
+#endif
+            try? FileManager.default.createDirectory(
+                at: storeURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let config = ModelConfiguration("Relay", url: storeURL)
+            let schema = Schema(versionedSchema: RelaySchemaV1.self)
+            container = try ModelContainer(
+                for: schema,
+                migrationPlan: RelayMigrationPlan.self,
+                configurations: [config]
+            )
         } catch {
             logger.error("Failed to create MessageStore container: \(error)")
             fatalError("Failed to create MessageStore: \(error)")
