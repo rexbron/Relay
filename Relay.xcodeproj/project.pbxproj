@@ -7,12 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-	3B4AFF062F640001001F0EA1 /* RelayCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3B4AFF0A2F640005001F0EA1 /* RelayCore */; };
-	3B4AFF1A2F65000B001F0EA1 /* MatrixRustSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 3B4AFF1C2F65000D001F0EA1 /* MatrixRustSDK */; };
-	3B4AFF1B2F65000C001F0EA1 /* RelayCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3B4AFF1D2F65000E001F0EA1 /* RelayCore */; };
-	3B4AFF1E2F65000F001F0EA1 /* RelaySDK.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B4AFF102F650001001F0EA1 /* RelaySDK.framework */; };
-	3B4AFF222F650013001F0EA1 /* RelaySDK.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3B4AFF102F650001001F0EA1 /* RelaySDK.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-	3B5AA0012F700001001F0EA1 /* AsyncAlgorithms in Frameworks */ = {isa = PBXBuildFile; productRef = 3B5AA0022F700002001F0EA1 /* AsyncAlgorithms */; };
+		3B4AFF062F640001001F0EA1 /* RelayCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3B4AFF0A2F640005001F0EA1 /* RelayCore */; };
+		3B4AFF1A2F65000B001F0EA1 /* MatrixRustSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 3B4AFF1C2F65000D001F0EA1 /* MatrixRustSDK */; };
+		3B4AFF1B2F65000C001F0EA1 /* RelayCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3B4AFF1D2F65000E001F0EA1 /* RelayCore */; };
+		3B4AFF1E2F65000F001F0EA1 /* RelaySDK.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B4AFF102F650001001F0EA1 /* RelaySDK.framework */; };
+		3B4AFF222F650013001F0EA1 /* RelaySDK.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3B4AFF102F650001001F0EA1 /* RelaySDK.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		3B5AA0012F700001001F0EA1 /* AsyncAlgorithms in Frameworks */ = {isa = PBXBuildFile; productRef = 3B5AA0022F700002001F0EA1 /* AsyncAlgorithms */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -121,16 +121,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-	3B4AFF142F650005001F0EA1 /* Frameworks */ = {
-		isa = PBXFrameworksBuildPhase;
-		buildActionMask = 2147483647;
-		files = (
-			3B4AFF1A2F65000B001F0EA1 /* MatrixRustSDK in Frameworks */,
-			3B4AFF1B2F65000C001F0EA1 /* RelayCore in Frameworks */,
-			3B5AA0012F700001001F0EA1 /* AsyncAlgorithms in Frameworks */,
-		);
-		runOnlyForDeploymentPostprocessing = 0;
-	};
+		3B4AFF142F650005001F0EA1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3B4AFF1A2F65000B001F0EA1 /* MatrixRustSDK in Frameworks */,
+				3B4AFF1B2F65000C001F0EA1 /* RelayCore in Frameworks */,
+				3B5AA0012F700001001F0EA1 /* AsyncAlgorithms in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -257,12 +257,12 @@
 			fileSystemSynchronizedGroups = (
 				3B4AFF112F650002001F0EA1 /* RelaySDK */,
 			);
-		name = RelaySDK;
-		packageProductDependencies = (
-			3B4AFF1C2F65000D001F0EA1 /* MatrixRustSDK */,
-			3B4AFF1D2F65000E001F0EA1 /* RelayCore */,
-			3B5AA0022F700002001F0EA1 /* AsyncAlgorithms */,
-		);
+			name = RelaySDK;
+			packageProductDependencies = (
+				3B4AFF1C2F65000D001F0EA1 /* MatrixRustSDK */,
+				3B4AFF1D2F65000E001F0EA1 /* RelayCore */,
+				3B5AA0022F700002001F0EA1 /* AsyncAlgorithms */,
+			);
 			productName = RelaySDK;
 			productReference = 3B4AFF102F650001001F0EA1 /* RelaySDK.framework */;
 			productType = "com.apple.product-type.framework";
@@ -302,11 +302,11 @@
 			);
 			mainGroup = 3B4AFD802F638A35001F0EA1;
 			minimizedProjectReferenceProxies = 1;
-		packageReferences = (
-			3B4AFF082F640003001F0EA1 /* XCLocalSwiftPackageReference "Packages/RelayCore" */,
-			3B4AFF232F650014001F0EA1 /* XCRemoteSwiftPackageReference "matrix-rust-components-swift" */,
-			3B5AA0032F700003001F0EA1 /* XCRemoteSwiftPackageReference "swift-async-algorithms" */,
-		);
+			packageReferences = (
+				3B4AFF082F640003001F0EA1 /* XCLocalSwiftPackageReference "Packages/RelayCore" */,
+				3B4AFF232F650014001F0EA1 /* XCRemoteSwiftPackageReference "matrix-rust-components-swift" */,
+				3B5AA0032F700003001F0EA1 /* XCRemoteSwiftPackageReference "swift-async-algorithms" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3B4AFD8A2F638A35001F0EA1 /* Products */;
 			projectDirPath = "";
@@ -813,22 +813,22 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-	3B4AFF232F650014001F0EA1 /* XCRemoteSwiftPackageReference "matrix-rust-components-swift" */ = {
-		isa = XCRemoteSwiftPackageReference;
-		repositoryURL = "https://github.com/matrix-org/matrix-rust-components-swift";
-		requirement = {
-			kind = exactVersion;
-			version = 26.1.4;
+		3B4AFF232F650014001F0EA1 /* XCRemoteSwiftPackageReference "matrix-rust-components-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/matrix-org/matrix-rust-components-swift";
+			requirement = {
+				kind = exactVersion;
+				version = 26.1.4;
+			};
 		};
-	};
-	3B5AA0032F700003001F0EA1 /* XCRemoteSwiftPackageReference "swift-async-algorithms" */ = {
-		isa = XCRemoteSwiftPackageReference;
-		repositoryURL = "https://github.com/apple/swift-async-algorithms";
-		requirement = {
-			kind = upToNextMajorVersion;
-			minimumVersion = 1.0.0;
+		3B5AA0032F700003001F0EA1 /* XCRemoteSwiftPackageReference "swift-async-algorithms" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-async-algorithms";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
 		};
-	};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -841,15 +841,15 @@
 			package = 3B4AFF232F650014001F0EA1 /* XCRemoteSwiftPackageReference "matrix-rust-components-swift" */;
 			productName = MatrixRustSDK;
 		};
-	3B4AFF1D2F65000E001F0EA1 /* RelayCore */ = {
-		isa = XCSwiftPackageProductDependency;
-		productName = RelayCore;
-	};
-	3B5AA0022F700002001F0EA1 /* AsyncAlgorithms */ = {
-		isa = XCSwiftPackageProductDependency;
-		package = 3B5AA0032F700003001F0EA1 /* XCRemoteSwiftPackageReference "swift-async-algorithms" */;
-		productName = AsyncAlgorithms;
-	};
+		3B4AFF1D2F65000E001F0EA1 /* RelayCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RelayCore;
+		};
+		3B5AA0022F700002001F0EA1 /* AsyncAlgorithms */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3B5AA0032F700003001F0EA1 /* XCRemoteSwiftPackageReference "swift-async-algorithms" */;
+			productName = AsyncAlgorithms;
+		};
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 3B4AFD812F638A35001F0EA1 /* Project object */;
