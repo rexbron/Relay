@@ -32,7 +32,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     private var timeline: Timeline?
     private var observationTask: Task<Void, Never>?
     private var typingTask: Task<Void, Never>?
-    private var timelineItems: [TimelineItem] = []
+    private let diffProcessor = TimelineDiffProcessor()
     private var hasComputedUnreadMarker = false
     private var saveCacheTask: Task<Void, Never>?
     private var fetchedReplyEventIds: Set<String> = []
@@ -300,7 +300,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
             let handle = await tl.addListener(listener: listener)
 
             for await diffs in stream {
-                self.applyDiffs(diffs)
+                self.diffProcessor.applyDiffs(diffs)
                 self.rebuildMessages()
             }
 
@@ -335,49 +335,11 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
         }
     }
 
-    private func applyDiffs(_ diffs: [TimelineDiff]) {
-        for diff in diffs {
-            switch diff {
-            case .reset(let values):
-                timelineItems = values
-            case .append(let values):
-                timelineItems.append(contentsOf: values)
-            case .pushBack(let value):
-                timelineItems.append(value)
-            case .pushFront(let value):
-                timelineItems.insert(value, at: 0)
-            case .insert(let index, let value):
-                let i = Int(index)
-                if i <= timelineItems.count {
-                    timelineItems.insert(value, at: i)
-                }
-            case .set(let index, let value):
-                let i = Int(index)
-                if i < timelineItems.count {
-                    timelineItems[i] = value
-                }
-            case .remove(let index):
-                let i = Int(index)
-                if i < timelineItems.count {
-                    timelineItems.remove(at: i)
-                }
-            case .clear:
-                timelineItems.removeAll()
-            case .popBack:
-                if !timelineItems.isEmpty { timelineItems.removeLast() }
-            case .popFront:
-                if !timelineItems.isEmpty { timelineItems.removeFirst() }
-            case .truncate(let length):
-                timelineItems = Array(timelineItems.prefix(Int(length)))
-            }
-        }
-    }
-
     private func rebuildMessages() {
         var result: [TimelineMessage] = []
         var pendingReplyFetchIds: Set<String> = []
 
-        for item in timelineItems {
+        for item in diffProcessor.timelineItems {
             guard let event = item.asEvent() else { continue }
 
             let msgBody: String
