@@ -32,6 +32,9 @@ final class RoomListManager {
     /// Internal room entries that wrap SDK `Room` objects and manage `subscribeToRoomInfoUpdates`.
     private var roomEntries: [RoomEntry] = []
 
+    /// Debounce task for re-sorting after room info updates.
+    private var resortTask: Task<Void, Never>?
+
     /// Starts the reactive room list using the sync service's `RoomListService`.
     ///
     /// This method subscribes to room list entry diffs and applies them incrementally.
@@ -96,18 +99,33 @@ final class RoomListManager {
 
     // MARK: - Private
 
+    /// Called by individual `RoomEntry` instances when their room info updates.
+    /// Debounces re-sorting to avoid excessive work when many rooms update at once.
+    fileprivate func scheduleResort() {
+        resortTask?.cancel()
+        resortTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard let self, !Task.isCancelled else { return }
+            self.rebuildRoomSummaries()
+        }
+    }
+
+    private func makeEntry(room: Room) -> RoomEntry {
+        RoomEntry(room: room, onInfoUpdated: { [weak self] in self?.scheduleResort() })
+    }
+
     private func applyEntryUpdates(_ updates: [RoomListEntriesUpdate]) {
         for update in updates {
             switch update {
             case .append(let values):
-                let entries = values.map { RoomEntry(room: $0) }
+                let entries = values.map { makeEntry(room: $0) }
                 roomEntries.append(contentsOf: entries)
             case .clear:
                 roomEntries.removeAll()
             case .pushFront(let value):
-                roomEntries.insert(RoomEntry(room: value), at: 0)
+                roomEntries.insert(makeEntry(room: value), at: 0)
             case .pushBack(let value):
-                roomEntries.append(RoomEntry(room: value))
+                roomEntries.append(makeEntry(room: value))
             case .popFront:
                 if !roomEntries.isEmpty { roomEntries.removeFirst() }
             case .popBack:
@@ -115,7 +133,7 @@ final class RoomListManager {
             case .insert(let index, let value):
                 let i = Int(index)
                 if i <= roomEntries.count {
-                    roomEntries.insert(RoomEntry(room: value), at: i)
+                    roomEntries.insert(makeEntry(room: value), at: i)
                 }
             case .set(let index, let value):
                 let i = Int(index)
@@ -124,7 +142,7 @@ final class RoomListManager {
                     if existing.id == value.id() {
                         existing.updateRoom(value)
                     } else {
-                        roomEntries[i] = RoomEntry(room: value)
+                        roomEntries[i] = makeEntry(room: value)
                     }
                 }
             case .remove(let index):
@@ -144,7 +162,7 @@ final class RoomListManager {
                         existing.updateRoom(room)
                         return existing
                     }
-                    return RoomEntry(room: room)
+                    return makeEntry(room: room)
                 }
             }
         }
@@ -184,10 +202,12 @@ private final class RoomEntry: Identifiable {
 
     @ObservationIgnored private var roomInfoHandle: TaskHandle?
     @ObservationIgnored private var listenerTask: Task<Void, Never>?
+    @ObservationIgnored private var onInfoUpdated: (() -> Void)?
 
-    init(room: Room) {
+    init(room: Room, onInfoUpdated: (() -> Void)? = nil) {
         self.id = room.id()
         self.room = room
+        self.onInfoUpdated = onInfoUpdated
         self.summary = RoomSummary(
             id: room.id(),
             name: room.displayName() ?? room.id()
@@ -241,12 +261,13 @@ private final class RoomEntry: Identifiable {
         summary.unreadMentions = UInt(info.numUnreadMentions)
         summary.isDirect = info.isDirect
 
-        // Extract latest message preview
+        // Extract latest message preview and notify the manager to re-sort
         Task { [weak self] in
             guard let self else { return }
             let (msg, ts) = await self.latestMessagePreview()
             self.summary.lastMessage = msg
             self.summary.lastMessageTimestamp = ts
+            self.onInfoUpdated?()
         }
     }
 
