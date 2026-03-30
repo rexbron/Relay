@@ -1,3 +1,4 @@
+import AsyncAlgorithms
 import AVFoundation
 import CoreGraphics
 import Foundation
@@ -12,9 +13,12 @@ private let logger = Logger(subsystem: "RelaySDK", category: "RoomDetail")
 /// Concrete implementation of ``RoomDetailViewModelProtocol`` backed by the Matrix Rust SDK.
 ///
 /// ``RoomDetailViewModel`` manages a single room's message timeline. It subscribes to live
-/// timeline diffs from the SDK, converts them into ``TimelineMessage`` models, handles
-/// backward pagination, caches messages via ``MessageStore``, computes the unread marker
-/// position, and observes typing notifications.
+/// timeline diffs from the SDK using ``AsyncSDKListener``, converts them into ``TimelineMessage``
+/// models, handles backward pagination via ``subscribeToBackPaginationStatus``, computes the
+/// unread marker position, and observes typing notifications.
+///
+/// Timeline diffs are throttled at 500ms to prevent rapid structural view updates from
+/// destabilizing SwiftUI's `LazyVStack` layout.
 @Observable
 public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     public private(set) var messages: [TimelineMessage] = []
@@ -30,13 +34,17 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     private let currentUserId: String?
     private let unreadCount: Int
     private var timeline: Timeline?
+    private var timelineItems: [TimelineItem] = []
     private var observationTask: Task<Void, Never>?
+    private var paginationTask: Task<Void, Never>?
     private var typingTask: Task<Void, Never>?
-    private let diffProcessor = TimelineDiffProcessor()
     private let messageMapper: TimelineMessageMapper
     private var hasComputedUnreadMarker = false
-    private var saveCacheTask: Task<Void, Never>?
     private var fetchedReplyEventIds: Set<String> = []
+
+    @ObservationIgnored private var timelineHandle: TaskHandle?
+    @ObservationIgnored private var paginationHandle: TaskHandle?
+    @ObservationIgnored private var typingHandle: TaskHandle?
 
     /// Creates a new view model for the given room.
     ///
@@ -53,9 +61,10 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     }
 
     deinit {
-        let tasks = MainActor.assumeIsolated { (observationTask, typingTask) }
+        let tasks = MainActor.assumeIsolated { (observationTask, paginationTask, typingTask) }
         tasks.0?.cancel()
         tasks.1?.cancel()
+        tasks.2?.cancel()
     }
 
     // MARK: - Public
@@ -63,19 +72,30 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     public func loadTimeline() async {
         guard timeline == nil else { return }
 
-        let cached = MessageStore.shared.loadMessages(roomId: roomId)
-        if !cached.isEmpty && messages.isEmpty {
-            messages = cached
-        }
-
-        isLoading = messages.isEmpty
-        hasReachedStart = false
+        isLoading = true
 
         do {
-            let tl = try await room.timeline()
+            let config = TimelineConfiguration(
+                focus: .live(hideThreadedEvents: true),
+                filter: .all,
+                internalIdPrefix: nil,
+                dateDividerMode: .daily,
+                trackReadReceipts: .allEvents,
+                reportUtds: false
+            )
+            let tl = try await room.timelineWithConfiguration(configuration: config)
             timeline = tl
             observeTimeline(tl)
             observeTypingNotifications()
+
+            // Subscribe to back-pagination status for authoritative pagination state
+            do {
+                try await observePaginationStatus(tl)
+            } catch {
+                logger.error("Failed to subscribe to pagination status: \(error)")
+            }
+
+            // Paginate to get initial history
             await paginateInitialHistory(tl)
         } catch {
             logger.error("Failed to load timeline: \(error)")
@@ -86,15 +106,12 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
 
     public func loadMoreHistory() async {
         guard let timeline, !isLoadingMore, !hasReachedStart else { return }
-        isLoadingMore = true
         do {
-            let reachedStart = try await timeline.paginateBackwards(numEvents: 40)
-            hasReachedStart = reachedStart
+            _ = try await timeline.paginateBackwards(numEvents: 40)
         } catch {
             logger.error("Failed to load earlier messages: \(error)")
             errorMessage = "Could not load earlier messages: \(error.localizedDescription)"
         }
-        isLoadingMore = false
     }
 
     public func send(text: String, inReplyTo eventId: String? = nil) async {
@@ -269,58 +286,66 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
 
     // MARK: - Private
 
-    private func scheduleCacheSave() {
-        saveCacheTask?.cancel()
-        let snapshot = messages
-        let rid = roomId
-        saveCacheTask = Task {
-            try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled else { return }
-            MessageStore.shared.save(snapshot, roomId: rid)
-        }
-    }
-
     private func paginateInitialHistory(_ tl: Timeline) async {
         do {
-            let reachedStart = try await tl.paginateBackwards(numEvents: 40)
-            hasReachedStart = reachedStart
+            _ = try await tl.paginateBackwards(numEvents: 40)
         } catch {
             logger.error("Failed to paginate initial history: \(error)")
         }
     }
 
     private func observeTimeline(_ tl: Timeline) {
+        let listener = AsyncSDKListener<[TimelineDiff]>()
+
         observationTask = Task { [weak self] in
             guard let self else { return }
 
-            var listenerContinuation: AsyncStream<[TimelineDiff]>.Continuation!
-            let stream = AsyncStream<[TimelineDiff]> { continuation in
-                listenerContinuation = continuation
-            }
+            self.timelineHandle = await tl.addListener(listener: listener)
 
-            let listener = TimelineListenerProxy(continuation: listenerContinuation)
-            let handle = await tl.addListener(listener: listener)
+            // Throttle diffs at 500ms to prevent rapid structural view updates
+            let throttled = listener._throttle(for: .milliseconds(500), reducing: { result, next in
+                (result ?? []) + next
+            })
 
-            for await diffs in stream {
-                self.diffProcessor.applyDiffs(diffs)
+            for await diffs in throttled {
+                self.applyDiffs(diffs)
                 self.rebuildMessages()
             }
+        }
+    }
 
-            _ = handle
+    private func observePaginationStatus(_ tl: Timeline) async throws {
+        let listener = AsyncSDKListener<RoomPaginationStatus>()
+        paginationHandle = try await tl.subscribeToBackPaginationStatus(listener: listener)
+
+        paginationTask = Task { [weak self] in
+            for await status in listener {
+                guard let self else { break }
+
+                switch status {
+                case .idle(let hitStart):
+                    self.isLoadingMore = false
+                    self.hasReachedStart = hitStart
+
+                    // Auto-paginate if we have very few items and haven't hit start
+                    if !hitStart && self.timelineItems.count < 20 {
+                        try? await Task.sleep(for: .milliseconds(500))
+                        try? await tl.paginateBackwards(numEvents: 40)
+                    }
+                case .paginating:
+                    self.isLoadingMore = true
+                }
+            }
         }
     }
 
     private func observeTypingNotifications() {
+        let listener = AsyncSDKListener<[String]>()
+        typingHandle = room.subscribeToTypingNotifications(listener: listener)
+
         typingTask = Task { [weak self] in
-            guard let self else { return }
-
-            var continuation: AsyncStream<[String]>.Continuation!
-            let stream = AsyncStream<[String]> { continuation = $0 }
-
-            let listener = TypingNotificationsListenerProxy(continuation: continuation)
-            let handle = room.subscribeToTypingNotifications(listener: listener)
-
-            for await userIds in stream {
+            for await userIds in listener {
+                guard let self else { break }
                 let filtered = userIds.filter { $0 != self.currentUserId }
                 var names: [String] = []
                 for userId in filtered {
@@ -332,21 +357,53 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                 }
                 self.typingUserDisplayNames = names
             }
+        }
+    }
 
-            _ = handle
+    private func applyDiffs(_ diffs: [TimelineDiff]) {
+        for diff in diffs {
+            switch diff {
+            case .reset(let values):
+                timelineItems = values
+            case .append(let values):
+                timelineItems.append(contentsOf: values)
+            case .pushBack(let value):
+                timelineItems.append(value)
+            case .pushFront(let value):
+                timelineItems.insert(value, at: 0)
+            case .insert(let index, let value):
+                let i = Int(index)
+                if i <= timelineItems.count {
+                    timelineItems.insert(value, at: i)
+                }
+            case .set(let index, let value):
+                let i = Int(index)
+                if i < timelineItems.count {
+                    timelineItems[i] = value
+                }
+            case .remove(let index):
+                let i = Int(index)
+                if i < timelineItems.count {
+                    timelineItems.remove(at: i)
+                }
+            case .clear:
+                timelineItems.removeAll()
+            case .popBack:
+                if !timelineItems.isEmpty { timelineItems.removeLast() }
+            case .popFront:
+                if !timelineItems.isEmpty { timelineItems.removeFirst() }
+            case .truncate(let length):
+                timelineItems = Array(timelineItems.prefix(Int(length)))
+            }
         }
     }
 
     private func rebuildMessages() {
-        let mapping = messageMapper.mapItems(diffProcessor.timelineItems)
+        let mapping = messageMapper.mapItems(timelineItems)
         messages = mapping.messages
 
         computeUnreadMarkerIfNeeded(mapping.messages)
         resolveUnfetchedReplies(mapping.unresolvedReplyEventIds)
-
-        if !mapping.messages.isEmpty {
-            scheduleCacheSave()
-        }
     }
 
     private func computeUnreadMarkerIfNeeded(_ result: [TimelineMessage]) {
@@ -368,33 +425,5 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                 try? await tl.fetchDetailsForEvent(eventId: eventId)
             }
         }
-    }
-}
-
-// MARK: - Timeline Listener Bridge
-
-/// Bridges `TimelineListener` callbacks from the Matrix Rust SDK into an `AsyncStream` of diffs.
-nonisolated final class TimelineListenerProxy: TimelineListener, @unchecked Sendable {
-    private let continuation: AsyncStream<[TimelineDiff]>.Continuation
-
-    init(continuation: AsyncStream<[TimelineDiff]>.Continuation) {
-        self.continuation = continuation
-    }
-
-    func onUpdate(diff: [TimelineDiff]) {
-        continuation.yield(diff)
-    }
-}
-
-/// Bridges `TypingNotificationsListener` callbacks from the Matrix Rust SDK into an `AsyncStream` of user IDs.
-nonisolated final class TypingNotificationsListenerProxy: TypingNotificationsListener, @unchecked Sendable {
-    private let continuation: AsyncStream<[String]>.Continuation
-
-    init(continuation: AsyncStream<[String]>.Continuation) {
-        self.continuation = continuation
-    }
-
-    func call(typingUserIds: [String]) {
-        continuation.yield(typingUserIds)
     }
 }
