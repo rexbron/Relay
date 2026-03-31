@@ -63,7 +63,7 @@ struct ComposeView: View {
             HStack(alignment: .bottom, spacing: 8) {
                 Button { isShowingFilePicker = true } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 15, weight: .regular))
                         .frame(width: 32, height: 32)
                         .contentShape(Circle())
                         .glassEffect(in: .circle)
