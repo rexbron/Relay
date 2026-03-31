@@ -24,7 +24,7 @@ struct MainView: View {
     var body: some View {
         NavigationSplitView {
             RoomListView(selectedRoomId: $selectedRoomId, searchText: $searchText)
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 360)
+                .navigationSplitViewColumnWidth(min: 116, ideal: 260, max: 360)
                 .onChange(of: selectedRoomId) {
                     if selectedRoomId != nil {
                         isComposing = false
