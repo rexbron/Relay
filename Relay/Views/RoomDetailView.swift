@@ -43,6 +43,7 @@ struct RoomDetailView: View {
     @AppStorage("safety.sendReadReceipts") private var sendReadReceipts = true
     @AppStorage("safety.sendTypingNotifications") private var sendTypingNotifications = true
     @AppStorage("safety.mediaPreviewMode") private var mediaPreviewMode = "privateOnly"
+    @AppStorage("behavior.showURLPreviews") private var showURLPreviews = true
 
     private var showErrorAlert: Binding<Bool> {
         Binding(
@@ -60,6 +61,7 @@ struct RoomDetailView: View {
     var body: some View {
         messageList
             .environment(\.mediaAutoReveal, shouldAutoRevealMedia)
+            .environment(\.showURLPreviews, showURLPreviews)
             .overlay {
                 if let reply = replyingTo {
                     ZStack {
