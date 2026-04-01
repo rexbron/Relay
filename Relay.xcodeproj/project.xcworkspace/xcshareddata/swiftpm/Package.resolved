@@ -1,5 +1,5 @@
 {
-  "originHash" : "a6c8a3cdbcf09d6c57ff01c493fb1d70984fdf3f09a9fa1a99a73d18f64229c7",
+  "originHash" : "50d99691a72459645decc5f0860168845c273538024f0cd17184867ef4fb0a59",
   "pins" : [
     {
       "identity" : "matrix-rust-components-swift",
@@ -26,6 +26,15 @@
       "state" : {
         "revision" : "6675bc0ff86e61436e615df6fc5174e043e57924",
         "version" : "1.4.1"
+      }
+    },
+    {
+      "identity" : "swiftsoup",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/scinfu/SwiftSoup",
+      "state" : {
+        "revision" : "6c7915e16f729857aec3e99068c361e58a00ed68",
+        "version" : "2.13.4"
       }
     }
   ],

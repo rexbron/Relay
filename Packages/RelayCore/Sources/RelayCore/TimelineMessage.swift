@@ -175,6 +175,12 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
     /// The text body of the message (may contain Markdown formatting).
     public var body: String
 
+    /// The HTML-formatted body of the message, when the sender used `org.matrix.custom.html` format.
+    ///
+    /// When non-nil, the UI should prefer rendering this over ``body``, falling back to ``body``
+    /// only when HTML parsing fails or the format is unsupported.
+    public var formattedBody: String?
+
     /// The time at which this message was sent.
     public var timestamp: Date
 
@@ -204,6 +210,7 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
     ///   - senderDisplayName: The sender's display name.
     ///   - senderAvatarURL: The sender's avatar URL.
     ///   - body: The message body text.
+    ///   - formattedBody: The HTML-formatted body, if available.
     ///   - timestamp: The time the message was sent.
     ///   - isOutgoing: Whether the current user sent this message.
     ///   - kind: The content type. Defaults to `.text`.
@@ -217,6 +224,7 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         senderDisplayName: String? = nil,
         senderAvatarURL: String? = nil,
         body: String,
+        formattedBody: String? = nil,
         timestamp: Date,
         isOutgoing: Bool,
         kind: Kind = .text,
@@ -230,6 +238,7 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         self.senderDisplayName = senderDisplayName
         self.senderAvatarURL = senderAvatarURL
         self.body = body
+        self.formattedBody = formattedBody
         self.timestamp = timestamp
         self.isOutgoing = isOutgoing
         self.kind = kind

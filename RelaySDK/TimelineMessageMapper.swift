@@ -41,6 +41,7 @@ struct TimelineMessageMapper {
             let msgBody: String
             let msgKind: TimelineMessage.Kind
             var msgMediaInfo: TimelineMessage.MediaInfo?
+            var msgFormattedBody: String?
             switch event.content {
             case .msgLike(let msgLikeContent):
                 switch msgLikeContent.kind {
@@ -49,12 +50,21 @@ struct TimelineMessageMapper {
                     case .text(let textContent):
                         msgBody = textContent.body
                         msgKind = .text
+                        if case .html = textContent.formatted?.format {
+                            msgFormattedBody = textContent.formatted?.body
+                        }
                     case .emote(let emoteContent):
                         msgBody = emoteContent.body
                         msgKind = .emote
+                        if case .html = emoteContent.formatted?.format {
+                            msgFormattedBody = emoteContent.formatted?.body
+                        }
                     case .notice(let noticeContent):
                         msgBody = noticeContent.body
                         msgKind = .notice
+                        if case .html = noticeContent.formatted?.format {
+                            msgFormattedBody = noticeContent.formatted?.body
+                        }
                     case .image(let imageContent):
                         msgBody = imageContent.caption ?? "Image"
                         msgKind = .image
@@ -206,6 +216,7 @@ struct TimelineMessageMapper {
                 senderDisplayName: displayName,
                 senderAvatarURL: avatarURL,
                 body: msgBody,
+                formattedBody: msgFormattedBody,
                 timestamp: ts,
                 isOutgoing: event.isOwn,
                 kind: msgKind,

@@ -10,9 +10,14 @@ import SwiftUI
 /// features such as mention pills, spoiler reveals, and custom emoji.
 final class MessageTextContent: NSTextView {
 
+    /// When `true`, `setFrameSize` will not update the text container's width.
+    /// This prevents a feedback loop where SwiftUI's layout → `setFrameSize` →
+    /// re-layout → smaller `sizeThatFits` → smaller frame → repeat.
+    var suppressContainerSync = false
+
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        if let tc = textContainer, newSize.width > 0 {
+        if !suppressContainerSync, let tc = textContainer, newSize.width > 0 {
             tc.containerSize = NSSize(width: newSize.width, height: CGFloat.greatestFiniteMagnitude)
         }
     }
@@ -98,8 +103,23 @@ final class MessageTextContent: NSTextView {
 /// SwiftUI wrapper around ``MessageTextContent`` for rendering rich message
 /// text with proper link hover behaviour, text selection, and layout sizing.
 struct MessageTextView: NSViewRepresentable {
-    let attributedString: AttributedString
+    let attributedString: AttributedString?
+    let resolvedAttributedString: NSAttributedString?
     let isOutgoing: Bool
+
+    /// Creates a ``MessageTextView`` from a SwiftUI `AttributedString` (Markdown path).
+    init(attributedString: AttributedString, isOutgoing: Bool) {
+        self.attributedString = attributedString
+        self.resolvedAttributedString = nil
+        self.isOutgoing = isOutgoing
+    }
+
+    /// Creates a ``MessageTextView`` from a pre-resolved `NSAttributedString` (HTML path).
+    init(resolved: NSAttributedString, isOutgoing: Bool) {
+        self.attributedString = nil
+        self.resolvedAttributedString = resolved
+        self.isOutgoing = isOutgoing
+    }
 
     private var foregroundColor: NSColor {
         isOutgoing ? .white : .labelColor
@@ -131,11 +151,24 @@ struct MessageTextView: NSViewRepresentable {
 
     func updateNSView(_ view: MessageTextContent, context: Context) {
         view.resetHoverState()
-        let resolved = Self.resolve(
-            attributedString,
-            foreground: foregroundColor,
-            linkColor: linkColor
-        )
+        let resolved: NSAttributedString
+        if let preResolved = resolvedAttributedString {
+            // HTML path: apply foreground/link color overrides to the pre-resolved string.
+            resolved = Self.applyColorOverrides(
+                preResolved,
+                foreground: foregroundColor,
+                linkColor: linkColor
+            )
+        } else if let attrString = attributedString {
+            // Markdown path: resolve InlinePresentationIntent attributes.
+            resolved = Self.resolve(
+                attrString,
+                foreground: foregroundColor,
+                linkColor: linkColor
+            )
+        } else {
+            resolved = NSAttributedString()
+        }
         view.linkTextAttributes = [.foregroundColor: linkColor]
         view.textStorage?.setAttributedString(resolved)
     }
@@ -148,6 +181,10 @@ struct MessageTextView: NSViewRepresentable {
               (nsView.textStorage?.length ?? 0) > 0
         else { return .zero }
 
+        // Prevent setFrameSize from constraining the container while we measure.
+        nsView.suppressContainerSync = true
+        defer { nsView.suppressContainerSync = false }
+
         // Natural layout (unconstrained) to find the intrinsic text width.
         container.containerSize = NSSize(
             width: CGFloat.greatestFiniteMagnitude,
@@ -155,9 +192,23 @@ struct MessageTextView: NSViewRepresentable {
         )
         lm.ensureLayout(for: container)
         var naturalWidth: CGFloat = 0
+        let storage = nsView.textStorage!
         lm.enumerateLineFragments(forGlyphRange: lm.glyphRange(for: container)) {
-            _, usedRect, _, _, _ in
-            naturalWidth = max(naturalWidth, usedRect.width)
+            _, usedRect, _, glyphRange, _ in
+            // Use maxX (origin.x + width) so that paragraph indents
+            // (firstLineHeadIndent, headIndent) are included in the measurement.
+            var lineWidth = usedRect.maxX
+            // If this line's paragraph has a negative tailIndent, that space is
+            // "reserved" on the trailing edge. Add it back so the bubble sizes
+            // wide enough to avoid unnecessary wrapping.
+            let charIndex = lm.characterIndexForGlyph(at: glyphRange.location)
+            if charIndex < storage.length,
+               let ps = storage.attribute(.paragraphStyle, at: charIndex, effectiveRange: nil)
+                    as? NSParagraphStyle,
+               ps.tailIndent < 0 {
+                lineWidth -= ps.tailIndent // tailIndent is negative, so this adds
+            }
+            naturalWidth = max(naturalWidth, lineWidth)
         }
         let naturalHeight = lm.usedRect(for: container).height
         let tightWidth = ceil(naturalWidth)
@@ -242,6 +293,50 @@ struct MessageTextView: NSViewRepresentable {
 
             return result
     }
+
+    /// Applies foreground and link color overrides to a pre-resolved `NSAttributedString`
+    /// from the HTML parser, respecting any existing custom colors (e.g. `data-mx-color`).
+    static func applyColorOverrides(
+        _ source: NSAttributedString,
+        foreground: NSColor,
+        linkColor: NSColor
+    ) -> NSAttributedString {
+        let result = NSMutableAttributedString(attributedString: source)
+        let fullRange = NSRange(location: 0, length: result.length)
+        let keys = NSAttributedString.Key.self
+        let baseFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+
+        // Muted color for blockquote text content.
+        let mutedForeground = foreground.withAlphaComponent(0.55)
+        // Subtle color for the "│" bar character.
+        let barColor = foreground.withAlphaComponent(0.25)
+
+        result.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
+            let hasLink = attrs[keys.link] != nil
+            let isSpoiler = attrs[keys.matrixSpoiler] as? Bool == true
+            let isBlockquoteBar = attrs[keys.blockquoteBar] as? Bool == true
+            let isInBlockquote = attrs[keys.blockquoteDepth] != nil
+
+            if isBlockquoteBar {
+                result.addAttribute(keys.foregroundColor, value: barColor, range: range)
+            } else if hasLink {
+                result.addAttribute(keys.foregroundColor, value: linkColor, range: range)
+            } else if isSpoiler {
+                // Keep spoiler coloring as-is.
+            } else if isInBlockquote, attrs[keys.foregroundColor] == nil {
+                result.addAttribute(keys.foregroundColor, value: mutedForeground, range: range)
+            } else if attrs[keys.foregroundColor] == nil {
+                result.addAttribute(keys.foregroundColor, value: foreground, range: range)
+            }
+
+            // Ensure every range has a font.
+            if attrs[keys.font] == nil {
+                result.addAttribute(keys.font, value: baseFont, range: range)
+            }
+        }
+
+        return result
+    }
 }
 
 // MARK: - Previews
@@ -281,6 +376,26 @@ private struct BubblePreview: View {
             attributedString: previewParse(text),
             isOutgoing: isOutgoing
         )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(isOutgoing ? .accentColor : Color(.systemGray).opacity(0.2))
+        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+    }
+}
+
+private struct HTMLBubblePreview: View {
+    let html: String
+    let isOutgoing: Bool
+
+    var body: some View {
+        Group {
+            if let resolved = MatrixHTMLParser.parse(html) {
+                MessageTextView(resolved: resolved, isOutgoing: isOutgoing)
+            } else {
+                Text("Parse error")
+                    .foregroundStyle(.red)
+            }
+        }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(isOutgoing ? .accentColor : Color(.systemGray).opacity(0.2))
@@ -337,5 +452,142 @@ private struct BubblePreview: View {
     }
     .padding()
     .frame(width: 500)
+}
+
+#Preview("HTML Inline Formatting") {
+    ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+            HTMLBubblePreview(
+                html: "This is <b>bold</b> and <strong>strong</strong> text",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "This is <i>italic</i> and <em>emphasized</em> text",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "This is <u>underlined</u> text",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "This is <s>strikethrough</s> and <del>deleted</del> text",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "Here is <code>inline code</code> in a sentence",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "Water is H<sub>2</sub>O and E=mc<sup>2</sup>",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "Check out <a href=\"https://matrix.org\">Matrix</a> for more info",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "<b>Bold</b>, <i>italic</i>, <code>code</code>, and <s>struck</s> all at once",
+                isOutgoing: true
+            )
+            HTMLBubblePreview(
+                html: "Text with <span data-mx-color=\"#ff0000\">red</span> and <span data-mx-color=\"#00aa00\">green</span> colors",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "This has a <span data-mx-spoiler>secret spoiler</span> hidden",
+                isOutgoing: false
+            )
+        }
+        .padding()
+        .frame(width: 500)
+    }
+}
+
+#Preview("HTML Block Elements") {
+    ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+            HTMLBubblePreview(
+                html: "<h1>Heading 1</h1><p>Paragraph after heading</p>",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "<h3>Heading 3</h3><p>Some text here</p>",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "<blockquote>This is a blockquote</blockquote><p>And normal text after</p>",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "<blockquote>This is a longer blockquote that should wrap to multiple lines to test trailing edge alignment</blockquote>",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "<blockquote>Outgoing blockquote text here</blockquote><p>My reply</p>",
+                isOutgoing: true
+            )
+            HTMLBubblePreview(
+                html: "<pre><code>func hello() {\n    print(\"Hello, world!\")\n}</code></pre>",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "<p>Line above</p><hr><p>Line below</p>",
+                isOutgoing: false
+            )
+        }
+        .padding()
+        .frame(width: 500)
+    }
+}
+
+#Preview("HTML Lists") {
+    ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+            HTMLBubblePreview(
+                html: "<ul><li>First item</li><li>Second item</li><li>Third item</li></ul>",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "<ol><li>Step one</li><li>Step two</li><li>Step three</li></ol>",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "<ol start=\"5\"><li>Item five</li><li>Item six</li><li>Item seven</li></ol>",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "<ul><li>Outer item<ul><li>Nested item 1</li><li>Nested item 2</li></ul></li><li>Back to outer</li></ul>",
+                isOutgoing: false
+            )
+        }
+        .padding()
+        .frame(width: 500)
+    }
+}
+
+#Preview("HTML Mixed Content") {
+    ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+            HTMLBubblePreview(
+                html: """
+                <p>Here is a <b>complex</b> message with <i>mixed</i> content:</p>
+                <blockquote>Someone said something <em>important</em></blockquote>
+                <p>And then a list:</p>
+                <ol><li>First</li><li>Second with <code>code</code></li></ol>
+                <p>Followed by a <a href="https://example.com">link</a>.</p>
+                """,
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: """
+                <mx-reply><blockquote>Original message</blockquote></mx-reply>
+                <p>This reply should have the mx-reply stripped</p>
+                """,
+                isOutgoing: true
+            )
+        }
+        .padding()
+        .frame(width: 500)
+    }
 }
 

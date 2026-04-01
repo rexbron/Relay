@@ -219,10 +219,11 @@ struct MessageView: View {
             if let reply = message.replyDetail {
                 inlineReply(reply, outgoing: message.isOutgoing)
             }
-            MessageTextView(
-                attributedString: markdownBody,
-                isOutgoing: message.isOutgoing
-            )
+            if let resolved = htmlBody {
+                MessageTextView(resolved: resolved, isOutgoing: message.isOutgoing)
+            } else {
+                MessageTextView(attributedString: markdownBody, isOutgoing: message.isOutgoing)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
@@ -237,10 +238,11 @@ struct MessageView: View {
             if let reply = message.replyDetail {
                 inlineReply(reply, outgoing: false)
             }
-            MessageTextView(
-                attributedString: emoteBody,
-                isOutgoing: false
-            )
+            if let resolved = emoteHtmlBody {
+                MessageTextView(resolved: resolved, isOutgoing: false)
+            } else {
+                MessageTextView(attributedString: emoteBody, isOutgoing: false)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
@@ -305,7 +307,13 @@ struct MessageView: View {
         }
     }
 
-    // MARK: - Markdown Parsing
+    // MARK: - Body Parsing (HTML → Markdown fallback)
+
+    /// The pre-resolved `NSAttributedString` when HTML is available, or `nil` for the Markdown path.
+    private var htmlBody: NSAttributedString? {
+        guard let html = message.formattedBody else { return nil }
+        return MatrixHTMLParser.parse(html)
+    }
 
     private var markdownBody: AttributedString {
         Self.parseMarkdown(message.body)
@@ -315,6 +323,23 @@ struct MessageView: View {
         var name = AttributedString("*\(message.displayName)* ")
         name.inlinePresentationIntent = .emphasized
         return name + Self.parseMarkdown(message.body)
+    }
+
+    /// The pre-resolved `NSAttributedString` for emote HTML, or `nil` for the Markdown path.
+    private var emoteHtmlBody: NSAttributedString? {
+        guard let html = message.formattedBody else { return nil }
+        guard let parsed = MatrixHTMLParser.parse(html) else { return nil }
+        // Prepend italic display name.
+        let result = NSMutableAttributedString()
+        let nameFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let italicDesc = nameFont.fontDescriptor.withSymbolicTraits(.italic)
+        let italicFont = NSFont(descriptor: italicDesc, size: nameFont.pointSize) ?? nameFont
+        result.append(NSAttributedString(
+            string: "*\(message.displayName)* ",
+            attributes: [.font: italicFont]
+        ))
+        result.append(parsed)
+        return result
     }
 
     private static func parseMarkdown(_ raw: String) -> AttributedString {
