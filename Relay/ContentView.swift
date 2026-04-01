@@ -38,7 +38,7 @@ struct ContentView: View {
                 LoginView(initialError: message)
             }
         }
-        .frame(minWidth: 700, minHeight: 450)
+        .frame(minWidth: 700, minHeight: 250)
     }
 }
 
