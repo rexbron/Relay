@@ -12,12 +12,12 @@ struct SettingsView: View {
         Group {
             if matrixService.userId() != nil {
                 TabView {
-                    GeneralSettingsTab()
-                        .tabItem { Label("General", systemImage: "gear") }
+                    AccountSettingsTab()
+                        .tabItem { Label("Account", systemImage: "person.crop.circle") }
+                    BehaviorSettingsTab()
+                        .tabItem { Label("Behavior", systemImage: "gearshape") }
                     NotificationSettingsTab()
                         .tabItem { Label("Notifications", systemImage: "bell") }
-                    SafetySettingsTab()
-                        .tabItem { Label("Safety", systemImage: "hand.raised.fill") }
                     SessionsSettingsTab()
                         .tabItem { Label("Sessions", systemImage: "desktopcomputer") }
                     EncryptionSettingsTab()
@@ -35,9 +35,9 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - General Tab
+// MARK: - Account Tab
 
-private struct GeneralSettingsTab: View {
+private struct AccountSettingsTab: View {
     @Environment(\.matrixService) private var matrixService
 
     @State private var displayName = ""
@@ -127,6 +127,39 @@ private struct GeneralSettingsTab: View {
         } message: {
             Text("Are you sure you want to log out? You will need to sign in again.")
         }
+    }
+}
+
+// MARK: - Behavior Tab
+
+private struct BehaviorSettingsTab: View {
+    @AppStorage("safety.sendReadReceipts") private var sendReadReceipts = true
+    @AppStorage("safety.sendTypingNotifications") private var sendTypingNotifications = true
+    @AppStorage("safety.mediaPreviewMode") private var mediaPreviewMode = MediaPreviewMode.privateOnly
+    @AppStorage("behavior.showURLPreviews") private var showURLPreviews = true
+
+    var body: some View {
+        Form {
+            Section("Privacy") {
+                Toggle("Send Read Receipts", isOn: $sendReadReceipts)
+                Toggle("Send Typing Notifications", isOn: $sendTypingNotifications)
+            }
+
+            Section {
+                Toggle("Show URL Previews", isOn: $showURLPreviews)
+
+                Picker("Show Media Previews In", selection: $mediaPreviewMode) {
+                    ForEach(MediaPreviewMode.allCases, id: \.self) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+            } header: {
+                Text("Media")
+                Text("Hidden previews can always be revealed by clicking on the media.")
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 
@@ -315,34 +348,6 @@ private enum MediaPreviewMode: String, CaseIterable {
         case .allRooms: "All rooms"
         case .privateOnly: "Private rooms only"
         }
-    }
-}
-
-private struct SafetySettingsTab: View {
-    @AppStorage("safety.sendReadReceipts") private var sendReadReceipts = true
-    @AppStorage("safety.sendTypingNotifications") private var sendTypingNotifications = true
-    @AppStorage("safety.mediaPreviewMode") private var mediaPreviewMode = MediaPreviewMode.privateOnly
-
-    var body: some View {
-        Form {
-            Section("Privacy") {
-                Toggle("Send Read Receipts", isOn: $sendReadReceipts)
-                Toggle("Send Typing Notifications", isOn: $sendTypingNotifications)
-            } 
-
-            Section {
-                Picker("Show Previews In", selection: $mediaPreviewMode) {
-                    ForEach(MediaPreviewMode.allCases, id: \.self) { mode in
-                        Text(mode.label).tag(mode)
-                    }
-                }
-                .pickerStyle(.radioGroup)
-            } header: {
-                Text("Media Previews")
-                Text("Hidden previews can always be revealed by clicking on the media.")
-            }
-        }
-        .formStyle(.grouped)
     }
 }
 
@@ -826,10 +831,10 @@ private struct EncryptionSettingsTab: View {
     .frame(width: 480)
 }
 
-#Preview("Safety") {
+#Preview("Behavior") {
     TabView {
-        SafetySettingsTab()
-            .tabItem { Label("Safety", systemImage: "hand.raised.fill") }
+        BehaviorSettingsTab()
+            .tabItem { Label("Behavior", systemImage: "gearshape") }
     }
     .frame(width: 480)
 }
