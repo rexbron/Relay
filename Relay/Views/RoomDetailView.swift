@@ -231,6 +231,12 @@ struct RoomDetailView: View {
                             },
                             onAvatarDoubleTap: {
                                 onUserTap?(UserProfile(message: message))
+                            },
+                            onUserTap: { userId in
+                                let member = roomMembers.first(where: { $0.userId == userId })
+                                let profile = member.map { UserProfile(member: $0) }
+                                    ?? UserProfile(userId: userId)
+                                onUserTap?(profile)
                             }
                         )
                     } onReply: {

@@ -51,6 +51,9 @@ struct MessageView: View {
     /// Called when the user double-taps the sender's avatar to open their profile.
     var onAvatarDoubleTap: (() -> Void)?
 
+    /// Called when the user clicks a user mention link, with the Matrix user ID.
+    var onUserTap: ((String) -> Void)?
+
     @Environment(\.swipeOffset) private var swipeOffset
     @Environment(\.showURLPreviews) private var showURLPreviews
     @State private var showEmojiPicker = false
@@ -236,9 +239,9 @@ struct MessageView: View {
                     inlineReply(reply, outgoing: message.isOutgoing)
                 }
                 if let resolved = htmlBody {
-                    MessageTextView(resolved: resolved, isOutgoing: message.isOutgoing)
+                    MessageTextView(resolved: resolved, isOutgoing: message.isOutgoing, onUserTap: onUserTap)
                 } else {
-                    MessageTextView(attributedString: markdownBody, isOutgoing: message.isOutgoing)
+                    MessageTextView(attributedString: markdownBody, isOutgoing: message.isOutgoing, onUserTap: onUserTap)
                 }
             }
             .padding(.horizontal, 12)
@@ -262,9 +265,9 @@ struct MessageView: View {
                 inlineReply(reply, outgoing: false)
             }
             if let resolved = emoteHtmlBody {
-                MessageTextView(resolved: resolved, isOutgoing: false)
+                MessageTextView(resolved: resolved, isOutgoing: false, onUserTap: onUserTap)
             } else {
-                MessageTextView(attributedString: emoteBody, isOutgoing: false)
+                MessageTextView(attributedString: emoteBody, isOutgoing: false, onUserTap: onUserTap)
             }
         }
         .padding(.horizontal, 12)

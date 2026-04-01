@@ -15,6 +15,26 @@ final class MessageTextContent: NSTextView {
     /// re-layout → smaller `sizeThatFits` → smaller frame → repeat.
     var suppressContainerSync = false
 
+    /// Called when the user clicks a `matrix.to` user mention link, with the Matrix user ID.
+    var onUserTap: ((String) -> Void)?
+
+    // MARK: - Link Click Interception
+
+    override func clicked(onLink link: Any, at charIndex: Int) {
+        if let url = link as? URL,
+           url.host?.lowercased() == "matrix.to",
+           let fragment = url.fragment,
+           fragment.hasPrefix("/") {
+            let userId = String(fragment.dropFirst())
+                .removingPercentEncoding ?? String(fragment.dropFirst())
+            if userId.hasPrefix("@") {
+                onUserTap?(userId)
+                return
+            }
+        }
+        super.clicked(onLink: link, at: charIndex)
+    }
+
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         if !suppressContainerSync, let tc = textContainer, newSize.width > 0 {
@@ -107,18 +127,23 @@ struct MessageTextView: NSViewRepresentable {
     let resolvedAttributedString: NSAttributedString?
     let isOutgoing: Bool
 
+    /// Called when the user clicks a `matrix.to` user mention link, with the Matrix user ID.
+    var onUserTap: ((String) -> Void)?
+
     /// Creates a ``MessageTextView`` from a SwiftUI `AttributedString` (Markdown path).
-    init(attributedString: AttributedString, isOutgoing: Bool) {
+    init(attributedString: AttributedString, isOutgoing: Bool, onUserTap: ((String) -> Void)? = nil) {
         self.attributedString = attributedString
         self.resolvedAttributedString = nil
         self.isOutgoing = isOutgoing
+        self.onUserTap = onUserTap
     }
 
     /// Creates a ``MessageTextView`` from a pre-resolved `NSAttributedString` (HTML path).
-    init(resolved: NSAttributedString, isOutgoing: Bool) {
+    init(resolved: NSAttributedString, isOutgoing: Bool, onUserTap: ((String) -> Void)? = nil) {
         self.attributedString = nil
         self.resolvedAttributedString = resolved
         self.isOutgoing = isOutgoing
+        self.onUserTap = onUserTap
     }
 
     private var foregroundColor: NSColor {
@@ -146,11 +171,13 @@ struct MessageTextView: NSViewRepresentable {
         view.textContainerInset = .zero
         view.isAutomaticLinkDetectionEnabled = false
         view.setContentHuggingPriority(.required, for: .vertical)
+        view.onUserTap = onUserTap
         return view
     }
 
     func updateNSView(_ view: MessageTextContent, context: Context) {
         view.resetHoverState()
+        view.onUserTap = onUserTap
         let resolved: NSAttributedString
         if let preResolved = resolvedAttributedString {
             // HTML path: apply foreground/link color overrides to the pre-resolved string.
