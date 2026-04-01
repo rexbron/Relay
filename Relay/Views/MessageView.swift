@@ -219,15 +219,15 @@ struct MessageView: View {
             if let reply = message.replyDetail {
                 inlineReply(reply, outgoing: message.isOutgoing)
             }
-            Text(markdownBody)
-                .tint(message.isOutgoing ? .white.opacity(0.9) : .accentColor)
-                .textSelection(.enabled)
+            MessageTextView(
+                attributedString: markdownBody,
+                isOutgoing: message.isOutgoing
+            )
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(bubbleColor)
         .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-        .foregroundStyle(message.isOutgoing ? .white : .primary)
     }
 
     // MARK: - Emote Content
@@ -237,16 +237,15 @@ struct MessageView: View {
             if let reply = message.replyDetail {
                 inlineReply(reply, outgoing: false)
             }
-            Text("*\(message.displayName)* \(markdownBody)")
-                .tint(.accentColor)
-                .italic()
-                .textSelection(.enabled)
+            MessageTextView(
+                attributedString: emoteBody,
+                isOutgoing: false
+            )
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(Color.purple.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-        .foregroundStyle(.primary)
     }
 
     // MARK: - Special Content (media, redacted, encrypted, etc.)
@@ -309,11 +308,37 @@ struct MessageView: View {
     // MARK: - Markdown Parsing
 
     private var markdownBody: AttributedString {
-        let raw = message.body
+        Self.parseMarkdown(message.body)
+    }
+
+    private var emoteBody: AttributedString {
+        var name = AttributedString("*\(message.displayName)* ")
+        name.inlinePresentationIntent = .emphasized
+        return name + Self.parseMarkdown(message.body)
+    }
+
+    private static func parseMarkdown(_ raw: String) -> AttributedString {
+        var result: AttributedString
         if let md = try? AttributedString(markdown: raw, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
-            return md
+            result = md
+        } else {
+            result = AttributedString(raw)
         }
-        return AttributedString(raw)
+
+        let plainString = String(result.characters)
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+            return result
+        }
+
+        let matches = detector.matches(in: plainString, range: NSRange(plainString.startIndex..., in: plainString))
+        for match in matches {
+            guard let urlRange = Range(match.range, in: plainString),
+                  let attrRange = Range(urlRange, in: result) else { continue }
+            if result[attrRange].link == nil {
+                result[attrRange].link = match.url
+            }
+        }
+        return result
     }
 
     // MARK: - Reply Arrow

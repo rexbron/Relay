@@ -1,0 +1,341 @@
+import AppKit
+import SwiftUI
+
+// MARK: - MessageTextContent (NSTextView subclass)
+
+/// A read-only `NSTextView` subclass for rendering rich message text.
+///
+/// Provides native link hover behaviour (pointing-hand cursor and underline on
+/// hover) and text selection. Designed to be extended for Matrix-specific
+/// features such as mention pills, spoiler reveals, and custom emoji.
+final class MessageTextContent: NSTextView {
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        if let tc = textContainer, newSize.width > 0 {
+            tc.containerSize = NSSize(width: newSize.width, height: CGFloat.greatestFiniteMagnitude)
+        }
+    }
+
+    // MARK: - Hover State
+
+    private var hoveredLinkRange: NSRange?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas where area.owner === self {
+            removeTrackingArea(area)
+        }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInActiveApp],
+            owner: self
+        ))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if let range = linkRange(at: point) {
+            if hoveredLinkRange != range {
+                clearHoverUnderline()
+                textStorage?.addAttribute(
+                    .underlineStyle,
+                    value: NSUnderlineStyle.single.rawValue,
+                    range: range
+                )
+                hoveredLinkRange = range
+            }
+            NSCursor.pointingHand.set()
+        } else {
+            if hoveredLinkRange != nil { clearHoverUnderline() }
+            super.mouseMoved(with: event)
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        clearHoverUnderline()
+        super.mouseExited(with: event)
+    }
+
+    func resetHoverState() {
+        clearHoverUnderline()
+    }
+
+    // MARK: - Private Helpers
+
+    private func clearHoverUnderline() {
+        if let range = hoveredLinkRange, let textStorage,
+           range.upperBound <= textStorage.length {
+            textStorage.removeAttribute(.underlineStyle, range: range)
+        }
+        hoveredLinkRange = nil
+    }
+
+    private func linkRange(at point: NSPoint) -> NSRange? {
+        guard let layoutManager, let textContainer, let textStorage else { return nil }
+        let origin = textContainerOrigin
+        let local = NSPoint(x: point.x - origin.x, y: point.y - origin.y)
+
+        let glyphIndex = layoutManager.glyphIndex(for: local, in: textContainer)
+        let glyphRect = layoutManager.boundingRect(
+            forGlyphRange: NSRange(location: glyphIndex, length: 1),
+            in: textContainer
+        )
+        guard glyphRect.contains(local) else { return nil }
+
+        let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        guard charIndex < textStorage.length else { return nil }
+
+        var effectiveRange = NSRange()
+        guard textStorage.attribute(.link, at: charIndex, effectiveRange: &effectiveRange) != nil
+        else { return nil }
+        return effectiveRange
+    }
+}
+
+// MARK: - MessageTextView (NSViewRepresentable)
+
+/// SwiftUI wrapper around ``MessageTextContent`` for rendering rich message
+/// text with proper link hover behaviour, text selection, and layout sizing.
+struct MessageTextView: NSViewRepresentable {
+    let attributedString: AttributedString
+    let isOutgoing: Bool
+
+    private var foregroundColor: NSColor {
+        isOutgoing ? .white : .labelColor
+    }
+
+    private var linkColor: NSColor {
+        isOutgoing ? NSColor.white.withAlphaComponent(0.9) : .controlAccentColor
+    }
+
+    func makeNSView(context: Context) -> MessageTextContent {
+        let storage = NSTextStorage()
+        let layoutManager = NSLayoutManager()
+        layoutManager.usesFontLeading = false
+        storage.addLayoutManager(layoutManager)
+        let container = NSTextContainer()
+        container.widthTracksTextView = false
+        container.lineFragmentPadding = 0
+        layoutManager.addTextContainer(container)
+
+        let view = MessageTextContent(frame: .zero, textContainer: container)
+        view.isEditable = false
+        view.isSelectable = true
+        view.drawsBackground = false
+        view.textContainerInset = .zero
+        view.isAutomaticLinkDetectionEnabled = false
+        view.setContentHuggingPriority(.required, for: .vertical)
+        return view
+    }
+
+    func updateNSView(_ view: MessageTextContent, context: Context) {
+        view.resetHoverState()
+        let resolved = Self.resolve(
+            attributedString,
+            foreground: foregroundColor,
+            linkColor: linkColor
+        )
+        view.linkTextAttributes = [.foregroundColor: linkColor]
+        view.textStorage?.setAttributedString(resolved)
+    }
+
+    func sizeThatFits(
+        _ proposal: ProposedViewSize, nsView: MessageTextContent, context: Context
+    ) -> CGSize? {
+        guard let container = nsView.textContainer,
+              let lm = nsView.layoutManager,
+              (nsView.textStorage?.length ?? 0) > 0
+        else { return .zero }
+
+        // Natural layout (unconstrained) to find the intrinsic text width.
+        container.containerSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        lm.ensureLayout(for: container)
+        var naturalWidth: CGFloat = 0
+        lm.enumerateLineFragments(forGlyphRange: lm.glyphRange(for: container)) {
+            _, usedRect, _, _, _ in
+            naturalWidth = max(naturalWidth, usedRect.width)
+        }
+        let naturalHeight = lm.usedRect(for: container).height
+        let tightWidth = ceil(naturalWidth)
+
+        let proposedWidth = proposal.width.flatMap { $0.isFinite ? $0 : nil }
+
+        // Text fits within the proposed width without extra wrapping — hug it.
+        guard let pw = proposedWidth, tightWidth > pw else {
+            return CGSize(width: tightWidth, height: ceil(naturalHeight))
+        }
+
+        // Text must wrap to fit the proposed width. Use the full proposed width
+        // so SwiftUI doesn't re-propose a narrower value (feedback loop).
+        container.containerSize = NSSize(width: pw, height: CGFloat.greatestFiniteMagnitude)
+        lm.ensureLayout(for: container)
+        let constrainedHeight = lm.usedRect(for: container).height
+
+        return CGSize(width: pw, height: ceil(constrainedHeight))
+    }
+
+    // MARK: - Attribute Resolution
+
+    /// Converts a SwiftUI `AttributedString` (with `InlinePresentationIntent`
+    /// attributes from the markdown parser) into an `NSAttributedString` with
+    /// resolved AppKit font/color attributes that `NSTextView` can render.
+    static func resolve(
+        _ source: AttributedString,
+        foreground: NSColor,
+        linkColor: NSColor
+    ) -> NSAttributedString {
+        let baseFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let result = NSMutableAttributedString(attributedString: NSAttributedString(source))
+        let fullRange = NSRange(location: 0, length: result.length)
+        let keys = NSAttributedString.Key.self
+
+        result.addAttribute(keys.foregroundColor, value: foreground, range: fullRange)
+
+        result.enumerateAttribute(keys.font, in: fullRange, options: []) { value, range, _ in
+            if value == nil {
+                result.addAttribute(keys.font, value: baseFont, range: range)
+            }
+        }
+
+        result.enumerateAttribute(keys.inlinePresentationIntent, in: fullRange, options: []) {
+            value, range, _ in
+            guard let raw = (value as? NSNumber)?.uintValue else { return }
+            let intent = InlinePresentationIntent(rawValue: raw)
+
+            if intent.contains(.code) {
+                let mono = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
+                result.addAttribute(keys.font, value: mono, range: range)
+                result.addAttribute(
+                    keys.backgroundColor,
+                    value: NSColor.gray.withAlphaComponent(0.12),
+                    range: range
+                )
+            } else {
+                var traits: NSFontDescriptor.SymbolicTraits = []
+                if intent.contains(.stronglyEmphasized) { traits.insert(.bold) }
+                if intent.contains(.emphasized) { traits.insert(.italic) }
+                if !traits.isEmpty {
+                    let desc = baseFont.fontDescriptor.withSymbolicTraits(traits)
+                    let font = NSFont(descriptor: desc, size: baseFont.pointSize) ?? baseFont
+                    result.addAttribute(keys.font, value: font, range: range)
+                }
+            }
+
+            if intent.contains(.strikethrough) {
+                result.addAttribute(
+                    keys.strikethroughStyle,
+                    value: NSUnderlineStyle.single.rawValue,
+                    range: range
+                )
+            }
+        }
+
+        result.enumerateAttribute(keys.link, in: fullRange, options: []) { value, range, _ in
+            if value != nil {
+                result.addAttribute(keys.foregroundColor, value: linkColor, range: range)
+            }
+        }
+
+            return result
+    }
+}
+
+// MARK: - Previews
+
+private func previewParse(_ raw: String) -> AttributedString {
+    var result: AttributedString
+    if let md = try? AttributedString(
+        markdown: raw,
+        options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+    ) {
+        result = md
+    } else {
+        result = AttributedString(raw)
+    }
+
+    let plain = String(result.characters)
+    guard let detector = try? NSDataDetector(
+        types: NSTextCheckingResult.CheckingType.link.rawValue
+    ) else { return result }
+
+    for match in detector.matches(in: plain, range: NSRange(plain.startIndex..., in: plain)) {
+        guard let urlRange = Range(match.range, in: plain),
+              let attrRange = Range(urlRange, in: result) else { continue }
+        if result[attrRange].link == nil {
+            result[attrRange].link = match.url
+        }
+    }
+    return result
+}
+
+private struct BubblePreview: View {
+    let text: String
+    let isOutgoing: Bool
+
+    var body: some View {
+        MessageTextView(
+            attributedString: previewParse(text),
+            isOutgoing: isOutgoing
+        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(isOutgoing ? .accentColor : Color(.systemGray).opacity(0.2))
+        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+    }
+}
+
+#Preview("Plain Text") {
+    VStack(alignment: .leading, spacing: 12) {
+        BubblePreview(text: "Yeah", isOutgoing: false)
+        BubblePreview(text: "Oh, per room..", isOutgoing: true)
+        BubblePreview(
+            text: "I think it's the same across the board. Some rooms just limit posts and block images",
+            isOutgoing: false
+        )
+    }
+    .padding()
+    .frame(width: 500)
+}
+
+#Preview("Links") {
+    VStack(alignment: .leading, spacing: 12) {
+        BubblePreview(
+            text: "Check out https://matrix.org for more info",
+            isOutgoing: false
+        )
+        BubblePreview(
+            text: "https://youtube.com/shorts/SDzKgqU35Eo\nWow these Neo ads are cute",
+            isOutgoing: false
+        )
+        BubblePreview(
+            text: "I sent you the link https://example.com/path already",
+            isOutgoing: true
+        )
+    }
+    .padding()
+    .frame(width: 500)
+}
+
+#Preview("Markdown Formatting") {
+    VStack(alignment: .leading, spacing: 12) {
+        BubblePreview(text: "This is **bold** text", isOutgoing: false)
+        BubblePreview(text: "This is *italic* text", isOutgoing: false)
+        BubblePreview(text: "This has `inline code` in it", isOutgoing: false)
+        BubblePreview(text: "This is ~~strikethrough~~ text", isOutgoing: false)
+        BubblePreview(
+            text: "**Bold**, *italic*, `code`, and ~~struck~~ all at once",
+            isOutgoing: false
+        )
+        BubblePreview(
+            text: "Outgoing with **bold** and a link https://example.com",
+            isOutgoing: true
+        )
+    }
+    .padding()
+    .frame(width: 500)
+}
+
