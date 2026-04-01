@@ -99,6 +99,8 @@ struct MessageView: View {
                         emoteContent
                     } else if message.isSpecialType {
                         specialContent
+                    } else if isEmojiOnly {
+                        emojiOnlyContent
                     } else {
                         textContent
                     }
@@ -255,6 +257,30 @@ struct MessageView: View {
         }
         .background(bubbleColor)
         .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+    }
+
+    // MARK: - Emoji-Only Content
+
+    /// Whether this text message contains only emoji (up to a reasonable count for large display).
+    private var isEmojiOnly: Bool {
+        message.kind == .text
+            && message.formattedBody == nil
+            && message.body.isEmojiOnly
+            && message.body.emojiCount <= 8
+    }
+
+    private var emojiOnlyContent: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let reply = message.replyDetail {
+                inlineReply(reply, outgoing: message.isOutgoing)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(bubbleColor)
+                    .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+            }
+            Text(message.body)
+                .font(.system(size: message.body.emojiCount <= 3 ? 48 : 32))
+        }
     }
 
     // MARK: - Emote Content
@@ -517,6 +543,40 @@ struct MessageView: View {
                     caption: "Check this out"
                 )
             )
+        )
+    }
+    .padding()
+    .frame(width: 500)
+}
+
+#Preview("Emoji-Only Messages") {
+    VStack(spacing: 2) {
+        MessageView(
+            message: TimelineMessage(
+                id: "e1", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
+                body: "\u{1F44B}", timestamp: .now.addingTimeInterval(-60), isOutgoing: false
+            ),
+            showSenderName: true
+        )
+        MessageView(
+            message: TimelineMessage(
+                id: "e2", senderID: "@me:matrix.org",
+                body: "\u{2764}\u{FE0F}\u{1F525}\u{1F389}", timestamp: .now.addingTimeInterval(-30), isOutgoing: true
+            )
+        )
+        MessageView(
+            message: TimelineMessage(
+                id: "e3", senderID: "@bob:matrix.org", senderDisplayName: "Bob",
+                body: "\u{1F602}\u{1F602}\u{1F602}\u{1F602}\u{1F602}", timestamp: .now, isOutgoing: false
+            ),
+            showSenderName: true
+        )
+        MessageView(
+            message: TimelineMessage(
+                id: "e4", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
+                body: "Hello \u{1F44B}", timestamp: .now, isOutgoing: false
+            ),
+            showSenderName: true
         )
     }
     .padding()
