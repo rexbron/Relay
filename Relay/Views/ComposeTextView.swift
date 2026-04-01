@@ -77,6 +77,9 @@ struct ComposeTextView: NSViewRepresentable {
         textView.font = .systemFont(ofSize: NSFont.systemFontSize)
         textView.textColor = .labelColor
         textView.insertionPointColor = .controlAccentColor
+        textView.isAutomaticSpellingCorrectionEnabled = true
+        textView.isContinuousSpellCheckingEnabled = true
+        textView.isGrammarCheckingEnabled = true
         textView.delegate = context.coordinator
         textView.mentionTextViewDelegate = context.coordinator
         textView.owningScrollView = scrollView
