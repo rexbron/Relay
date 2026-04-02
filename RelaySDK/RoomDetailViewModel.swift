@@ -107,7 +107,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
             try await setupTimeline(focus: .event(
                 eventId: eventId,
                 numContextEvents: 50,
-                hideThreadedEvents: true
+                threadMode: .automatic(hideThreadedEvents: true)
             ))
             timelineFocus = .focusedOnEvent(eventId)
         } catch {
@@ -404,7 +404,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     }
 
     private func observePaginationStatus(_ tl: Timeline) async throws {
-        let listener = AsyncSDKListener<RoomPaginationStatus>()
+        let listener = AsyncSDKListener<PaginationStatus>()
         paginationHandle = try await tl.subscribeToBackPaginationStatus(listener: listener)
 
         paginationTask = Task { [weak self] in
@@ -419,7 +419,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                     // Auto-paginate if we have very few items and haven't hit start
                     if !hitStart && self.timelineItems.count < 20 {
                         try? await Task.sleep(for: .milliseconds(500))
-                        try? await tl.paginateBackwards(numEvents: 40)
+                        _ = try? await tl.paginateBackwards(numEvents: 40)
                     }
                 case .paginating:
                     self.isLoadingMore = true

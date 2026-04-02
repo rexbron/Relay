@@ -96,8 +96,8 @@ extension AsyncSDKListener: RoomListServiceSyncIndicatorListener where Element =
 
 // MARK: - Pagination Status Listener
 
-extension AsyncSDKListener: PaginationStatusListener where Element == RoomPaginationStatus {
-    nonisolated func onUpdate(status: RoomPaginationStatus) {
+extension AsyncSDKListener: PaginationStatusListener where Element == PaginationStatus {
+    nonisolated func onUpdate(status: PaginationStatus) {
         publishValue(status)
     }
 }

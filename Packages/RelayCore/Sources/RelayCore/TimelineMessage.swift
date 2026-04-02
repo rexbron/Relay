@@ -34,6 +34,8 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         case encrypted
         /// Any other unsupported or unrecognized event type.
         case other
+        /// A live shared geographic location.
+        case liveLocation
     }
 
     /// A group of emoji reactions attached to a message, aggregated by reaction key.

@@ -3,7 +3,7 @@ import MatrixRustSDK
 import OSLog
 import RelayCore
 
-nonisolated(unsafe) private let logger = Logger(subsystem: "RelaySDK", category: "SessionVerification")
+private let logger = Logger(subsystem: "RelaySDK", category: "SessionVerification")
 
 /// Concrete implementation of ``SessionVerificationViewModelProtocol`` backed by the
 /// Matrix Rust SDK's `SessionVerificationController`.

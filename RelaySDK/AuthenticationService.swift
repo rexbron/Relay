@@ -151,7 +151,6 @@ final class AuthenticationService {
             )
             .slidingSyncVersionBuilder(versionBuilder: .discoverNative)
             .setSessionDelegate(sessionDelegate: sessionDelegate)
-            .enableOidcRefreshLock()
 
         let client = try await builder.build()
 

@@ -135,6 +135,9 @@ struct TimelineMessageMapper {
                     msgKind = .encrypted
                 case .other:
                     continue
+                case .liveLocation:
+                    msgBody = "Live location"
+                    msgKind = .liveLocation
                 }
             default:
                 continue
@@ -335,6 +338,9 @@ struct TimelineMessageMapper {
                 msgKind = .encrypted
             case .other:
                 return nil
+            case .liveLocation:
+                msgBody = "Live location"
+                msgKind = .liveLocation
             }
         default:
             return nil

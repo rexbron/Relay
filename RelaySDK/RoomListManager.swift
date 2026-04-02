@@ -286,6 +286,9 @@ private final class RoomEntry: Identifiable {
         case .remote(let ts, _, _, _, let c):
             content = c
             timestamp = ts
+        case .remoteInvite(let ts, _, _):
+            let date = Date(timeIntervalSince1970: TimeInterval(ts) / 1000)
+            return (AttributedString("Invited you to join"), date)
         case .local(let ts, _, _, let c, _):
             content = c
             timestamp = ts
@@ -319,6 +322,7 @@ private final class RoomEntry: Identifiable {
             case .poll: return AttributedString("Started a poll")
             case .redacted: return AttributedString("Message deleted")
             case .unableToDecrypt: return AttributedString("Encrypted message")
+            case .liveLocation: return AttributedString("Sharing live location")
             case .other: return nil
             }
         case .roomMembership: return AttributedString("Membership changed")
