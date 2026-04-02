@@ -54,8 +54,32 @@ final class PreviewMatrixService: MatrixServiceProtocol {
                 RoomMemberDetails(userId: "@charlie:matrix.org", displayName: "Charlie Davis", role: .user),
                 RoomMemberDetails(userId: "@diana:matrix.org", displayName: "Diana Evans", role: .user),
                 RoomMemberDetails(userId: "@preview:matrix.org", displayName: "You", role: .user),
-            ]
+            ],
+            pinnedEventIds: summary.pinnedEventIds
         )
+    }
+
+    func pinnedMessages(roomId: String) async -> [TimelineMessage] {
+        guard let summary = rooms.first(where: { $0.id == roomId }),
+              summary.hasPinnedMessages else { return [] }
+        return [
+            TimelineMessage(
+                id: "$pinned1",
+                senderID: "@alice:matrix.org",
+                senderDisplayName: "Alice Smith",
+                body: "Please read the project guidelines before contributing: https://wiki.example.org/guidelines",
+                timestamp: .now.addingTimeInterval(-86400 * 7),
+                isOutgoing: false
+            ),
+            TimelineMessage(
+                id: "$pinned2",
+                senderID: "@bob:matrix.org",
+                senderDisplayName: "Bob Chen",
+                body: "Next team meeting is **Wednesday at 3 PM UTC**. Don't forget!",
+                timestamp: .now.addingTimeInterval(-86400 * 2),
+                isOutgoing: false
+            ),
+        ]
     }
 
     func mediaContent(mxcURL: String) async -> Data? { nil }
@@ -118,7 +142,8 @@ final class PreviewMatrixService: MatrixServiceProtocol {
             lastMessageTimestamp: .now.addingTimeInterval(-300),
             unreadCount: 3,
             unreadMentions: 1,
-            isDirect: false
+            isDirect: false,
+            pinnedEventIds: ["$pinned1", "$pinned2"]
         ),
         RoomSummary(
             id: "!alice:matrix.org",

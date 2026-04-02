@@ -36,6 +36,9 @@ public struct RoomDetails: Sendable {
     /// The list of currently joined room members with their profile details and roles.
     public let members: [RoomMemberDetails]
 
+    /// The event IDs of messages currently pinned in this room.
+    public let pinnedEventIds: [String]
+
     /// Creates a new ``RoomDetails`` value.
     ///
     /// - Parameters:
@@ -49,6 +52,7 @@ public struct RoomDetails: Sendable {
     ///   - canonicalAlias: The room's canonical alias.
     ///   - memberCount: The total number of joined members.
     ///   - members: The detailed member list.
+    ///   - pinnedEventIds: The event IDs of pinned messages.
     public init(
         id: String,
         name: String,
@@ -59,7 +63,8 @@ public struct RoomDetails: Sendable {
         isDirect: Bool = false,
         canonicalAlias: String? = nil,
         memberCount: UInt64 = 0,
-        members: [RoomMemberDetails] = []
+        members: [RoomMemberDetails] = [],
+        pinnedEventIds: [String] = []
     ) {
         self.id = id
         self.name = name
@@ -71,6 +76,7 @@ public struct RoomDetails: Sendable {
         self.canonicalAlias = canonicalAlias
         self.memberCount = memberCount
         self.members = members
+        self.pinnedEventIds = pinnedEventIds
     }
 }
 

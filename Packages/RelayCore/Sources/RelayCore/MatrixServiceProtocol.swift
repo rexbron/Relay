@@ -167,6 +167,15 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     /// - Returns: A ``RoomDetails`` snapshot, or `nil` if the room is not found.
     func roomDetails(roomId: String) async -> RoomDetails?
 
+    /// Fetches the pinned messages for a room.
+    ///
+    /// Creates a pinned-events-focused timeline, loads the pinned events, and returns
+    /// them as ``TimelineMessage`` models.
+    ///
+    /// - Parameter roomId: The Matrix room identifier.
+    /// - Returns: The list of pinned messages, or an empty array if none exist.
+    func pinnedMessages(roomId: String) async -> [TimelineMessage]
+
     /// Downloads the full-resolution content of a Matrix media URL.
     ///
     /// - Parameter mxcURL: The `mxc://` URL of the media.
@@ -286,6 +295,7 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func markAsRead(roomId: String, sendPublicReceipt: Bool) async {}
     func sendTypingNotice(roomId: String, isTyping: Bool) async {}
     func roomDetails(roomId: String) async -> RoomDetails? { nil }
+    func pinnedMessages(roomId: String) async -> [TimelineMessage] { [] }
     func mediaContent(mxcURL: String) async -> Data? { nil }
     func mediaThumbnail(mxcURL: String, width: UInt64, height: UInt64) async -> Data? { nil }
     func userDisplayName() async -> String? { nil }

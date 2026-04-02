@@ -174,6 +174,16 @@ public final class MatrixService: MatrixServiceProtocol {
         let unreadCount = rooms.first(where: { $0.id == roomId })?.unreadMessages ?? 0
         let vm = RoomDetailViewModel(room: room, currentUserId: userId(), unreadCount: Int(unreadCount))
         roomViewModels[roomId] = vm
+
+        // Subscribe to this room at a higher detail level in the sliding sync.
+        // This requests additional state events (including m.room.pinned_events)
+        // that aren't included in the default room list sync.
+        if let rls = roomListManager.roomListService {
+            Task {
+                try? await rls.subscribeToRooms(roomIds: [roomId])
+            }
+        }
+
         return vm
     }
 
@@ -253,6 +263,8 @@ public final class MatrixService: MatrixServiceProtocol {
             }
         }
 
+        let pinnedEventIds = info?.pinnedEventIds ?? []
+
         return RoomDetails(
             id: room.id(),
             name: name,
@@ -263,8 +275,75 @@ public final class MatrixService: MatrixServiceProtocol {
             isDirect: isDirect,
             canonicalAlias: canonicalAlias,
             memberCount: memberCount,
-            members: memberDetails
+            members: memberDetails,
+            pinnedEventIds: pinnedEventIds
         )
+    }
+
+    // MARK: - Pinned Messages
+
+    public func pinnedMessages(roomId: String) async -> [TimelineMessage] {
+        guard let room = room(id: roomId) else {
+            logger.warning("pinnedMessages: room not found for \(roomId)")
+            return []
+        }
+
+        let info = try? await room.roomInfo()
+        let pinnedIds = info?.pinnedEventIds ?? []
+        guard !pinnedIds.isEmpty else { return [] }
+
+        let currentUser = userId()
+        var messages: [TimelineMessage] = []
+
+        // Fetch each pinned event directly from the server/cache using
+        // Room.loadOrFetchEvent, which works regardless of whether the event
+        // is in the loaded timeline window.
+        for eventId in pinnedIds {
+            do {
+                let event = try await room.loadOrFetchEvent(eventId: eventId)
+                let content = try event.content()
+
+                guard case .messageLike(let msgContent) = content,
+                      case .roomMessage(let messageType, _) = msgContent else {
+                    continue
+                }
+
+                let body: String
+                let kind: TimelineMessage.Kind
+                switch messageType {
+                case .text(let c):    body = c.body; kind = .text
+                case .emote(let c):   body = c.body; kind = .emote
+                case .notice(let c):  body = c.body; kind = .notice
+                case .image:          body = "Image"; kind = .image
+                case .video:          body = "Video"; kind = .video
+                case .audio:          body = "Audio"; kind = .audio
+                case .file:           body = "File";  kind = .file
+                case .location:       body = "Location"; kind = .location
+                case .gallery:        body = "Gallery"; kind = .image
+                case .other(_, let b): body = b; kind = .other
+                }
+
+                let senderId = event.senderId()
+                let displayName = try? await room.memberDisplayName(userId: senderId)
+                let avatarURL = try? await room.memberAvatarUrl(userId: senderId)
+                let ts = Date(timeIntervalSince1970: TimeInterval(event.timestamp()) / 1000)
+
+                messages.append(TimelineMessage(
+                    id: event.eventId(),
+                    senderID: senderId,
+                    senderDisplayName: displayName,
+                    senderAvatarURL: avatarURL,
+                    body: body,
+                    timestamp: ts,
+                    isOutgoing: senderId == currentUser,
+                    kind: kind
+                ))
+            } catch {
+                logger.warning("pinnedMessages: failed to fetch event \(eventId): \(error)")
+            }
+        }
+
+        return messages
     }
 
     // MARK: - Directory Search

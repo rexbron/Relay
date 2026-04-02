@@ -41,6 +41,12 @@ public final class RoomSummary: Identifiable {
     /// Whether this room is a direct message (one-to-one) conversation.
     public var isDirect: Bool
 
+    /// The event IDs of messages currently pinned in this room.
+    public var pinnedEventIds: [String]
+
+    /// Whether this room has any pinned messages.
+    public var hasPinnedMessages: Bool { !pinnedEventIds.isEmpty }
+
     /// Creates a new ``RoomSummary`` instance.
     ///
     /// - Parameters:
@@ -53,6 +59,7 @@ public final class RoomSummary: Identifiable {
     ///   - unreadCount: The number of unread messages.
     ///   - unreadMentions: The number of unread mentions.
     ///   - isDirect: Whether this is a direct message conversation.
+    ///   - pinnedEventIds: The event IDs of pinned messages in this room.
     public init(
         id: String,
         name: String,
@@ -62,7 +69,8 @@ public final class RoomSummary: Identifiable {
         lastMessageTimestamp: Date? = nil,
         unreadCount: UInt = 0,
         unreadMentions: UInt = 0,
-        isDirect: Bool = false
+        isDirect: Bool = false,
+        pinnedEventIds: [String] = []
     ) {
         self.id = id
         self.name = name
@@ -73,5 +81,6 @@ public final class RoomSummary: Identifiable {
         self.unreadMessages = unreadCount
         self.unreadMentions = unreadMentions
         self.isDirect = isDirect
+        self.pinnedEventIds = pinnedEventIds
     }
 }

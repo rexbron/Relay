@@ -229,4 +229,146 @@ struct TimelineMessageMapper {
 
         return MappingResult(messages: result, unresolvedReplyEventIds: pendingReplyFetchIds)
     }
+
+    /// Maps a single `EventTimelineItem` into a ``TimelineMessage``, if it is a message-like event.
+    ///
+    /// Returns `nil` for state events and other non-message content.
+    func mapEventItem(_ event: EventTimelineItem) -> TimelineMessage? {
+        // Re-use the batch mapper with a synthetic wrapper — the logic is identical.
+        // EventTimelineItem doesn't conform to TimelineItem, so we duplicate the
+        // core extraction inline. This keeps the single-event path simple.
+        let msgBody: String
+        let msgKind: TimelineMessage.Kind
+        var msgMediaInfo: TimelineMessage.MediaInfo?
+        var msgFormattedBody: String?
+
+        switch event.content {
+        case .msgLike(let msgLikeContent):
+            switch msgLikeContent.kind {
+            case .message(let messageContent):
+                switch messageContent.msgType {
+                case .text(let textContent):
+                    msgBody = textContent.body
+                    msgKind = .text
+                    if case .html = textContent.formatted?.format {
+                        msgFormattedBody = textContent.formatted?.body
+                    }
+                case .emote(let emoteContent):
+                    msgBody = emoteContent.body
+                    msgKind = .emote
+                    if case .html = emoteContent.formatted?.format {
+                        msgFormattedBody = emoteContent.formatted?.body
+                    }
+                case .notice(let noticeContent):
+                    msgBody = noticeContent.body
+                    msgKind = .notice
+                    if case .html = noticeContent.formatted?.format {
+                        msgFormattedBody = noticeContent.formatted?.body
+                    }
+                case .image(let imageContent):
+                    msgBody = imageContent.caption ?? "Image"
+                    msgKind = .image
+                    msgMediaInfo = .init(
+                        mxcURL: imageContent.source.url(),
+                        filename: imageContent.filename,
+                        mimetype: imageContent.info?.mimetype,
+                        width: imageContent.info?.width,
+                        height: imageContent.info?.height,
+                        size: imageContent.info?.size,
+                        caption: imageContent.caption
+                    )
+                case .video(let videoContent):
+                    msgBody = videoContent.caption ?? videoContent.filename
+                    msgKind = .video
+                    msgMediaInfo = .init(
+                        mxcURL: videoContent.source.url(),
+                        filename: videoContent.filename,
+                        mimetype: videoContent.info?.mimetype,
+                        width: videoContent.info?.width,
+                        height: videoContent.info?.height,
+                        size: videoContent.info?.size,
+                        caption: videoContent.caption,
+                        duration: videoContent.info?.duration
+                    )
+                case .audio(let audioContent):
+                    msgBody = audioContent.caption ?? audioContent.filename
+                    msgKind = .audio
+                    msgMediaInfo = .init(
+                        mxcURL: audioContent.source.url(),
+                        filename: audioContent.filename,
+                        mimetype: audioContent.info?.mimetype,
+                        size: audioContent.info?.size,
+                        caption: audioContent.caption,
+                        duration: audioContent.info?.duration
+                    )
+                case .file(let fileContent):
+                    msgBody = fileContent.caption ?? fileContent.filename
+                    msgKind = .file
+                    msgMediaInfo = .init(
+                        mxcURL: fileContent.source.url(),
+                        filename: fileContent.filename,
+                        mimetype: fileContent.info?.mimetype,
+                        size: fileContent.info?.size,
+                        caption: fileContent.caption
+                    )
+                case .location:
+                    msgBody = "Location"
+                    msgKind = .location
+                case .gallery:
+                    msgBody = "Gallery"
+                    msgKind = .image
+                case .other:
+                    msgBody = "Message"
+                    msgKind = .other
+                }
+            case .sticker:
+                msgBody = "Sticker"
+                msgKind = .sticker
+            case .poll:
+                msgBody = "Poll"
+                msgKind = .poll
+            case .redacted:
+                msgBody = "This message was deleted"
+                msgKind = .redacted
+            case .unableToDecrypt:
+                msgBody = "Waiting for encryption key"
+                msgKind = .encrypted
+            case .other:
+                return nil
+            }
+        default:
+            return nil
+        }
+
+        let (displayName, avatarURL): (String?, String?) =
+            switch event.senderProfile {
+            case .ready(let name, _, let url):
+                (name, url)
+            default:
+                (nil, nil)
+            }
+
+        let ts = Date(timeIntervalSince1970: TimeInterval(event.timestamp) / 1000)
+
+        let eventId: String
+        switch event.eventOrTransactionId {
+        case .eventId(let id):
+            eventId = id
+        case .transactionId(let id):
+            eventId = id
+        }
+
+        return TimelineMessage(
+            id: eventId,
+            senderID: event.sender,
+            senderDisplayName: displayName,
+            senderAvatarURL: avatarURL,
+            body: msgBody,
+            formattedBody: msgFormattedBody,
+            timestamp: ts,
+            isOutgoing: event.isOwn,
+            kind: msgKind,
+            mediaInfo: msgMediaInfo
+        )
+    }
 }

@@ -33,7 +33,8 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     private let roomId: String
     private let currentUserId: String?
     private let unreadCount: Int
-    private var timeline: Timeline?
+    /// The SDK timeline, exposed for use by ``MatrixService/pinnedMessages(roomId:)``.
+    private(set) var sdkTimeline: Timeline?
     private var timelineItems: [TimelineItem] = []
     private var observationTask: Task<Void, Never>?
     private var paginationTask: Task<Void, Never>?
@@ -70,7 +71,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     // MARK: - Public
 
     public func loadTimeline() async {
-        guard timeline == nil else { return }
+        guard sdkTimeline == nil else { return }
 
         isLoading = true
 
@@ -84,7 +85,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                 reportUtds: false
             )
             let tl = try await room.timelineWithConfiguration(configuration: config)
-            timeline = tl
+            sdkTimeline = tl
             observeTimeline(tl)
             observeTypingNotifications()
 
@@ -105,9 +106,9 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     }
 
     public func loadMoreHistory() async {
-        guard let timeline, !isLoadingMore, !hasReachedStart else { return }
+        guard let sdkTimeline, !isLoadingMore, !hasReachedStart else { return }
         do {
-            _ = try await timeline.paginateBackwards(numEvents: 40)
+            _ = try await sdkTimeline.paginateBackwards(numEvents: 40)
         } catch {
             logger.error("Failed to load earlier messages: \(error)")
             errorMessage = "Could not load earlier messages: \(error.localizedDescription)"
@@ -115,7 +116,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     }
 
     public func send(text: String, inReplyTo eventId: String? = nil, mentionedUserIds: [String] = []) async {
-        guard let timeline else { return }
+        guard let sdkTimeline else { return }
         // The spec recommends always including m.mentions on every event, even
         // when empty, to prevent legacy push rules (e.g. .m.rule.contains_display_name)
         // from triggering unintentional notifications.
@@ -123,9 +124,9 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
             .withMentions(mentions: Mentions(userIds: mentionedUserIds, room: false))
         do {
             if let eventId {
-                try await timeline.sendReply(msg: msg, eventId: eventId)
+                try await sdkTimeline.sendReply(msg: msg, eventId: eventId)
             } else {
-                _ = try await timeline.send(msg: msg)
+                _ = try await sdkTimeline.send(msg: msg)
             }
         } catch {
             logger.error("Failed to send message: \(error)")
@@ -134,14 +135,14 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     }
 
     public func toggleReaction(messageId: String, key: String) async {
-        guard let timeline else { return }
+        guard let sdkTimeline else { return }
         let itemId: EventOrTransactionId = if messageId.hasPrefix("$") {
             .eventId(eventId: messageId)
         } else {
             .transactionId(transactionId: messageId)
         }
         do {
-            _ = try await timeline.toggleReaction(itemId: itemId, key: key)
+            _ = try await sdkTimeline.toggleReaction(itemId: itemId, key: key)
         } catch {
             logger.error("Failed to toggle reaction: \(error)")
             errorMessage = "Could not toggle reaction: \(error.localizedDescription)"
@@ -149,14 +150,14 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     }
 
     public func redact(messageId: String, reason: String? = nil) async {
-        guard let timeline else { return }
+        guard let sdkTimeline else { return }
         let itemId: EventOrTransactionId = if messageId.hasPrefix("$") {
             .eventId(eventId: messageId)
         } else {
             .transactionId(transactionId: messageId)
         }
         do {
-            try await timeline.redactEvent(eventOrTransactionId: itemId, reason: reason)
+            try await sdkTimeline.redactEvent(eventOrTransactionId: itemId, reason: reason)
         } catch {
             logger.error("Failed to delete message: \(error)")
             errorMessage = "Could not delete message: \(error.localizedDescription)"
@@ -164,7 +165,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     }
 
     public func sendAttachment(url: URL, caption: String? = nil) async {
-        guard let timeline else { return }
+        guard let sdkTimeline else { return }
 
         let filename = url.lastPathComponent
         let utType = UTType(filenameExtension: url.pathExtension) ?? .data
@@ -200,7 +201,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                     mentions: nil,
                     inReplyTo: nil
                 )
-                handle = try timeline.sendImage(
+                handle = try sdkTimeline.sendImage(
                     params: params,
                     thumbnailSource: nil,
                     imageInfo: ImageInfo(
@@ -242,7 +243,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                     mentions: nil,
                     inReplyTo: nil
                 )
-                handle = try timeline.sendVideo(
+                handle = try sdkTimeline.sendVideo(
                     params: params,
                     thumbnailSource: nil,
                     videoInfo: VideoInfo(
@@ -265,7 +266,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                     mentions: nil,
                     inReplyTo: nil
                 )
-                handle = try timeline.sendAudio(
+                handle = try sdkTimeline.sendAudio(
                     params: params,
                     audioInfo: AudioInfo(
                         duration: duration, size: fileSize, mimetype: mime
@@ -288,7 +289,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                     mentions: nil,
                     inReplyTo: nil
                 )
-                handle = try timeline.sendFile(
+                handle = try sdkTimeline.sendFile(
                     params: params,
                     fileInfo: FileInfo(
                         mimetype: mime, size: fileSize,
@@ -440,7 +441,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
 
     private func resolveUnfetchedReplies(_ pendingIds: Set<String>) {
         let newFetchIds = pendingIds.subtracting(fetchedReplyEventIds)
-        guard !newFetchIds.isEmpty, let tl = timeline else { return }
+        guard !newFetchIds.isEmpty, let tl = sdkTimeline else { return }
         fetchedReplyEventIds.formUnion(newFetchIds)
         Task {
             for eventId in newFetchIds {

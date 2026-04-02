@@ -12,6 +12,9 @@ struct RoomInfoView: View {
     /// Called when a member row is tapped to show their user profile.
     var onMemberTap: ((UserProfile) -> Void)?
 
+    /// Called when a pinned message row is tapped. Passes the event ID to scroll to.
+    var onPinnedMessageTap: ((String) -> Void)?
+
     @State private var details: RoomDetails?
 
     var body: some View {
@@ -36,6 +39,9 @@ struct RoomInfoView: View {
             VStack(spacing: 20) {
                 headerSection(details)
                 aboutSection(details)
+                if !details.pinnedEventIds.isEmpty {
+                    pinnedSection(details)
+                }
                 membersSection(details)
                 footerSection(details)
             }
@@ -138,6 +144,21 @@ struct RoomInfoView: View {
                 .textSelection(.enabled)
                 .lineLimit(1)
         }
+    }
+
+    // MARK: - Pinned Messages
+
+    private func pinnedSection(_ details: RoomDetails) -> some View {
+        GroupBox {
+            PinnedMessagesView(roomId: details.id, scrollable: false, onSelectMessage: onPinnedMessageTap)
+                .padding(.vertical, 2)
+        } label: {
+            Label("Pinned (\(details.pinnedEventIds.count))", systemImage: "pin.fill")
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 16)
     }
 
     // MARK: - Members

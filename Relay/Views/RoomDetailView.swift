@@ -25,6 +25,10 @@ struct RoomDetailView: View {
     /// The view model managing the room's timeline state and actions.
     @State var viewModel: any RoomDetailViewModelProtocol
 
+    /// A binding that, when set to a message event ID, causes the timeline to scroll
+    /// to that message. Used by ``PinnedMessagesView`` to jump to pinned messages.
+    @Binding var focusedMessageId: String?
+
     /// Called when a user's profile should be shown (e.g. after double-tapping an avatar).
     var onUserTap: ((UserProfile) -> Void)?
 
@@ -166,6 +170,18 @@ struct RoomDetailView: View {
             Button("OK") { viewModel.errorMessage = nil }
         } message: {
             Text(viewModel.errorMessage ?? "")
+        }
+        .onChange(of: focusedMessageId) {
+            if let eventId = focusedMessageId {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    scrollPosition.scrollTo(id: eventId, anchor: .center)
+                }
+                // Clear after a short delay so it can be set again for the same message
+                Task {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    focusedMessageId = nil
+                }
+            }
         }
         .alert("Delete Message", isPresented: Binding(
             get: { messageToDelete != nil },
@@ -579,7 +595,8 @@ private struct TypingBubble: View {
         RoomDetailView(
             roomId: "!preview:matrix.org",
             roomName: "Design Team",
-            viewModel: PreviewRoomDetailViewModel()
+            viewModel: PreviewRoomDetailViewModel(),
+            focusedMessageId: .constant(nil)
         )
     }
     .environment(\.matrixService, PreviewMatrixService())
@@ -591,7 +608,8 @@ private struct TypingBubble: View {
         RoomDetailView(
             roomId: "!preview:matrix.org",
             roomName: "Design Team",
-            viewModel: PreviewRoomDetailViewModel(firstUnreadMessageId: "4")
+            viewModel: PreviewRoomDetailViewModel(firstUnreadMessageId: "4"),
+            focusedMessageId: .constant(nil)
         )
     }
     .environment(\.matrixService, PreviewMatrixService())
@@ -603,7 +621,8 @@ private struct TypingBubble: View {
         RoomDetailView(
             roomId: "!preview:matrix.org",
             roomName: "Design Team",
-            viewModel: PreviewRoomDetailViewModel(messages: [], isLoading: true)
+            viewModel: PreviewRoomDetailViewModel(messages: [], isLoading: true),
+            focusedMessageId: .constant(nil)
         )
     }
     .environment(\.matrixService, PreviewMatrixService())
@@ -615,7 +634,8 @@ private struct TypingBubble: View {
         RoomDetailView(
             roomId: "!preview:matrix.org",
             roomName: "Design Team",
-            viewModel: PreviewRoomDetailViewModel(typingUserDisplayNames: ["Alice", "Bob"])
+            viewModel: PreviewRoomDetailViewModel(typingUserDisplayNames: ["Alice", "Bob"]),
+            focusedMessageId: .constant(nil)
         )
     }
     .environment(\.matrixService, PreviewMatrixService())
@@ -627,7 +647,8 @@ private struct TypingBubble: View {
         RoomDetailView(
             roomId: "!preview:matrix.org",
             roomName: "New Room",
-            viewModel: PreviewRoomDetailViewModel(messages: [])
+            viewModel: PreviewRoomDetailViewModel(messages: []),
+            focusedMessageId: .constant(nil)
         )
     }
     .environment(\.matrixService, PreviewMatrixService())

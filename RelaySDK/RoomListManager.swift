@@ -24,7 +24,8 @@ final class RoomListManager {
     /// The current state of the room list service.
     private(set) var roomListServiceState: RoomListServiceState?
 
-    private var roomListService: RoomListService?
+    /// The SDK's room list service, exposed for room subscription calls.
+    private(set) var roomListService: RoomListService?
     private var entriesHandle: RoomListEntriesWithDynamicAdaptersResult?
     private var serviceStateHandle: TaskHandle?
     private var entriesTask: Task<Void, Never>?
@@ -184,6 +185,8 @@ final class RoomListManager {
                 return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
             }
         }
+
+
     }
 }
 
@@ -261,6 +264,7 @@ private final class RoomEntry: Identifiable {
         summary.unreadMessages = UInt(info.numUnreadMessages)
         summary.unreadMentions = UInt(info.numUnreadMentions)
         summary.isDirect = info.isDirect
+        summary.pinnedEventIds = info.pinnedEventIds
 
         // Extract latest message preview and notify the manager to re-sort
         Task { [weak self] in

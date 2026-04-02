@@ -13,6 +13,13 @@ struct MainView: View {
     @State private var isComposing = false
     @State private var showingInspector = false
     @State private var inspectorProfile: UserProfile?
+    @State private var showingPinnedMessages = false
+    @State private var focusedMessageId: String?
+
+    private func scrollToMessage(_ eventId: String) {
+        showingPinnedMessages = false
+        focusedMessageId = eventId
+    }
 
     private func showUserProfile(_ profile: UserProfile) {
         withAnimation(.easeInOut(duration: 0.25)) {
@@ -29,6 +36,7 @@ struct MainView: View {
                     if selectedRoomId != nil {
                         isComposing = false
                         inspectorProfile = nil
+                        showingPinnedMessages = false
                     }
                 }
         } detail: {
@@ -43,6 +51,7 @@ struct MainView: View {
                         roomName: summary.name,
                         roomAvatarURL: summary.avatarURL,
                         viewModel: viewModel,
+                        focusedMessageId: $focusedMessageId,
                         onUserTap: { profile in showUserProfile(profile) }
                     )
                     .id(selectedRoomId)
@@ -105,6 +114,27 @@ struct MainView: View {
                                 }
                             } label: {
                                 HStack(spacing: 8) {
+                                    if summary.hasPinnedMessages {
+                                        Button {
+                                            showingPinnedMessages.toggle()
+                                        } label: {
+                                            Image(systemName: "pin.fill")
+                                                .foregroundStyle(.secondary)
+                                                .frame(width: 28, height: 28)
+                                                .contentShape(Circle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("Pinned Messages")
+                                        .popover(isPresented: $showingPinnedMessages,
+                                                 arrowEdge: .bottom) {
+                                            PinnedMessagesView(
+                                                roomId: selectedRoomId,
+                                                onSelectMessage: scrollToMessage
+                                            )
+                                        }
+                                    }
+
+
                                     VStack(alignment: .trailing, spacing: 1) {
                                         Text(summary.name)
                                             .fontWeight(.semibold)
@@ -184,7 +214,11 @@ struct MainView: View {
                 UserDetailView(profile: profile)
             }
         } else {
-            RoomInfoView(roomId: roomId, onMemberTap: { profile in showUserProfile(profile) })
+            RoomInfoView(
+                roomId: roomId,
+                onMemberTap: { profile in showUserProfile(profile) },
+                onPinnedMessageTap: scrollToMessage
+            )
         }
     }
 }
