@@ -44,11 +44,14 @@ struct RoomDetailView: View {
     @State private var pendingScrollToBottom = false
     @State private var showUnreadMarker = true
     @State private var unreadMarkerDismissTask: Task<Void, Never>?
+    @State private var fullyReadDebounceTask: Task<Void, Never>?
+    @State private var lastFullyReadEventId: String?
 
     @AppStorage("safety.sendReadReceipts") private var sendReadReceipts = true
     @AppStorage("safety.sendTypingNotifications") private var sendTypingNotifications = true
     @AppStorage("safety.mediaPreviewMode") private var mediaPreviewMode = "privateOnly"
     @AppStorage("behavior.showURLPreviews") private var showURLPreviews = true
+    @AppStorage("behavior.alwaysLoadNewest") private var alwaysLoadNewest = true
 
     private var showErrorAlert: Binding<Bool> {
         Binding(
@@ -127,7 +130,19 @@ struct RoomDetailView: View {
             }
             .navigationTitle("")
         .task {
-            await viewModel.loadTimeline()
+            // Load focused on the fully-read marker if the user has opted out of "always load newest"
+            var focusEventId: String?
+            if !alwaysLoadNewest {
+                focusEventId = await matrixService.fullyReadEventId(roomId: roomId)
+            }
+            await viewModel.loadTimeline(focusedOnEventId: focusEventId)
+
+            // After loading, scroll to the focused event if applicable
+            if let focusEventId {
+                try? await Task.sleep(for: .milliseconds(200))
+                scrollPosition.scrollTo(id: focusEventId, anchor: .center)
+            }
+
             await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts)
 
             // Fetch room members for mention autocomplete
@@ -288,9 +303,20 @@ struct RoomDetailView: View {
                     }
                     .id(message.id)
                     .help(message.formattedTime)
+                    .onAppear { advanceFullyReadMarker(to: message.id) }
                     .contextMenu {
                         messageContextMenu(for: message)
                     }
+                }
+
+                // Forward pagination sentinel: loads newer messages when scrolling
+                // toward the live edge on an event-focused timeline.
+                if !viewModel.hasReachedEnd {
+                    Color.clear
+                        .frame(height: 1)
+                        .onAppear {
+                            Task { await viewModel.loadMoreFuture() }
+                        }
                 }
 
                 // Bottom sentinel: tracks whether the user is scrolled near the bottom.
@@ -326,6 +352,14 @@ struct RoomDetailView: View {
             }
             // Mark as read when new messages arrive and user is at the bottom
             if isNearBottom {
+                Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
+            }
+        }
+        .onChange(of: viewModel.timelineFocus) {
+            // When the timeline auto-transitions to live (after forward pagination
+            // reaches the live edge), scroll to the bottom and mark as read.
+            if viewModel.timelineFocus == .live {
+                pendingScrollToBottom = true
                 Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
             }
         }
@@ -405,6 +439,34 @@ struct RoomDetailView: View {
         }
         .padding(.vertical, 4)
         .transition(.opacity)
+    }
+
+    // MARK: - Fully-Read Marker
+
+    /// Debounces fully-read receipt advancement as messages appear on screen.
+    /// Only advances forward (to later messages in the timeline), never backward.
+    private func advanceFullyReadMarker(to eventId: String) {
+        guard !alwaysLoadNewest || !isNearBottom else {
+            // When "always load newest" is on and we're at the bottom,
+            // markAsRead already handles receipts via the bottom sentinel.
+            return
+        }
+
+        // Only advance if this event is later in the timeline than the last marker
+        if let lastId = lastFullyReadEventId,
+           let lastIndex = viewModel.messages.firstIndex(where: { $0.id == lastId }),
+           let newIndex = viewModel.messages.firstIndex(where: { $0.id == eventId }),
+           newIndex <= lastIndex {
+            return
+        }
+
+        lastFullyReadEventId = eventId
+        fullyReadDebounceTask?.cancel()
+        fullyReadDebounceTask = Task {
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            await viewModel.sendFullyReadReceipt(upTo: eventId)
+        }
     }
 
     // MARK: - Context Menu

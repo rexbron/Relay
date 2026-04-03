@@ -39,6 +39,7 @@ final class PreviewMatrixService: MatrixServiceProtocol {
             room.unreadMentions = 0
         }
     }
+    func fullyReadEventId(roomId: String) async -> String? { nil }
     func roomDetails(roomId: String) async -> RoomDetails? {
         guard let summary = rooms.first(where: { $0.id == roomId }) else { return nil }
         return RoomDetails(

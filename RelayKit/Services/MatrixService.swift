@@ -240,8 +240,43 @@ public final class MatrixService: MatrixServiceProtocol {
 
     public func markAsRead(roomId: String, sendPublicReceipt: Bool) async {
         guard let room = room(id: roomId) else { return }
+
+        // Optimistically clear unread indicators so the room list updates immediately
+        // rather than waiting for the server round-trip through the sync loop.
+        if let summary = rooms.first(where: { $0.id == roomId }) {
+            summary.unreadMessages = 0
+            summary.unreadMentions = 0
+        }
+
         let receiptType: ReceiptType = sendPublicReceipt ? .read : .readPrivate
         try? await room.markAsRead(receiptType: receiptType)
+    }
+
+    public func fullyReadEventId(roomId: String) async -> String? {
+        guard let client else { return nil }
+        // Use a nonisolated(unsafe) var to hold the handle alive until the callback fires.
+        nonisolated(unsafe) var handle: TaskHandle?
+        let result: String? = await withCheckedContinuation { continuation in
+            let listener = RoomAccountDataListenerAdapter { event, _ in
+                switch event {
+                case .fullyReadEvent(let eventId):
+                    continuation.resume(returning: eventId)
+                default:
+                    continuation.resume(returning: nil)
+                }
+            }
+            do {
+                handle = try client.observeRoomAccountDataEvent(
+                    roomId: roomId,
+                    eventType: .fullyRead,
+                    listener: listener
+                )
+            } catch {
+                continuation.resume(returning: nil)
+            }
+        }
+        _ = handle // Keep handle alive until continuation resolves
+        return result
     }
 
     public func sendTypingNotice(roomId: String, isTyping: Bool) async {

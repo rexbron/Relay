@@ -28,6 +28,12 @@ public protocol RoomDetailViewModelProtocol: AnyObject, Observable {
     /// Whether backward pagination has reached the beginning of the room's history.
     var hasReachedStart: Bool { get }
 
+    /// Whether forward pagination has reached the live edge of the timeline.
+    ///
+    /// Only meaningful when the timeline is focused on a specific event. When `true`,
+    /// all newer messages have been loaded and the timeline can transition to live mode.
+    var hasReachedEnd: Bool { get }
+
     /// The event ID of the first unread message, used to display the "New" divider.
     /// Cleared after the room is marked as read.
     var firstUnreadMessageId: String? { get set }
@@ -42,10 +48,19 @@ public protocol RoomDetailViewModelProtocol: AnyObject, Observable {
     var timelineFocus: TimelineFocusState { get }
 
     /// Loads the room timeline, restoring cached messages and subscribing to live updates.
-    func loadTimeline() async
+    ///
+    /// - Parameter fullyReadEventId: If provided, the timeline is loaded focused on this event
+    ///   instead of the live edge, allowing the user to catch up from their last read position.
+    func loadTimeline(focusedOnEventId fullyReadEventId: String?) async
 
     /// Paginates backward to load older messages from the room history.
     func loadMoreHistory() async
+
+    /// Paginates forward to load newer messages toward the live edge.
+    ///
+    /// Only meaningful when the timeline is focused on a specific event. When forward
+    /// pagination reaches the live edge, ``hasReachedEnd`` becomes `true`.
+    func loadMoreFuture() async
 
     /// Focuses the timeline on a specific event, loading context events around it.
     ///
@@ -61,6 +76,14 @@ public protocol RoomDetailViewModelProtocol: AnyObject, Observable {
     /// Tears down the event-focused timeline and recreates the standard live timeline
     /// anchored at the most recent messages.
     func returnToLive() async
+
+    /// Advances the fully-read marker to the specified event ID.
+    ///
+    /// Sends a `m.fully_read` receipt to the server so the read position is synced
+    /// across devices. The marker is only advanced forward, never backward.
+    ///
+    /// - Parameter eventId: The event ID to mark as the furthest-read position.
+    func sendFullyReadReceipt(upTo eventId: String) async
 
     /// Sends a text message to the room, optionally as a reply to another message.
     ///

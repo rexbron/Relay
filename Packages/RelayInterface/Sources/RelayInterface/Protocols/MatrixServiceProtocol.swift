@@ -171,6 +171,15 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     ///   - sendPublicReceipt: Whether to send a public read receipt (visible to other users).
     func markAsRead(roomId: String, sendPublicReceipt: Bool) async
 
+    /// Returns the event ID of the user's fully-read marker (`m.fully_read`) in a room.
+    ///
+    /// The fully-read marker represents the furthest point the user has read up to,
+    /// and is used to restore scroll position when re-opening a room.
+    ///
+    /// - Parameter roomId: The Matrix room identifier.
+    /// - Returns: The event ID of the fully-read marker, or `nil` if unavailable.
+    func fullyReadEventId(roomId: String) async -> String?
+
     /// Sends or clears a typing notification in a room.
     ///
     /// - Parameters:
@@ -313,6 +322,7 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func leaveRoom(id: String) async throws {}
     func searchDirectory(query: String) async throws -> [DirectoryRoom] { [] }
     func markAsRead(roomId: String, sendPublicReceipt: Bool) async {}
+    func fullyReadEventId(roomId: String) async -> String? { nil }
     func sendTypingNotice(roomId: String, isTyping: Bool) async {}
     func roomDetails(roomId: String) async -> RoomDetails? { nil }
     func pinnedMessages(roomId: String) async -> [TimelineMessage] { [] }

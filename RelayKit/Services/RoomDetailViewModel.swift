@@ -20,6 +20,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
     public private(set) var isLoading = true
     public private(set) var isLoadingMore = false
     public private(set) var hasReachedStart = false
+    public private(set) var hasReachedEnd = true
     public var firstUnreadMessageId: String?
     public private(set) var typingUserDisplayNames: [String] = []
     public var errorMessage: String?
@@ -66,13 +67,25 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
 
     // MARK: - Public
 
-    public func loadTimeline() async {
+    public func loadTimeline(focusedOnEventId fullyReadEventId: String? = nil) async {
         guard sdkTimeline == nil else { return }
 
         isLoading = true
         do {
-            try await setupTimeline(focus: .live(hideThreadedEvents: true))
-            timelineFocus = .live
+            if let fullyReadEventId {
+                // Load timeline focused on the fully-read marker
+                try await setupTimeline(focus: .event(
+                    eventId: fullyReadEventId,
+                    numContextEvents: 50,
+                    threadMode: .automatic(hideThreadedEvents: true)
+                ))
+                timelineFocus = .focusedOnEvent(fullyReadEventId)
+                hasReachedEnd = false
+            } else {
+                try await setupTimeline(focus: .live(hideThreadedEvents: true))
+                timelineFocus = .live
+                hasReachedEnd = true
+            }
             observeTypingNotifications()
             if let tl = sdkTimeline {
                 await paginateInitialHistory(tl)
@@ -94,6 +107,31 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
         }
     }
 
+    public func loadMoreFuture() async {
+        guard let sdkTimeline, !hasReachedEnd else { return }
+        do {
+            let hitEnd = try await sdkTimeline.paginateForwards(numEvents: 40)
+            if hitEnd {
+                hasReachedEnd = true
+                // Auto-transition to live: the user has scrolled to the newest messages
+                if case .focusedOnEvent = timelineFocus {
+                    timelineFocus = .live
+                }
+            }
+        } catch {
+            logger.error("Failed to load newer messages: \(error)")
+        }
+    }
+
+    public func sendFullyReadReceipt(upTo eventId: String) async {
+        guard let sdkTimeline else { return }
+        do {
+            try await sdkTimeline.sendReadReceipt(receiptType: .fullyRead, eventId: eventId)
+        } catch {
+            logger.error("Failed to send fully-read receipt: \(error)")
+        }
+    }
+
     public func focusOnEvent(eventId: String) async {
         isLoading = true
         teardownTimeline()
@@ -105,6 +143,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
                 threadMode: .automatic(hideThreadedEvents: true)
             ))
             timelineFocus = .focusedOnEvent(eventId)
+            hasReachedEnd = false
         } catch {
             logger.error("Failed to focus on event \(eventId): \(error)")
             errorMessage = "Could not load message: \(error.localizedDescription)"
@@ -343,6 +382,7 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
         timelineItems = []
         messages = []
         hasReachedStart = false
+        hasReachedEnd = true
         isLoadingMore = false
         fetchedReplyEventIds = []
     }

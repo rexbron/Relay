@@ -11,6 +11,7 @@ final class PreviewRoomDetailViewModel: RoomDetailViewModelProtocol {
     var isLoading: Bool
     var isLoadingMore = false
     var hasReachedStart: Bool
+    var hasReachedEnd: Bool = true
     var firstUnreadMessageId: String?
     var typingUserDisplayNames: [String]
     var errorMessage: String?
@@ -30,10 +31,12 @@ final class PreviewRoomDetailViewModel: RoomDetailViewModelProtocol {
         self.typingUserDisplayNames = typingUserDisplayNames
     }
 
-    func loadTimeline() async {}
+    func loadTimeline(focusedOnEventId fullyReadEventId: String? = nil) async {}
     func loadMoreHistory() async {}
+    func loadMoreFuture() async {}
     func focusOnEvent(eventId: String) async { timelineFocus = .focusedOnEvent(eventId) }
     func returnToLive() async { timelineFocus = .live }
+    func sendFullyReadReceipt(upTo eventId: String) async {}
     func send(text: String, inReplyTo eventId: String?, mentionedUserIds: [String]) async {}
     func sendAttachment(url: URL, caption: String?) async {}
     func toggleReaction(messageId: String, key: String) async {}

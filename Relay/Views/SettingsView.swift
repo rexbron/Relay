@@ -137,12 +137,20 @@ private struct BehaviorSettingsTab: View {
     @AppStorage("safety.sendTypingNotifications") private var sendTypingNotifications = true
     @AppStorage("safety.mediaPreviewMode") private var mediaPreviewMode = MediaPreviewMode.privateOnly
     @AppStorage("behavior.showURLPreviews") private var showURLPreviews = true
+    @AppStorage("behavior.alwaysLoadNewest") private var alwaysLoadNewest = true
 
     var body: some View {
         Form {
             Section("Privacy") {
                 Toggle("Send Read Receipts", isOn: $sendReadReceipts)
                 Toggle("Send Typing Notifications", isOn: $sendTypingNotifications)
+            }
+
+            Section {
+                Toggle("Always Load Newest Messages", isOn: $alwaysLoadNewest)
+            } header: {
+                Text("Timeline")
+                Text("When disabled, rooms open at your last read position so you can catch up on missed messages.")
             }
 
             Section {
