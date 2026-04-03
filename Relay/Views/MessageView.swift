@@ -267,6 +267,7 @@ struct MessageView: View {
                 Divider()
                     .opacity(0.4)
                 LinkPreviewView(url: url, isOutgoing: message.isOutgoing)
+                    .frame(width: 100)
             }
         }
         .background(bubbleColor)
