@@ -57,7 +57,7 @@ public final class MatrixService: MatrixServiceProtocol {
     private var client: ClientProxy?
     private var syncTask: Task<Void, Never>?
     private var roomViewModels: [String: RoomDetailViewModel] = [:]
-    private var verificationController: SessionVerificationController?
+    private var verificationController: SessionVerificationControllerProxy?
 
     // MARK: - Sub-Services
 
@@ -144,7 +144,9 @@ public final class MatrixService: MatrixServiceProtocol {
 
         do {
             try await syncManager.startSync(client: client)
-            verificationController = try? await client.getSessionVerificationController()
+            if let sdkController = try? await client.getSessionVerificationController() {
+                verificationController = SessionVerificationControllerProxy(controller: sdkController)
+            }
             if let syncService = syncManager.syncService {
                 try await roomListManager.start(syncService: syncService)
             }

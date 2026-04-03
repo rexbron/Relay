@@ -86,11 +86,11 @@ extension SessionVerificationControllerProxy: SessionVerificationControllerDeleg
     }
 
     public nonisolated func didStartSasVerification() {
-        // State will be updated when data arrives via didReceiveVerificationData
+        Task { @MainActor [weak self] in self?.flowState = .sasStarted }
     }
 
     public nonisolated func didReceiveVerificationData(data: SessionVerificationData) {
-        Task { @MainActor [weak self] in self?.flowState = .started(data) }
+        Task { @MainActor [weak self] in self?.flowState = .receivedData(data) }
     }
 
     public nonisolated func didFail() {

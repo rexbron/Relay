@@ -29,10 +29,12 @@ public enum SessionVerificationFlowState: Sendable {
     case requested(SessionVerificationRequestDetails)
     /// A verification request has been received from another device.
     case receivedRequest(SessionVerificationRequestDetails)
-    /// The verification request has been accepted.
+    /// The verification request has been accepted by the other device.
     case accepted
-    /// SAS verification has started and data is available for comparison.
-    case started(SessionVerificationData)
+    /// SAS negotiation has started; emoji data is being computed.
+    case sasStarted
+    /// SAS verification data (emoji or decimals) is available for comparison.
+    case receivedData(SessionVerificationData)
     /// The verification was cancelled.
     case cancelled
     /// The verification failed.
