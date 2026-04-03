@@ -38,8 +38,9 @@ struct TimelineMessageMapper {
 
     /// Maps an array of raw SDK timeline items into ``TimelineMessage`` models.
     ///
-    /// Items that are not message-like events (e.g. room state events) are skipped.
-    /// For each message-like event, the mapper extracts the body, kind, media info,
+    /// Handles message-like events, membership changes, profile changes, and room
+    /// state events. Unsupported content types (e.g. call invites) are skipped.
+    /// For each supported event, the mapper extracts the body, kind, media info,
     /// reactions, highlight status, and reply context.
     ///
     /// - Parameter items: The raw timeline items from the SDK.
@@ -152,6 +153,21 @@ struct TimelineMessageMapper {
                     msgBody = "Live location"
                     msgKind = .liveLocation
                 }
+            case .roomMembership(let userId, let userDisplayName, let change, _):
+                let name = userDisplayName ?? userId
+                msgBody = Self.membershipDescription(name: name, change: change)
+                msgKind = .membership
+            case .profileChange(let displayName, let prevDisplayName, let avatarUrl, let prevAvatarUrl):
+                msgBody = Self.profileChangeDescription(
+                    displayName: displayName,
+                    prevDisplayName: prevDisplayName,
+                    avatarUrl: avatarUrl,
+                    prevAvatarUrl: prevAvatarUrl
+                )
+                msgKind = .profileChange
+            case .state(_, let content):
+                msgBody = Self.stateEventDescription(content)
+                msgKind = .stateEvent
             default:
                 continue
             }
@@ -246,9 +262,9 @@ struct TimelineMessageMapper {
         return MappingResult(messages: result, unresolvedReplyEventIds: pendingReplyFetchIds)
     }
 
-    /// Maps a single `EventTimelineItem` into a ``TimelineMessage``, if it is a message-like event.
+    /// Maps a single `EventTimelineItem` into a ``TimelineMessage``, if it is a supported event.
     ///
-    /// Returns `nil` for state events and other non-message content.
+    /// Returns `nil` for unsupported content types (e.g. call invites).
     func mapEventItem(_ event: EventTimelineItem) -> TimelineMessage? {
         // Re-use the batch mapper with a synthetic wrapper — the logic is identical.
         // EventTimelineItem doesn't conform to TimelineItem, so we duplicate the
@@ -355,6 +371,21 @@ struct TimelineMessageMapper {
                 msgBody = "Live location"
                 msgKind = .liveLocation
             }
+        case .roomMembership(let userId, let userDisplayName, let change, _):
+            let name = userDisplayName ?? userId
+            msgBody = Self.membershipDescription(name: name, change: change)
+            msgKind = .membership
+        case .profileChange(let displayName, let prevDisplayName, let avatarUrl, let prevAvatarUrl):
+            msgBody = Self.profileChangeDescription(
+                displayName: displayName,
+                prevDisplayName: prevDisplayName,
+                avatarUrl: avatarUrl,
+                prevAvatarUrl: prevAvatarUrl
+            )
+            msgKind = .profileChange
+        case .state(_, let content):
+            msgBody = Self.stateEventDescription(content)
+            msgKind = .stateEvent
         default:
             return nil
         }
@@ -389,5 +420,131 @@ struct TimelineMessageMapper {
             kind: msgKind,
             mediaInfo: msgMediaInfo
         )
+    }
+
+    // MARK: - System Event Descriptions
+
+    /// Returns a human-readable description for a membership change event.
+    static func membershipDescription(name: String, change: MembershipChange?) -> String {
+        guard let change else { return "\(name) membership changed" }
+        switch change {
+        case .joined:
+            return "\(name) joined the room"
+        case .left:
+            return "\(name) left the room"
+        case .banned:
+            return "\(name) was banned"
+        case .unbanned:
+            return "\(name) was unbanned"
+        case .kicked:
+            return "\(name) was removed from the room"
+        case .invited:
+            return "\(name) was invited"
+        case .kickedAndBanned:
+            return "\(name) was removed and banned"
+        case .invitationAccepted:
+            return "\(name) accepted the invitation"
+        case .invitationRejected:
+            return "\(name) rejected the invitation"
+        case .invitationRevoked:
+            return "\(name)'s invitation was revoked"
+        case .knocked:
+            return "\(name) requested to join"
+        case .knockAccepted:
+            return "\(name)'s join request was accepted"
+        case .knockRetracted:
+            return "\(name) retracted their join request"
+        case .knockDenied:
+            return "\(name)'s join request was denied"
+        case .none, .error, .notImplemented:
+            return "\(name) membership changed"
+        }
+    }
+
+    /// Returns a human-readable description for a profile change event.
+    static func profileChangeDescription(
+        displayName: String?,
+        prevDisplayName: String?,
+        avatarUrl: String?,
+        prevAvatarUrl: String?
+    ) -> String {
+        let nameChanged = displayName != prevDisplayName
+        let avatarChanged = avatarUrl != prevAvatarUrl
+
+        if nameChanged, let prev = prevDisplayName, let new = displayName {
+            if avatarChanged {
+                return "\(prev) changed their name to \(new) and updated their avatar"
+            }
+            return "\(prev) changed their name to \(new)"
+        } else if nameChanged, let new = displayName {
+            if avatarChanged {
+                return "\(new) set their name and updated their avatar"
+            }
+            return "\(new) set their display name"
+        } else if nameChanged, let prev = prevDisplayName {
+            return "\(prev) removed their display name"
+        } else if avatarChanged {
+            let name = displayName ?? prevDisplayName ?? "A user"
+            if avatarUrl != nil {
+                return "\(name) updated their avatar"
+            }
+            return "\(name) removed their avatar"
+        }
+
+        let name = displayName ?? prevDisplayName ?? "A user"
+        return "\(name) updated their profile"
+    }
+
+    /// Returns a human-readable description for a room state change event.
+    static func stateEventDescription(_ state: OtherState) -> String {
+        switch state {
+        case .roomName(let name):
+            if let name, !name.isEmpty {
+                return "Room name changed to \(name)"
+            }
+            return "Room name was removed"
+        case .roomTopic(let topic):
+            if let topic, !topic.isEmpty {
+                return "Room topic was changed"
+            }
+            return "Room topic was removed"
+        case .roomAvatar:
+            return "Room avatar was changed"
+        case .roomCreate:
+            return "Room was created"
+        case .roomEncryption:
+            return "Encryption was enabled"
+        case .roomHistoryVisibility:
+            return "History visibility was changed"
+        case .roomJoinRules:
+            return "Join rules were changed"
+        case .roomPinnedEvents:
+            return "Pinned messages were updated"
+        case .roomGuestAccess:
+            return "Guest access was changed"
+        case .roomServerAcl:
+            return "Server access control was updated"
+        case .roomTombstone:
+            return "This room has been replaced"
+        case .roomCanonicalAlias:
+            return "Room address was changed"
+        case .roomAliases:
+            return "Room aliases were updated"
+        case .roomThirdPartyInvite(let displayName):
+            if let displayName {
+                return "\(displayName) was invited via a third-party service"
+            }
+            return "A third-party invitation was sent"
+        case .roomPowerLevels:
+            return "Permissions were changed"
+        case .spaceChild:
+            return "Space children were updated"
+        case .spaceParent:
+            return "Space parent was changed"
+        case .policyRuleRoom, .policyRuleServer, .policyRuleUser:
+            return "A moderation policy was updated"
+        case .custom:
+            return "Room settings were updated"
+        }
     }
 }

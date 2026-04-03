@@ -152,6 +152,8 @@ private struct BehaviorSettingsTab: View {
     @AppStorage("safety.mediaPreviewMode") private var mediaPreviewMode = MediaPreviewMode.privateOnly
     @AppStorage("behavior.showURLPreviews") private var showURLPreviews = true
     @AppStorage("behavior.alwaysLoadNewest") private var alwaysLoadNewest = true
+    @AppStorage("behavior.showMembershipEvents") private var showMembershipEvents = true
+    @AppStorage("behavior.showStateEvents") private var showStateEvents = true
 
     var body: some View {
         Form {
@@ -165,6 +167,14 @@ private struct BehaviorSettingsTab: View {
             } header: {
                 Text("Timeline")
                 Text("When disabled, rooms open at your last read position so you can catch up on missed messages.")
+            }
+
+            Section {
+                Toggle("Show Membership & Profile Changes", isOn: $showMembershipEvents)
+                Toggle("Show Room State Changes", isOn: $showStateEvents)
+            } header: {
+                Text("Timeline Events")
+                Text("Control which system events appear in the timeline, such as users joining or leaving, and room setting changes.")
             }
 
             Section {

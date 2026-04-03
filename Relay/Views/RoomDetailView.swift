@@ -66,6 +66,8 @@ struct RoomDetailView: View {
     @AppStorage("safety.mediaPreviewMode") private var mediaPreviewMode = "privateOnly"
     @AppStorage("behavior.showURLPreviews") private var showURLPreviews = true
     @AppStorage("behavior.alwaysLoadNewest") private var alwaysLoadNewest = true
+    @AppStorage("behavior.showMembershipEvents") private var showMembershipEvents = true
+    @AppStorage("behavior.showStateEvents") private var showStateEvents = true
 
     private var showErrorAlert: Binding<Bool> {
         Binding(
@@ -263,7 +265,7 @@ struct RoomDetailView: View {
                         }
                 }
 
-                let messages = viewModel.messages
+                let messages = filteredMessages
                 ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
                     if showUnreadMarker && message.id == viewModel.firstUnreadMessageId {
                             unreadMarker
@@ -278,48 +280,56 @@ struct RoomDetailView: View {
                             .padding(.bottom, 4)
                     }
 
-                    if index > 0 && messages[index - 1].senderID != message.senderID
+                    if index > 0 && !messages[index - 1].isSystemEvent && !message.isSystemEvent
+                        && messages[index - 1].senderID != message.senderID
                         && !shouldShowDateHeader(at: index, in: messages)
                     {
                         Spacer().frame(height: 8)
                     }
 
-                    let isLastInGroup = isLastMessageInGroup(at: index, in: messages)
-                    let showSenderName = shouldShowSenderName(at: index, in: messages)
+                    if message.isSystemEvent {
+                        SystemEventView(message: message)
+                            .id(message.id)
+                            .help(message.formattedTime)
+                            .onAppear { advanceFullyReadMarker(to: message.id) }
+                    } else {
+                        let isLastInGroup = isLastMessageInGroup(at: index, in: messages)
+                        let showSenderName = shouldShowSenderName(at: index, in: messages)
 
-                    MessageSwipeActions {
-                        MessageView(
-                            message: message,
-                            isLastInGroup: isLastInGroup,
-                            showSenderName: showSenderName,
-                            onToggleReaction: { key in
-                                Task { await viewModel.toggleReaction(messageId: message.id, key: key) }
-                            },
-                            onTapReply: { eventID in
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    scrollPosition.scrollTo(id: eventID, anchor: .center)
+                        MessageSwipeActions {
+                            MessageView(
+                                message: message,
+                                isLastInGroup: isLastInGroup,
+                                showSenderName: showSenderName,
+                                onToggleReaction: { key in
+                                    Task { await viewModel.toggleReaction(messageId: message.id, key: key) }
+                                },
+                                onTapReply: { eventID in
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        scrollPosition.scrollTo(id: eventID, anchor: .center)
+                                    }
+                                },
+                                onAvatarDoubleTap: {
+                                    onUserTap?(UserProfile(message: message))
+                                },
+                                onUserTap: { userId in
+                                    let member = roomMembers.first(where: { $0.userId == userId })
+                                    let profile = member.map { UserProfile(member: $0) }
+                                        ?? UserProfile(userId: userId)
+                                    onUserTap?(profile)
                                 }
-                            },
-                            onAvatarDoubleTap: {
-                                onUserTap?(UserProfile(message: message))
-                            },
-                            onUserTap: { userId in
-                                let member = roomMembers.first(where: { $0.userId == userId })
-                                let profile = member.map { UserProfile(member: $0) }
-                                    ?? UserProfile(userId: userId)
-                                onUserTap?(profile)
+                            )
+                        } onReply: {
+                            withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
+                                replyingTo = message
                             }
-                        )
-                    } onReply: {
-                        withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
-                            replyingTo = message
                         }
-                    }
-                    .id(message.id)
-                    .help(message.formattedTime)
-                    .onAppear { advanceFullyReadMarker(to: message.id) }
-                    .contextMenu {
-                        messageContextMenu(for: message)
+                        .id(message.id)
+                        .help(message.formattedTime)
+                        .onAppear { advanceFullyReadMarker(to: message.id) }
+                        .contextMenu {
+                            messageContextMenu(for: message)
+                        }
                     }
                 }
 
@@ -513,19 +523,40 @@ struct RoomDetailView: View {
         }
     }
 
+    // MARK: - Filtering
+
+    /// The messages to display, with system events filtered based on user preferences.
+    private var filteredMessages: [TimelineMessage] {
+        viewModel.messages.filter { message in
+            switch message.kind {
+            case .membership, .profileChange:
+                return showMembershipEvents
+            case .stateEvent:
+                return showStateEvents
+            default:
+                return true
+            }
+        }
+    }
+
     // MARK: - Grouping Helpers
 
     private func isLastMessageInGroup(at index: Int, in messages: [TimelineMessage]) -> Bool {
         guard index < messages.count - 1 else { return true }
+        let current = messages[index]
         let next = messages[index + 1]
-        return next.senderID != messages[index].senderID
+        if current.isSystemEvent || next.isSystemEvent { return true }
+        return next.senderID != current.senderID
             || shouldShowDateHeader(at: index + 1, in: messages)
     }
 
     private func shouldShowSenderName(at index: Int, in messages: [TimelineMessage]) -> Bool {
-        guard !messages[index].isOutgoing else { return false }
+        let current = messages[index]
+        guard !current.isOutgoing, !current.isSystemEvent else { return false }
         if index == 0 || shouldShowDateHeader(at: index, in: messages) { return true }
-        return messages[index - 1].senderID != messages[index].senderID
+        let prev = messages[index - 1]
+        if prev.isSystemEvent { return true }
+        return prev.senderID != current.senderID
     }
 
     private func shouldShowDateHeader(at index: Int, in messages: [TimelineMessage]) -> Bool {

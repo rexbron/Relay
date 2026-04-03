@@ -340,8 +340,18 @@ private final class RoomEntry: Identifiable {
             case .liveLocation: return AttributedString("Sharing live location")
             case .other: return nil
             }
-        case .roomMembership: return AttributedString("Membership changed")
-        case .profileChange: return AttributedString("Profile updated")
+        case .roomMembership(let userId, let userDisplayName, let change, _):
+            let name = userDisplayName ?? userId
+            return AttributedString(TimelineMessageMapper.membershipDescription(name: name, change: change))
+        case .profileChange(let displayName, let prevDisplayName, let avatarUrl, let prevAvatarUrl):
+            return AttributedString(TimelineMessageMapper.profileChangeDescription(
+                displayName: displayName,
+                prevDisplayName: prevDisplayName,
+                avatarUrl: avatarUrl,
+                prevAvatarUrl: prevAvatarUrl
+            ))
+        case .state(_, let content):
+            return AttributedString(TimelineMessageMapper.stateEventDescription(content))
         default: return nil
         }
     }
