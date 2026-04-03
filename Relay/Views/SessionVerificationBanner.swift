@@ -74,6 +74,7 @@ struct SessionVerificationBanner: View {
                         .foregroundStyle(.blue)
                         .font(.body)
                     Text(matrixService.pendingVerificationRequest.map { "Request from device \($0.deviceId)" } ?? "Verification Request")
+                        .font(.subheadline)
                         .fontWeight(.semibold)
                         .lineLimit(1)
                 }
@@ -109,6 +110,7 @@ struct SessionVerificationBanner: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("Session Not Verified")
+                    .font(.subheadline)
                     .fontWeight(.semibold)
             }
 
