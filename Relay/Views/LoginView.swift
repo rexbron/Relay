@@ -130,7 +130,7 @@ struct LoginView: View {
                     try await webAuthenticationSession.authenticate(
                         using: url,
                         callbackURLScheme: "com.github.subpop.relay",
-                        preferredBrowserSession: .ephemeral
+                        preferredBrowserSession: .shared
                     )
                 }
             } catch let error as ASWebAuthenticationSessionError
