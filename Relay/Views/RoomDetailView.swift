@@ -79,7 +79,6 @@ struct RoomDetailView: View {
     var body: some View {
         messageList
             .environment(\.mediaAutoReveal, shouldAutoRevealMedia)
-            .environment(\.showURLPreviews, showURLPreviews)
             .overlay {
                 if let reply = replyingTo {
                     ZStack {
@@ -313,6 +312,19 @@ struct RoomDetailView: View {
                         .contextMenu {
                             messageContextMenu(for: message)
                         }
+
+                        if showURLPreviews, message.kind == .text,
+                           let url = Self.firstPreviewURL(in: message.body) {
+                            LinkPreviewView(url: url, isOutgoing: message.isOutgoing)
+                                .frame(maxWidth: 260)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(Color(.systemGray).opacity(0.1))
+                                )
+                                .padding(.leading, message.isOutgoing ? 0 : 34)
+                                .frame(maxWidth: .infinity, alignment: message.isOutgoing ? .trailing : .leading)
+                        }
                     }
                 }
 
@@ -514,6 +526,24 @@ struct RoomDetailView: View {
                 Label("Delete Message", systemImage: "trash")
             }
         }
+    }
+
+    // MARK: - URL Extraction
+
+    /// Returns the first HTTP(S) URL found in the given string, excluding `matrix.to` links.
+    private static func firstPreviewURL(in body: String) -> URL? {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+            return nil
+        }
+        let matches = detector.matches(in: body, range: NSRange(body.startIndex..., in: body))
+        for match in matches {
+            guard let url = match.url,
+                  let scheme = url.scheme?.lowercased(),
+                  scheme == "https" || scheme == "http",
+                  url.host?.lowercased() != "matrix.to" else { continue }
+            return url
+        }
+        return nil
     }
 
     // MARK: - Filtering

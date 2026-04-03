@@ -29,20 +29,6 @@ extension EnvironmentValues {
     }
 }
 
-// MARK: - URL Previews Environment
-
-private struct ShowURLPreviewsKey: EnvironmentKey {
-    static let defaultValue = true
-}
-
-extension EnvironmentValues {
-    /// Controls whether rich link preview cards are shown for URLs in messages.
-    var showURLPreviews: Bool {
-        get { self[ShowURLPreviewsKey.self] }
-        set { self[ShowURLPreviewsKey.self] = newValue }
-    }
-}
-
 /// Renders a single chat bubble for a timeline message, with support for text, images,
 /// emotes, special types (encrypted, redacted, etc.), reactions, and inline reply context.
 struct MessageView: View {
@@ -69,7 +55,6 @@ struct MessageView: View {
     var onUserTap: ((String) -> Void)?
 
     @Environment(\.swipeOffset) private var swipeOffset
-    @Environment(\.showURLPreviews) private var showURLPreviews
     @State private var showEmojiPicker = false
 
     var body: some View {
@@ -249,27 +234,18 @@ struct MessageView: View {
     // MARK: - Text Content (with markdown + links)
 
     private var textContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                if let reply = message.replyDetail {
-                    inlineReply(reply, outgoing: message.isOutgoing)
-                }
-                if let resolved = htmlBody {
-                    MessageTextView(resolved: resolved, isOutgoing: message.isOutgoing, onUserTap: onUserTap)
-                } else {
-                    MessageTextView(attributedString: markdownBody, isOutgoing: message.isOutgoing, onUserTap: onUserTap)
-                }
+        VStack(alignment: .leading, spacing: 4) {
+            if let reply = message.replyDetail {
+                inlineReply(reply, outgoing: message.isOutgoing)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-
-            if showURLPreviews, let url = firstURL {
-                Divider()
-                    .opacity(0.4)
-                LinkPreviewView(url: url, isOutgoing: message.isOutgoing)
-                    .frame(width: 100)
+            if let resolved = htmlBody {
+                MessageTextView(resolved: resolved, isOutgoing: message.isOutgoing, onUserTap: onUserTap)
+            } else {
+                MessageTextView(attributedString: markdownBody, isOutgoing: message.isOutgoing, onUserTap: onUserTap)
             }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
         .background(bubbleColor)
         .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
     }
@@ -372,25 +348,6 @@ struct MessageView: View {
         default:
             Color(.systemGray).opacity(0.15)
         }
-    }
-
-    // MARK: - URL Extraction
-
-    /// The first HTTP(S) URL found in the message body, used for the link preview card.
-    private var firstURL: URL? {
-        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
-            return nil
-        }
-        let body = message.body
-        let matches = detector.matches(in: body, range: NSRange(body.startIndex..., in: body))
-        for match in matches {
-            guard let url = match.url,
-                  let scheme = url.scheme?.lowercased(),
-                  scheme == "https" || scheme == "http",
-                  url.host?.lowercased() != "matrix.to" else { continue }
-            return url
-        }
-        return nil
     }
 
     // MARK: - Body Parsing (HTML → Markdown fallback)
