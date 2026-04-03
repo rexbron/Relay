@@ -99,7 +99,11 @@ final class PasteHandler {
         monitor = nil
     }
 
-    deinit { stopMonitoring() }
+    deinit {
+        MainActor.assumeIsolated {
+            stopMonitoring()
+        }
+    }
 
     // MARK: - Extraction
 

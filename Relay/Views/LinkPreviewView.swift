@@ -15,10 +15,19 @@
 import LinkPresentation
 import SwiftUI
 
+// LPLinkMetadata is not marked Sendable by Apple, but it is effectively
+// immutable once returned by LPMetadataProvider. This retroactive conformance
+// allows it to cross the actor boundary from LinkMetadataCache back to the
+// main-actor-isolated views.
+extension LPLinkMetadata: @retroactive @unchecked Sendable {}
+
 // MARK: - Metadata Cache
 
-/// A global, thread-safe cache for fetched link metadata, preventing redundant network
-/// requests when cells are reused during scrolling.
+/// A global, thread-safe cache for fetched link metadata, preventing redundant
+/// network requests when cells are reused during scrolling.
+///
+/// Uses a dedicated actor so that fetches run independently of the main actor
+/// and concurrent requests for the same URL are coalesced into a single fetch.
 actor LinkMetadataCache {
     static let shared = LinkMetadataCache()
 
@@ -85,8 +94,7 @@ struct LinkPreviewView: View {
             }
         }
         .task(id: url) {
-            let fetched = await LinkMetadataCache.shared.metadata(for: url)
-            if let fetched {
+            if let fetched = await LinkMetadataCache.shared.metadata(for: url) {
                 metadata = fetched
             } else {
                 didFail = true

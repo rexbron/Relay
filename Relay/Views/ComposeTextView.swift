@@ -148,18 +148,21 @@ struct ComposeTextView: NSViewRepresentable {
                 object: nil,
                 queue: .main
             ) { [weak self] notification in
-                guard let self,
-                      let userInfo = notification.userInfo,
+                guard let userInfo = notification.userInfo,
                       let userId = userInfo["userId"] as? String,
                       let displayName = userInfo["displayName"] as? String
                 else { return }
-                self.insertMention(userId: userId, displayName: displayName)
+                MainActor.assumeIsolated {
+                    self?.insertMention(userId: userId, displayName: displayName)
+                }
             }
         }
 
         deinit {
-            if let mentionObserver {
-                NotificationCenter.default.removeObserver(mentionObserver)
+            MainActor.assumeIsolated {
+                if let mentionObserver {
+                    NotificationCenter.default.removeObserver(mentionObserver)
+                }
             }
         }
 

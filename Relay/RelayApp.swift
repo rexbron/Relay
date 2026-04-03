@@ -123,8 +123,8 @@ struct RelayApp: App {
 /// verification sheet via ``MatrixService/showVerificationSheet``.
 @Observable
 final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
-    static let verificationCategoryIdentifier = "VERIFICATION_REQUEST"
-    static let acceptActionIdentifier = "ACCEPT_VERIFICATION"
+    nonisolated static let verificationCategoryIdentifier = "VERIFICATION_REQUEST"
+    nonisolated static let acceptActionIdentifier = "ACCEPT_VERIFICATION"
 
     weak var matrixService: MatrixService?
 

@@ -393,10 +393,8 @@ private final class SessionsSettingsViewModel {
     @MainActor
     func load(service: any MatrixServiceProtocol) async {
         do {
-            async let devicesTask = service.getDevices()
-            async let verifiedTask = service.isCurrentSessionVerified()
-            devices = try await devicesTask.sorted(by: Self.deviceOrder)
-            isSessionVerified = await verifiedTask
+            devices = try await service.getDevices().sorted(by: Self.deviceOrder)
+            isSessionVerified = await service.isCurrentSessionVerified()
         } catch {
             errorReporter?.report(.sessionsFailed(error.localizedDescription))
         }
