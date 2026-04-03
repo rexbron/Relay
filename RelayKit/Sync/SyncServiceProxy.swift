@@ -50,7 +50,7 @@ public final class SyncServiceProxy: SyncServiceProxyProtocol, @unchecked Sendab
         self.stateUpdatesContinuation = continuation
 
         stateTaskHandle = syncService.state(listener: SDKListener { [weak self] state in
-            MainActor.assumeIsolated { self?.state = state }
+            Task { @MainActor in self?.state = state }
             continuation.yield(state)
         })
     }

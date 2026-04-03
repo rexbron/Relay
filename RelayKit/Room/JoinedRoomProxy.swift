@@ -99,7 +99,7 @@ public final class JoinedRoomProxy: JoinedRoomProxyProtocol, @unchecked Sendable
 
         // Subscribe to room info updates
         roomInfoTaskHandle = room.subscribeToRoomInfoUpdates(listener: SDKListener { [weak self] roomInfo in
-            MainActor.assumeIsolated { self?.applyRoomInfo(roomInfo) }
+            Task { @MainActor in self?.applyRoomInfo(roomInfo) }
             infoContinuation.yield(roomInfo)
         })
 

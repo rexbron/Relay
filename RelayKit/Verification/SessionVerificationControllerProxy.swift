@@ -64,11 +64,11 @@ public final class SessionVerificationControllerProxy: SessionVerificationContro
 
 extension SessionVerificationControllerProxy: SessionVerificationControllerDelegate {
     public nonisolated func didReceiveVerificationRequest(details: SessionVerificationRequestDetails) {
-        MainActor.assumeIsolated { flowState = .receivedRequest(details) }
+        Task { @MainActor [weak self] in self?.flowState = .receivedRequest(details) }
     }
 
     public nonisolated func didAcceptVerificationRequest() {
-        MainActor.assumeIsolated { flowState = .accepted }
+        Task { @MainActor [weak self] in self?.flowState = .accepted }
     }
 
     public nonisolated func didStartSasVerification() {
@@ -76,18 +76,18 @@ extension SessionVerificationControllerProxy: SessionVerificationControllerDeleg
     }
 
     public nonisolated func didReceiveVerificationData(data: SessionVerificationData) {
-        MainActor.assumeIsolated { flowState = .started(data) }
+        Task { @MainActor [weak self] in self?.flowState = .started(data) }
     }
 
     public nonisolated func didFail() {
-        MainActor.assumeIsolated { flowState = .failed }
+        Task { @MainActor [weak self] in self?.flowState = .failed }
     }
 
     public nonisolated func didCancel() {
-        MainActor.assumeIsolated { flowState = .cancelled }
+        Task { @MainActor [weak self] in self?.flowState = .cancelled }
     }
 
     public nonisolated func didFinish() {
-        MainActor.assumeIsolated { flowState = .finished }
+        Task { @MainActor [weak self] in self?.flowState = .finished }
     }
 }

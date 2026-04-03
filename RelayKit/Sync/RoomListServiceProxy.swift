@@ -48,7 +48,7 @@ public final class RoomListServiceProxy: RoomListServiceProxyProtocol, @unchecke
         self.syncIndicatorUpdatesContinuation = indicatorContinuation
 
         stateTaskHandle = service.state(listener: SDKListener { [weak self] state in
-            MainActor.assumeIsolated { self?.state = state }
+            Task { @MainActor in self?.state = state }
             stateContinuation.yield(state)
         })
 
@@ -56,7 +56,7 @@ public final class RoomListServiceProxy: RoomListServiceProxyProtocol, @unchecke
             delayBeforeShowingInMs: 1000,
             delayBeforeHidingInMs: 0,
             listener: SDKListener { [weak self] indicator in
-                MainActor.assumeIsolated { self?.syncIndicator = indicator }
+                Task { @MainActor in self?.syncIndicator = indicator }
                 indicatorContinuation.yield(indicator)
             }
         )

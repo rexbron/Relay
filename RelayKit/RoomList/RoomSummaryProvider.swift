@@ -77,7 +77,7 @@ public final class RoomSummaryProvider: RoomSummaryProviderProtocol, @unchecked 
 
         loadingStateResult = try list.loadingState(
             listener: SDKListener { [weak self] state in
-                MainActor.assumeIsolated { self?.loadingState = state }
+                Task { @MainActor in self?.loadingState = state }
             }
         )
         self.loadingState = loadingStateResult?.state ?? .notLoaded

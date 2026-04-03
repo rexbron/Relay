@@ -69,7 +69,9 @@ public final class RoomDirectorySearchProxy: RoomDirectorySearchProxyProtocol, @
             }
             let snapshot = _storage
             lock.unlock()
-            MainActor.assumeIsolated { self.results = snapshot }
+            Task { @MainActor [weak self] in
+                self?.results = snapshot
+            }
         }
         resultsHandle = await search.results(listener: listener)
     }

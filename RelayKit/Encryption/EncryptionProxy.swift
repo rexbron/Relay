@@ -63,17 +63,17 @@ public final class EncryptionProxy: EncryptionProxyProtocol, @unchecked Sendable
         self.verificationStateUpdatesContinuation = verificationCont
 
         backupTaskHandle = encryption.backupStateListener(listener: SDKListener { [weak self] state in
-            MainActor.assumeIsolated { self?.backupState = state }
+            Task { @MainActor in self?.backupState = state }
             backupCont.yield(state)
         })
 
         recoveryTaskHandle = encryption.recoveryStateListener(listener: SDKListener { [weak self] state in
-            MainActor.assumeIsolated { self?.recoveryState = state }
+            Task { @MainActor in self?.recoveryState = state }
             recoveryCont.yield(state)
         })
 
         verificationTaskHandle = encryption.verificationStateListener(listener: SDKListener { [weak self] state in
-            MainActor.assumeIsolated { self?.verificationState = state }
+            Task { @MainActor in self?.verificationState = state }
             verificationCont.yield(state)
         })
     }
