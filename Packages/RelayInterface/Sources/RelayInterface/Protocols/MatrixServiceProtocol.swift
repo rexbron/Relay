@@ -136,6 +136,23 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     /// - Returns: The Matrix room ID of the newly created room.
     func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String
 
+    /// Creates a new room with detailed options and returns its room ID.
+    ///
+    /// - Parameter options: The room creation parameters.
+    /// - Returns: The Matrix room ID of the newly created room.
+    func createRoom(options: CreateRoomOptions) async throws -> String
+
+    /// Creates a view model for browsing the public room directory.
+    ///
+    /// - Returns: A ``RoomDirectoryViewModelProtocol`` instance, or `nil` if not available.
+    func makeRoomDirectoryViewModel() -> (any RoomDirectoryViewModelProtocol)?
+
+    /// Creates a view model for previewing a room before joining.
+    ///
+    /// - Parameter roomId: The Matrix room identifier to preview.
+    /// - Returns: A ``RoomPreviewViewModelProtocol`` instance, or `nil` if not available.
+    func makeRoomPreviewViewModel(roomId: String) -> (any RoomPreviewViewModelProtocol)?
+
     /// Leaves a room and removes it from the local room list.
     ///
     /// - Parameter id: The Matrix room identifier.
@@ -290,6 +307,9 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func makeRoomDetailViewModel(roomId: String) -> (any RoomDetailViewModelProtocol)? { nil }
     func joinRoom(idOrAlias: String) async throws {}
     func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String { "" }
+    func createRoom(options: CreateRoomOptions) async throws -> String { "" }
+    func makeRoomDirectoryViewModel() -> (any RoomDirectoryViewModelProtocol)? { nil }
+    func makeRoomPreviewViewModel(roomId: String) -> (any RoomPreviewViewModelProtocol)? { nil }
     func leaveRoom(id: String) async throws {}
     func searchDirectory(query: String) async throws -> [DirectoryRoom] { [] }
     func markAsRead(roomId: String, sendPublicReceipt: Bool) async {}

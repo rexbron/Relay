@@ -1,0 +1,65 @@
+import Foundation
+import RelayInterface
+
+/// A mock implementation of ``RoomPreviewViewModelProtocol`` for use in SwiftUI previews.
+///
+/// Returns static sample room metadata and messages. All actions are no-ops.
+@Observable
+final class PreviewRoomPreviewViewModel: RoomPreviewViewModelProtocol {
+    var roomName: String?
+    var roomTopic: String?
+    var roomAvatarURL: String?
+    var memberCount: UInt64
+    var canonicalAlias: String?
+    var messages: [TimelineMessage]
+    var isLoading = false
+    var errorMessage: String?
+    let roomId: String
+
+    init(
+        roomId: String = "!preview:matrix.org",
+        roomName: String? = "Swift Developers",
+        roomTopic: String? = "All things Swift programming language",
+        canonicalAlias: String? = "#swift:matrix.org",
+        memberCount: UInt64 = 1200,
+        messages: [TimelineMessage]? = nil
+    ) {
+        self.roomId = roomId
+        self.roomName = roomName
+        self.roomTopic = roomTopic
+        self.canonicalAlias = canonicalAlias
+        self.memberCount = memberCount
+        self.messages = messages ?? Self.sampleMessages
+    }
+
+    func loadPreview() async {
+        // No-op for previews; data is already populated.
+    }
+
+    static let sampleMessages: [TimelineMessage] = [
+        TimelineMessage(
+            id: "$msg1",
+            senderID: "@alice:matrix.org",
+            senderDisplayName: "Alice Smith",
+            body: "Has anyone tried the new Swift concurrency features in 6.0?",
+            timestamp: .now.addingTimeInterval(-3600),
+            isOutgoing: false
+        ),
+        TimelineMessage(
+            id: "$msg2",
+            senderID: "@bob:matrix.org",
+            senderDisplayName: "Bob Chen",
+            body: "Yes! Typed throws are really useful for library APIs.",
+            timestamp: .now.addingTimeInterval(-3500),
+            isOutgoing: false
+        ),
+        TimelineMessage(
+            id: "$msg3",
+            senderID: "@charlie:matrix.org",
+            senderDisplayName: "Charlie Davis",
+            body: "I've been using them in my networking layer. The error handling is much cleaner now.",
+            timestamp: .now.addingTimeInterval(-3400),
+            isOutgoing: false
+        ),
+    ]
+}

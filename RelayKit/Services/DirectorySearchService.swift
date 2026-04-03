@@ -39,7 +39,8 @@ final class DirectorySearchService {
                 topic: desc.topic,
                 alias: desc.alias,
                 avatarURL: desc.avatarUrl,
-                memberCount: desc.joinedMembers
+                memberCount: desc.joinedMembers,
+                isWorldReadable: desc.isWorldReadable
             )
         }
     }

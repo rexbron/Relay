@@ -10,7 +10,8 @@ struct MainView: View {
     @Environment(\.matrixService) private var matrixService
     @State private var selectedRoomId: String?
     @State private var searchText = ""
-    @State private var isComposing = false
+    @State private var showingCreateRoom = false
+    @State private var isBrowsingDirectory = false
     @State private var showingInspector = false
     @State private var inspectorProfile: UserProfile?
     @State private var showingPinnedMessages = false
@@ -34,14 +35,14 @@ struct MainView: View {
                 .navigationSplitViewColumnWidth(min: 116, ideal: 260, max: 360)
                 .onChange(of: selectedRoomId) {
                     if selectedRoomId != nil {
-                        isComposing = false
+                        isBrowsingDirectory = false
                         inspectorProfile = nil
                         showingPinnedMessages = false
                     }
                 }
         } detail: {
-            if isComposing {
-                ComposeRoomView(selectedRoomId: $selectedRoomId, isComposing: $isComposing)
+            if isBrowsingDirectory {
+                RoomDirectoryView(selectedRoomId: $selectedRoomId, isBrowsing: $isBrowsingDirectory)
             } else if let selectedRoomId,
                       let summary = matrixService.rooms.first(where: { $0.id == selectedRoomId }),
                       let viewModel = matrixService.makeRoomDetailViewModel(roomId: selectedRoomId) {
@@ -95,13 +96,22 @@ struct MainView: View {
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button {
-                    selectedRoomId = nil
-                    isComposing = true
+                    showingCreateRoom = true
                 } label: {
-                    Image(systemName: "square.and.pencil")
+                    Image(systemName: "plus.bubble")
                 }
                 .padding(1)
-                .help("New Conversation")
+                .help("Create Room")
+            }
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    selectedRoomId = nil
+                    isBrowsingDirectory = true
+                } label: {
+                    Image(systemName: "building.2")
+                }
+                .padding(1)
+                .help("Room Directory")
             }
             ToolbarItem(placement: .primaryAction) {
                 if let selectedRoomId,
@@ -181,6 +191,9 @@ struct MainView: View {
                 }
             }
             .sharedBackgroundVisibility(.hidden)
+        }
+        .sheet(isPresented: $showingCreateRoom) {
+            CreateRoomSheet(selectedRoomId: $selectedRoomId)
         }
     }
 

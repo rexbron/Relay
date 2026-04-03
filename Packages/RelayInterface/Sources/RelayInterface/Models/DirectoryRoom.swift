@@ -27,6 +27,12 @@ public struct DirectoryRoom: Identifiable, Hashable, Sendable {
     /// The number of members currently joined to this room.
     public let memberCount: UInt64
 
+    /// Whether the room's history is world-readable (visible without joining).
+    ///
+    /// When `true`, the room supports preview-before-join, allowing users to
+    /// browse the timeline without committing to membership.
+    public let isWorldReadable: Bool
+
     /// Creates a new ``DirectoryRoom`` value.
     ///
     /// - Parameters:
@@ -36,13 +42,15 @@ public struct DirectoryRoom: Identifiable, Hashable, Sendable {
     ///   - alias: The canonical alias for the room.
     ///   - avatarURL: The `mxc://` URL for the room avatar.
     ///   - memberCount: The number of joined members.
+    ///   - isWorldReadable: Whether the room has world-readable history.
     nonisolated public init(
         roomId: String,
         name: String? = nil,
         topic: String? = nil,
         alias: String? = nil,
         avatarURL: String? = nil,
-        memberCount: UInt64 = 0
+        memberCount: UInt64 = 0,
+        isWorldReadable: Bool = false
     ) {
         self.roomId = roomId
         self.name = name
@@ -50,5 +58,6 @@ public struct DirectoryRoom: Identifiable, Hashable, Sendable {
         self.alias = alias
         self.avatarURL = avatarURL
         self.memberCount = memberCount
+        self.isWorldReadable = isWorldReadable
     }
 }

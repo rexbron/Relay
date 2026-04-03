@@ -26,6 +26,9 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     }
     func joinRoom(idOrAlias: String) async throws {}
     func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String { "!new:matrix.org" }
+    func createRoom(options: CreateRoomOptions) async throws -> String { "!new:matrix.org" }
+    func makeRoomDirectoryViewModel() -> (any RoomDirectoryViewModelProtocol)? { PreviewRoomDirectoryViewModel() }
+    func makeRoomPreviewViewModel(roomId: String) -> (any RoomPreviewViewModelProtocol)? { PreviewRoomPreviewViewModel(roomId: roomId) }
     func leaveRoom(id: String) async throws {
         rooms.removeAll { $0.id == id }
     }
@@ -120,8 +123,8 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func searchDirectory(query: String) async throws -> [DirectoryRoom] {
         let all = [
             DirectoryRoom(roomId: "!design:matrix.org", name: "Design Team", topic: "UI/UX design discussion", alias: "#design:matrix.org", memberCount: 42),
-            DirectoryRoom(roomId: "!swift:matrix.org", name: "Swift Developers", topic: "All things Swift", alias: "#swift:matrix.org", memberCount: 1200),
-            DirectoryRoom(roomId: "!hq:matrix.org", name: "Matrix HQ", topic: "General Matrix chat", alias: "#matrix-hq:matrix.org", memberCount: 8500),
+            DirectoryRoom(roomId: "!swift:matrix.org", name: "Swift Developers", topic: "All things Swift", alias: "#swift:matrix.org", memberCount: 1200, isWorldReadable: true),
+            DirectoryRoom(roomId: "!hq:matrix.org", name: "Matrix HQ", topic: "General Matrix chat", alias: "#matrix-hq:matrix.org", memberCount: 8500, isWorldReadable: true),
             DirectoryRoom(roomId: "!rust:matrix.org", name: "Rust Programming", topic: "Rust language discussion", alias: "#rust:matrix.org", memberCount: 650),
         ]
         guard !query.isEmpty else { return all }

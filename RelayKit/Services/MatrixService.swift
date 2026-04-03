@@ -206,6 +206,30 @@ public final class MatrixService: MatrixServiceProtocol {
         return try await client.createRoom(request: params)
     }
 
+    public func createRoom(options: CreateRoomOptions) async throws -> String {
+        guard let client else { throw MatrixServiceError.notLoggedIn }
+        let params = CreateRoomParameters(
+            name: options.name,
+            topic: options.topic,
+            isEncrypted: options.isEncrypted,
+            isDirect: false,
+            visibility: options.isPublic ? .public : .private,
+            preset: options.isPublic ? .publicChat : .privateChat,
+            canonicalAlias: options.address
+        )
+        return try await client.createRoom(request: params)
+    }
+
+    public func makeRoomDirectoryViewModel() -> (any RoomDirectoryViewModelProtocol)? {
+        guard let client else { return nil }
+        return RoomDirectoryViewModel(client: client)
+    }
+
+    public func makeRoomPreviewViewModel(roomId: String) -> (any RoomPreviewViewModelProtocol)? {
+        guard let client else { return nil }
+        return RoomPreviewViewModel(roomId: roomId, client: client)
+    }
+
     public func leaveRoom(id: String) async throws {
         guard let room = room(id: id) else { return }
         try await room.leave()
