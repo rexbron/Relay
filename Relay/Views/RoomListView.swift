@@ -1,4 +1,4 @@
-import RelayCore
+import RelayInterface
 import SwiftUI
 
 /// The sidebar list of joined rooms with unread indicators, search filtering, and swipe-to-leave.

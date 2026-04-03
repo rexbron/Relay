@@ -1,4 +1,4 @@
-import RelayCore
+import RelayInterface
 import SwiftUI
 
 /// A floating suggestion list that displays room members matching the current `@` query.

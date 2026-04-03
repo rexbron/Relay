@@ -1,5 +1,5 @@
 import AppKit
-import RelayCore
+import RelayInterface
 import SwiftUI
 import UniformTypeIdentifiers
 

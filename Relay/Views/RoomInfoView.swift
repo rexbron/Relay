@@ -1,4 +1,4 @@
-import RelayCore
+import RelayInterface
 import SwiftUI
 
 /// An inspector panel that displays detailed information about a room -- avatar, name,

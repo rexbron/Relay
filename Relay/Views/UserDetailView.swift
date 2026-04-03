@@ -1,4 +1,4 @@
-import RelayCore
+import RelayInterface
 import SwiftUI
 
 /// Lightweight user identifier used as a navigation value for the inspector panel.

@@ -1,5 +1,5 @@
 import Foundation
-import RelayCore
+import RelayInterface
 
 /// A mock implementation of ``SessionVerificationViewModelProtocol`` for use in SwiftUI previews.
 ///

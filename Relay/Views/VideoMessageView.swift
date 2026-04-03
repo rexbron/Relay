@@ -1,6 +1,6 @@
 import AVFoundation
 import QuickLook
-import RelayCore
+import RelayInterface
 import SwiftUI
 import UniformTypeIdentifiers
 

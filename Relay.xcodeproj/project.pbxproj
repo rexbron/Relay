@@ -7,13 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		3B4AFF062F640001001F0EA1 /* RelayCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3B4AFF0A2F640005001F0EA1 /* RelayCore */; };
-		3B4AFF1A2F65000B001F0EA1 /* MatrixRustSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 3B4AFF1C2F65000D001F0EA1 /* MatrixRustSDK */; };
-		3B4AFF1B2F65000C001F0EA1 /* RelayCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3B4AFF1D2F65000E001F0EA1 /* RelayCore */; };
-		3B4AFF1E2F65000F001F0EA1 /* RelaySDK.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B4AFF102F650001001F0EA1 /* RelaySDK.framework */; };
-		3B4AFF222F650013001F0EA1 /* RelaySDK.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3B4AFF102F650001001F0EA1 /* RelaySDK.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		3B5AA0012F700001001F0EA1 /* AsyncAlgorithms in Frameworks */ = {isa = PBXBuildFile; productRef = 3B5AA0022F700002001F0EA1 /* AsyncAlgorithms */; };
 		3BC1A0012FA00001001F0EA1 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = 3BC1A0022FA00002001F0EA1 /* SwiftSoup */; };
+		3BMRST012FB10001001F0EA1 /* MatrixRustSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 3BMRST022FB10002001F0EA1 /* MatrixRustSDK */; };
+		3BRI00012FC10001001F0EA1 /* RelayInterface in Frameworks */ = {isa = PBXBuildFile; productRef = 3BRI00022FC10002001F0EA1 /* RelayInterface */; };
+		3BRI00032FC10003001F0EA1 /* RelayInterface in Frameworks */ = {isa = PBXBuildFile; productRef = 3BRI00042FC10004001F0EA1 /* RelayInterface */; };
+		3BRK00012FC00001001F0EA1 /* RelayKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3BRK00002FC00000001F0EA1 /* RelayKit.framework */; };
+		3BRK00022FC00002001F0EA1 /* RelayKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3BRK00002FC00000001F0EA1 /* RelayKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -31,23 +30,23 @@
 			remoteGlobalIDString = 3B4AFD882F638A35001F0EA1;
 			remoteInfo = Relay;
 		};
-		3B4AFF1F2F650010001F0EA1 /* PBXContainerItemProxy */ = {
+		3BRK00032FC00003001F0EA1 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 3B4AFD812F638A35001F0EA1 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = 3B4AFF122F650003001F0EA1;
-			remoteInfo = RelaySDK;
+			remoteGlobalIDString = 3BRK00102FC00010001F0EA1;
+			remoteInfo = RelayKit;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		3B4AFF212F650012001F0EA1 /* Embed Frameworks */ = {
+		3BRK00042FC00004001F0EA1 /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
-				3B4AFF222F650013001F0EA1 /* RelaySDK.framework in Embed Frameworks */,
+				3BRK00022FC00002001F0EA1 /* RelayKit.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -58,8 +57,8 @@
 		3B4AFD892F638A35001F0EA1 /* Relay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Relay.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B4AFD982F638A36001F0EA1 /* RelayTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B4AFDA22F638A36001F0EA1 /* RelayUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		3B4AFF102F650001001F0EA1 /* RelaySDK.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = RelaySDK.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		3BAE76A72F6A43BA000EC1E6 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		3BRK00002FC00000001F0EA1 /* RelayKit.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = RelayKit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -91,9 +90,9 @@
 			path = RelayUITests;
 			sourceTree = "<group>";
 		};
-		3B4AFF112F650002001F0EA1 /* RelaySDK */ = {
+		3BRK00112FC00011001F0EA1 /* RelayKit */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = RelaySDK;
+			path = RelayKit;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -103,9 +102,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3B4AFF062F640001001F0EA1 /* RelayCore in Frameworks */,
-				3B4AFF1E2F65000F001F0EA1 /* RelaySDK.framework in Frameworks */,
+				3BRK00012FC00001001F0EA1 /* RelayKit.framework in Frameworks */,
 				3BC1A0012FA00001001F0EA1 /* SwiftSoup in Frameworks */,
+				3BRI00032FC10003001F0EA1 /* RelayInterface in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -123,13 +122,12 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		3B4AFF142F650005001F0EA1 /* Frameworks */ = {
+		3BRK00122FC00012001F0EA1 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3B4AFF1A2F65000B001F0EA1 /* MatrixRustSDK in Frameworks */,
-				3B4AFF1B2F65000C001F0EA1 /* RelayCore in Frameworks */,
-				3B5AA0012F700001001F0EA1 /* AsyncAlgorithms in Frameworks */,
+				3BMRST012FB10001001F0EA1 /* MatrixRustSDK in Frameworks */,
+				3BRI00012FC10001001F0EA1 /* RelayInterface in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -141,7 +139,7 @@
 			children = (
 				3BAE76A72F6A43BA000EC1E6 /* README.md */,
 				3B4AFD8B2F638A35001F0EA1 /* Relay */,
-				3B4AFF112F650002001F0EA1 /* RelaySDK */,
+				3BRK00112FC00011001F0EA1 /* RelayKit */,
 				3B4AFD9B2F638A36001F0EA1 /* RelayTests */,
 				3B4AFDA52F638A36001F0EA1 /* RelayUITests */,
 				3B4AFD8A2F638A35001F0EA1 /* Products */,
@@ -152,7 +150,7 @@
 			isa = PBXGroup;
 			children = (
 				3B4AFD892F638A35001F0EA1 /* Relay.app */,
-				3B4AFF102F650001001F0EA1 /* RelaySDK.framework */,
+				3BRK00002FC00000001F0EA1 /* RelayKit.framework */,
 				3B4AFD982F638A36001F0EA1 /* RelayTests.xctest */,
 				3B4AFDA22F638A36001F0EA1 /* RelayUITests.xctest */,
 			);
@@ -162,7 +160,7 @@
 /* End PBXGroup section */
 
 /* Begin PBXHeadersBuildPhase section */
-		3B4AFF162F650007001F0EA1 /* Headers */ = {
+		3BRK00132FC00013001F0EA1 /* Headers */ = {
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -179,20 +177,20 @@
 				3B4AFD852F638A35001F0EA1 /* Sources */,
 				3B4AFD862F638A35001F0EA1 /* Frameworks */,
 				3B4AFD872F638A35001F0EA1 /* Resources */,
-				3B4AFF212F650012001F0EA1 /* Embed Frameworks */,
+				3BRK00042FC00004001F0EA1 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				3B4AFF202F650011001F0EA1 /* PBXTargetDependency */,
+				3BRK00052FC00005001F0EA1 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				3B4AFD8B2F638A35001F0EA1 /* Relay */,
 			);
 			name = Relay;
 			packageProductDependencies = (
-				3B4AFF0A2F640005001F0EA1 /* RelayCore */,
 				3BC1A0022FA00002001F0EA1 /* SwiftSoup */,
+				3BRI00042FC10004001F0EA1 /* RelayInterface */,
 			);
 			productName = Relay;
 			productReference = 3B4AFD892F638A35001F0EA1 /* Relay.app */;
@@ -244,30 +242,29 @@
 			productReference = 3B4AFDA22F638A36001F0EA1 /* RelayUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
-		3B4AFF122F650003001F0EA1 /* RelaySDK */ = {
+		3BRK00102FC00010001F0EA1 /* RelayKit */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 3B4AFF192F65000A001F0EA1 /* Build configuration list for PBXNativeTarget "RelaySDK" */;
+			buildConfigurationList = 3BRK00202FC00020001F0EA1 /* Build configuration list for PBXNativeTarget "RelayKit" */;
 			buildPhases = (
-				3B4AFF132F650004001F0EA1 /* Sources */,
-				3B4AFF142F650005001F0EA1 /* Frameworks */,
-				3B4AFF152F650006001F0EA1 /* Resources */,
-				3B4AFF162F650007001F0EA1 /* Headers */,
+				3BRK00142FC00014001F0EA1 /* Sources */,
+				3BRK00122FC00012001F0EA1 /* Frameworks */,
+				3BRK00152FC00015001F0EA1 /* Resources */,
+				3BRK00132FC00013001F0EA1 /* Headers */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				3B4AFF112F650002001F0EA1 /* RelaySDK */,
+				3BRK00112FC00011001F0EA1 /* RelayKit */,
 			);
-			name = RelaySDK;
+			name = RelayKit;
 			packageProductDependencies = (
-				3B4AFF1C2F65000D001F0EA1 /* MatrixRustSDK */,
-				3B4AFF1D2F65000E001F0EA1 /* RelayCore */,
-				3B5AA0022F700002001F0EA1 /* AsyncAlgorithms */,
+				3BMRST022FB10002001F0EA1 /* MatrixRustSDK */,
+				3BRI00022FC10002001F0EA1 /* RelayInterface */,
 			);
-			productName = RelaySDK;
-			productReference = 3B4AFF102F650001001F0EA1 /* RelaySDK.framework */;
+			productName = RelayKit;
+			productReference = 3BRK00002FC00000001F0EA1 /* RelayKit.framework */;
 			productType = "com.apple.product-type.framework";
 		};
 /* End PBXNativeTarget section */
@@ -291,7 +288,7 @@
 						CreatedOnToolsVersion = 26.3;
 						TestTargetID = 3B4AFD882F638A35001F0EA1;
 					};
-					3B4AFF122F650003001F0EA1 = {
+					3BRK00102FC00010001F0EA1 = {
 						CreatedOnToolsVersion = 26.3;
 					};
 				};
@@ -306,10 +303,9 @@
 			mainGroup = 3B4AFD802F638A35001F0EA1;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				3B4AFF082F640003001F0EA1 /* XCLocalSwiftPackageReference "Packages/RelayCore" */,
-				3B4AFF232F650014001F0EA1 /* XCRemoteSwiftPackageReference "matrix-rust-components-swift" */,
-				3B5AA0032F700003001F0EA1 /* XCRemoteSwiftPackageReference "swift-async-algorithms" */,
+				3BRI00052FC10005001F0EA1 /* XCLocalSwiftPackageReference "Packages/RelayInterface" */,
 				3BC1A0032FA00003001F0EA1 /* XCRemoteSwiftPackageReference "SwiftSoup" */,
+				3BMRST032FB10003001F0EA1 /* XCRemoteSwiftPackageReference "matrix-rust-components-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3B4AFD8A2F638A35001F0EA1 /* Products */;
@@ -317,7 +313,7 @@
 			projectRoot = "";
 			targets = (
 				3B4AFD882F638A35001F0EA1 /* Relay */,
-				3B4AFF122F650003001F0EA1 /* RelaySDK */,
+				3BRK00102FC00010001F0EA1 /* RelayKit */,
 				3B4AFD972F638A36001F0EA1 /* RelayTests */,
 				3B4AFDA12F638A36001F0EA1 /* RelayUITests */,
 			);
@@ -346,7 +342,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		3B4AFF152F650006001F0EA1 /* Resources */ = {
+		3BRK00152FC00015001F0EA1 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -377,7 +373,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		3B4AFF132F650004001F0EA1 /* Sources */ = {
+		3BRK00142FC00014001F0EA1 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -397,10 +393,10 @@
 			target = 3B4AFD882F638A35001F0EA1 /* Relay */;
 			targetProxy = 3B4AFDA32F638A36001F0EA1 /* PBXContainerItemProxy */;
 		};
-		3B4AFF202F650011001F0EA1 /* PBXTargetDependency */ = {
+		3BRK00052FC00005001F0EA1 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 3B4AFF122F650003001F0EA1 /* RelaySDK */;
-			targetProxy = 3B4AFF1F2F650010001F0EA1 /* PBXContainerItemProxy */;
+			target = 3BRK00102FC00010001F0EA1 /* RelayKit */;
+			targetProxy = 3BRK00032FC00003001F0EA1 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -697,7 +693,7 @@
 			};
 			name = Release;
 		};
-		3B4AFF172F650008001F0EA1 /* Debug */ = {
+		3BRK00212FC00021001F0EA1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -717,7 +713,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = app.subpop.RelaySDK;
+				PRODUCT_BUNDLE_IDENTIFIER = app.subpop.RelayKit;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -728,7 +724,7 @@
 			};
 			name = Debug;
 		};
-		3B4AFF182F650009001F0EA1 /* Release */ = {
+		3BRK00222FC00022001F0EA1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -748,7 +744,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = app.subpop.RelaySDK;
+				PRODUCT_BUNDLE_IDENTIFIER = app.subpop.RelayKit;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -798,11 +794,11 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		3B4AFF192F65000A001F0EA1 /* Build configuration list for PBXNativeTarget "RelaySDK" */ = {
+		3BRK00202FC00020001F0EA1 /* Build configuration list for PBXNativeTarget "RelayKit" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				3B4AFF172F650008001F0EA1 /* Debug */,
-				3B4AFF182F650009001F0EA1 /* Release */,
+				3BRK00212FC00021001F0EA1 /* Debug */,
+				3BRK00222FC00022001F0EA1 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -810,29 +806,13 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		3B4AFF082F640003001F0EA1 /* XCLocalSwiftPackageReference "Packages/RelayCore" */ = {
+		3BRI00052FC10005001F0EA1 /* XCLocalSwiftPackageReference "Packages/RelayInterface" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/RelayCore;
+			relativePath = Packages/RelayInterface;
 		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		3B4AFF232F650014001F0EA1 /* XCRemoteSwiftPackageReference "matrix-rust-components-swift" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/matrix-org/matrix-rust-components-swift";
-			requirement = {
-				kind = exactVersion;
-				version = 26.4.1;
-			};
-		};
-		3B5AA0032F700003001F0EA1 /* XCRemoteSwiftPackageReference "swift-async-algorithms" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/apple/swift-async-algorithms";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.0.0;
-			};
-		};
 		3BC1A0032FA00003001F0EA1 /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/scinfu/SwiftSoup";
@@ -841,31 +821,34 @@
 				minimumVersion = 2.0.0;
 			};
 		};
+		3BMRST032FB10003001F0EA1 /* XCRemoteSwiftPackageReference "matrix-rust-components-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/matrix-org/matrix-rust-components-swift";
+			requirement = {
+				kind = exactVersion;
+				version = 26.4.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		3B4AFF0A2F640005001F0EA1 /* RelayCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = RelayCore;
-		};
-		3B4AFF1C2F65000D001F0EA1 /* MatrixRustSDK */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 3B4AFF232F650014001F0EA1 /* XCRemoteSwiftPackageReference "matrix-rust-components-swift" */;
-			productName = MatrixRustSDK;
-		};
-		3B4AFF1D2F65000E001F0EA1 /* RelayCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = RelayCore;
-		};
-		3B5AA0022F700002001F0EA1 /* AsyncAlgorithms */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 3B5AA0032F700003001F0EA1 /* XCRemoteSwiftPackageReference "swift-async-algorithms" */;
-			productName = AsyncAlgorithms;
-		};
 		3BC1A0022FA00002001F0EA1 /* SwiftSoup */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 3BC1A0032FA00003001F0EA1 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
 			productName = SwiftSoup;
+		};
+		3BMRST022FB10002001F0EA1 /* MatrixRustSDK */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3BMRST032FB10003001F0EA1 /* XCRemoteSwiftPackageReference "matrix-rust-components-swift" */;
+			productName = MatrixRustSDK;
+		};
+		3BRI00022FC10002001F0EA1 /* RelayInterface */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RelayInterface;
+		};
+		3BRI00042FC10004001F0EA1 /* RelayInterface */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RelayInterface;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

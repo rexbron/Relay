@@ -1,4 +1,4 @@
-import RelayCore
+import RelayInterface
 import SwiftUI
 
 /// Displays a flow-wrapped row of emoji reaction pills for a message.

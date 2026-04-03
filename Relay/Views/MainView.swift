@@ -1,4 +1,4 @@
-import RelayCore
+import RelayInterface
 import SwiftUI
 
 /// The primary navigation view shown after login, with a room list sidebar and detail area.

@@ -1,5 +1,5 @@
 import Foundation
-import RelayCore
+import RelayInterface
 
 /// A mock implementation of ``RoomDetailViewModelProtocol`` for use in SwiftUI previews.
 ///

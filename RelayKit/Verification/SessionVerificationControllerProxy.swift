@@ -1,0 +1,93 @@
+// SessionVerificationControllerProxy.swift
+// RelayKit
+//
+// SPDX-License-Identifier: Apache-2.0
+
+import Observation
+
+/// An `@Observable` proxy that wraps the Matrix SDK `SessionVerificationController`.
+///
+/// Manages the interactive verification flow state machine. The ``flowState``
+/// property updates automatically as the verification progresses through
+/// its stages.
+@Observable
+public final class SessionVerificationControllerProxy: SessionVerificationControllerProxyProtocol, @unchecked Sendable {
+    private let controller: SessionVerificationController
+
+    /// The current verification flow state.
+    public private(set) var flowState: SessionVerificationFlowState = .idle
+
+    /// Creates a session verification controller proxy.
+    ///
+    /// - Parameter controller: The SDK verification controller instance.
+    public init(controller: SessionVerificationController) {
+        self.controller = controller
+        controller.setDelegate(delegate: self)
+    }
+
+    // MARK: - Actions
+
+    public func requestDeviceVerification() async throws {
+        try await controller.requestDeviceVerification()
+    }
+
+    public func requestUserVerification(userId: String) async throws {
+        try await controller.requestUserVerification(userId: userId)
+    }
+
+    public func acknowledgeVerificationRequest(senderId: String, flowId: String) async throws {
+        try await controller.acknowledgeVerificationRequest(senderId: senderId, flowId: flowId)
+    }
+
+    public func acceptVerificationRequest() async throws {
+        try await controller.acceptVerificationRequest()
+    }
+
+    public func startSasVerification() async throws {
+        try await controller.startSasVerification()
+    }
+
+    public func approveVerification() async throws {
+        try await controller.approveVerification()
+    }
+
+    public func declineVerification() async throws {
+        try await controller.declineVerification()
+    }
+
+    public func cancelVerification() async throws {
+        try await controller.cancelVerification()
+    }
+}
+
+// MARK: - SessionVerificationControllerDelegate
+
+extension SessionVerificationControllerProxy: SessionVerificationControllerDelegate {
+    public nonisolated func didReceiveVerificationRequest(details: SessionVerificationRequestDetails) {
+        MainActor.assumeIsolated { flowState = .receivedRequest(details) }
+    }
+
+    public nonisolated func didAcceptVerificationRequest() {
+        MainActor.assumeIsolated { flowState = .accepted }
+    }
+
+    public nonisolated func didStartSasVerification() {
+        // State will be updated when data arrives via didReceiveVerificationData
+    }
+
+    public nonisolated func didReceiveVerificationData(data: SessionVerificationData) {
+        MainActor.assumeIsolated { flowState = .started(data) }
+    }
+
+    public nonisolated func didFail() {
+        MainActor.assumeIsolated { flowState = .failed }
+    }
+
+    public nonisolated func didCancel() {
+        MainActor.assumeIsolated { flowState = .cancelled }
+    }
+
+    public nonisolated func didFinish() {
+        MainActor.assumeIsolated { flowState = .finished }
+    }
+}

@@ -1,4 +1,4 @@
-import RelayCore
+import RelayInterface
 import SwiftUI
 
 /// A circular avatar that displays a user's or room's profile image, falling back to colored initials.

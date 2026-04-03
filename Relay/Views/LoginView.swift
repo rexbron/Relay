@@ -1,5 +1,5 @@
 import AppKit
-import RelayCore
+import RelayInterface
 import SwiftUI
 
 /// The sign-in screen that supports both password and OAuth/OIDC authentication flows.

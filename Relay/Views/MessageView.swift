@@ -1,4 +1,4 @@
-import RelayCore
+import RelayInterface
 import SwiftUI
 
 // MARK: - Media Auto-Reveal Environment

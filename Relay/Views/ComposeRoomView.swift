@@ -1,4 +1,4 @@
-import RelayCore
+import RelayInterface
 import SwiftUI
 
 /// A view for finding and joining existing rooms or creating new ones.

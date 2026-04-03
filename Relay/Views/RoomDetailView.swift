@@ -1,5 +1,5 @@
 import OSLog
-import RelayCore
+import RelayInterface
 import SwiftUI
 import UniformTypeIdentifiers
 

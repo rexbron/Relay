@@ -1,5 +1,5 @@
-import RelayCore
-import RelaySDK
+import RelayKit
+import RelayInterface
 import SwiftUI
 import UserNotifications
 
@@ -38,7 +38,7 @@ struct RelayApp: App {
         _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
     }
 
-    private func updateDockBadge(rooms: [RoomSummary]) {
+    private func updateDockBadge(rooms: [RelayInterface.RoomSummary]) {
         let count = rooms.reduce(0 as UInt) { total, room in
             room.isDirect ? total + room.unreadMessages : total + room.unreadMentions
         }

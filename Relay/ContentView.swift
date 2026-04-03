@@ -1,4 +1,4 @@
-import RelayCore
+import RelayInterface
 import SwiftUI
 
 /// The root view that switches between login, loading, and main content based on ``AuthState``.

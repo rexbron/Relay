@@ -1,6 +1,6 @@
 import AppKit
 import Foundation
-import RelayCore
+import RelayInterface
 
 /// A mock implementation of ``MatrixServiceProtocol`` for use in SwiftUI previews.
 ///

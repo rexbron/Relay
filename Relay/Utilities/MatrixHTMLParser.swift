@@ -30,7 +30,7 @@ enum MatrixHTMLParser {
         guard let body = document.body() else { return nil }
 
         // Strip <mx-reply> blocks per spec (Changed in v1.13).
-        try? body.select("mx-reply").remove()
+        _ = try? body.select("mx-reply").remove()
 
         let result = NSMutableAttributedString()
         let context = RenderContext()
