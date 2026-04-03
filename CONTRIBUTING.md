@@ -28,18 +28,16 @@ Relay is a native macOS app built with SwiftUI and Xcode.
    ```
 
 2. Open `Relay.xcodeproj` in Xcode.
-3. Xcode will automatically resolve Swift Package dependencies (`matrix-rust-components-swift`, `swift-async-algorithms`).
+3. Xcode will automatically resolve Swift Package dependencies.
 4. Select the **Relay** scheme and build (`Cmd+B`) or run (`Cmd+R`).
 
 ## Project Structure
 
 | Directory | Description |
 |---|---|
-| `Relay/` | App target -- SwiftUI views, view models, and app entry point |
-| `RelaySDK/` | Framework target -- Matrix Rust SDK integration, services, and business logic |
-| `Packages/RelayCore/` | Local Swift package -- shared protocols and model types |
-| `RelayTests/` | Unit tests |
-| `RelayUITests/` | UI tests |
+| `Relay/` | App target -- SwiftUI views and app entry point |
+| `RelayKit/` | Framework target -- Matrix Rust SDK integration, services, and view models |
+| `Packages/RelayInterface/` | Local Swift package -- shared protocols and model types |
 
 ## Submitting Changes
 
