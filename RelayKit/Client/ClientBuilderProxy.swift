@@ -192,12 +192,29 @@ public final class ClientBuilderProxy: @unchecked Sendable {
         return self
     }
 
-    /// Builds the client with the configured options.
+    /// Builds the client with the configured options and wraps it in a ``ClientProxy``.
+    ///
+    /// Use this when the client is already authenticated (e.g. after login or session
+    /// restore). The proxy immediately reads `userId` and `deviceId` from the client.
     ///
     /// - Returns: A configured ``ClientProxy``.
     /// - Throws: `ClientBuildError` if the build fails.
     public func build() async throws -> ClientProxy {
         let client = try await builder.build()
         return try ClientProxy(client: client)
+    }
+
+    /// Builds a raw SDK `Client` without wrapping it in a ``ClientProxy``.
+    ///
+    /// Use this when the client needs to be authenticated before wrapping (e.g.
+    /// session restore or login), since ``ClientProxy`` requires an authenticated
+    /// client to read `userId` and `deviceId` at initialization.
+    ///
+    /// After authenticating the raw client, wrap it with ``ClientProxy/init(client:)``.
+    ///
+    /// - Returns: The raw SDK `Client`.
+    /// - Throws: `ClientBuildError` if the build fails.
+    public func buildClient() async throws -> Client {
+        try await builder.build()
     }
 }

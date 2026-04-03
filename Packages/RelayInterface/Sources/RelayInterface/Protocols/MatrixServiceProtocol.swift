@@ -105,11 +105,21 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     ///   - homeserver: The homeserver URL or server name.
     func login(username: String, password: String, homeserver: String) async
 
-    /// Initiates an OAuth/OIDC login flow via the system browser.
+    /// Initiates an OAuth/OIDC login flow, using the provided closure to open the browser.
     ///
-    /// - Parameter homeserver: The homeserver URL or server name.
+    /// The `openURL` closure receives the OIDC authorization URL and must return the
+    /// callback URL after the user completes authentication. Callers typically implement
+    /// this using SwiftUI's `WebAuthenticationSession` environment value.
+    ///
+    /// - Parameters:
+    ///   - homeserver: The homeserver URL or server name.
+    ///   - openURL: A closure that opens the authorization URL in a browser and returns
+    ///     the callback URL.
     /// - Throws: If the homeserver doesn't support OIDC or the browser flow fails.
-    func startOAuthLogin(homeserver: String) async throws
+    func startOAuthLogin(
+        homeserver: String,
+        openURL: @escaping @concurrent @Sendable (URL) async throws -> URL
+    ) async throws
 
     /// Signs out, clears the session, and resets local data.
     func logout() async
@@ -322,7 +332,7 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     var hasLoadedRooms: Bool = false
     func restoreSession() async {}
     func login(username: String, password: String, homeserver: String) async {}
-    func startOAuthLogin(homeserver: String) async throws {}
+    func startOAuthLogin(homeserver: String, openURL: @escaping @concurrent @Sendable (URL) async throws -> URL) async throws {}
     func logout() async {}
     func startSyncIfNeeded() {}
     func userId() -> String? { nil }

@@ -30,7 +30,7 @@ final class PreviewMatrixService: MatrixServiceProtocol {
 
     func restoreSession() async {}
     func login(username: String, password: String, homeserver: String) async {}
-    func startOAuthLogin(homeserver: String) async throws {}
+    func startOAuthLogin(homeserver: String, openURL: @escaping @concurrent @Sendable (URL) async throws -> URL) async throws {}
     func logout() async {}
     func startSyncIfNeeded() {}
     func userId() -> String? { "@preview:matrix.org" }

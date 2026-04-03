@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import AppKit
-import AuthenticationServices
 import Foundation
 import RelayInterface
 import os
@@ -55,7 +54,7 @@ public final class MatrixService: MatrixServiceProtocol {
 
     // MARK: - Private State
 
-    private var client: Client?
+    private var client: ClientProxy?
     private var syncTask: Task<Void, Never>?
     private var roomViewModels: [String: RoomDetailViewModel] = [:]
     private var verificationController: SessionVerificationController?
@@ -98,14 +97,18 @@ public final class MatrixService: MatrixServiceProtocol {
 
     // MARK: - OAuth Login
 
-    public func startOAuthLogin(homeserver: String) async throws {
+    public func startOAuthLogin(
+        homeserver: String,
+        openURL: @escaping @concurrent @Sendable (URL) async throws -> URL
+    ) async throws {
         authState = .loggingIn
         do {
-            let (newClient, userId) = try await auth.startOAuthLogin(homeserver: homeserver)
+            let (newClient, userId) = try await auth.startOAuthLogin(
+                homeserver: homeserver,
+                openURL: openURL
+            )
             client = newClient
             authState = .loggedIn(userId: userId)
-        } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
-            authState = .loggedOut
         } catch {
             authState = .error(error.localizedDescription)
         }
@@ -140,7 +143,7 @@ public final class MatrixService: MatrixServiceProtocol {
         guard let client else { return }
 
         do {
-            try await syncManager.startSync(client: client)
+            try await syncManager.startSync(client: client.underlyingClient)
             verificationController = try? await client.getSessionVerificationController()
             if let syncService = syncManager.syncService {
                 try await roomListManager.start(syncService: syncService)
@@ -163,22 +166,22 @@ public final class MatrixService: MatrixServiceProtocol {
     }
 
     public func userId() -> String? {
-        try? client?.userId()
+        client?.userID
     }
 
     public func userDisplayName() async -> String? {
         guard let client else { return nil }
-        return try? await client.displayName()
+        return try? await client.underlyingClient.displayName()
     }
 
     public func setDisplayName(_ name: String) async throws {
         guard let client else { return }
-        try await client.setDisplayName(name: name)
+        try await client.setDisplayName(name)
     }
 
     public func userAvatarURL() async -> String? {
         guard let client else { return nil }
-        return try? await client.avatarUrl()
+        return try? await client.underlyingClient.avatarUrl()
     }
 
     public func makeRoomDetailViewModel(roomId: String) -> (any RoomDetailViewModelProtocol)? {
@@ -204,7 +207,7 @@ public final class MatrixService: MatrixServiceProtocol {
 
     public func joinRoom(idOrAlias: String) async throws {
         guard let client else { return }
-        _ = try await client.joinRoomByIdOrAlias(roomIdOrAlias: idOrAlias, serverNames: [])
+        _ = try await client.underlyingClient.joinRoomByIdOrAlias(roomIdOrAlias: idOrAlias, serverNames: [])
     }
 
     public func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String {
@@ -217,7 +220,7 @@ public final class MatrixService: MatrixServiceProtocol {
             visibility: isPublic ? .public : .private,
             preset: isPublic ? .publicChat : .privateChat
         )
-        return try await client.createRoom(request: params)
+        return try await client.createRoom(parameters: params)
     }
 
     public func createRoom(options: CreateRoomOptions) async throws -> String {
@@ -231,17 +234,17 @@ public final class MatrixService: MatrixServiceProtocol {
             preset: options.isPublic ? .publicChat : .privateChat,
             canonicalAlias: options.address
         )
-        return try await client.createRoom(request: params)
+        return try await client.createRoom(parameters: params)
     }
 
     public func makeRoomDirectoryViewModel() -> (any RoomDirectoryViewModelProtocol)? {
         guard let client else { return nil }
-        return RoomDirectoryViewModel(client: client)
+        return RoomDirectoryViewModel(client: client.underlyingClient)
     }
 
     public func makeRoomPreviewViewModel(roomId: String) -> (any RoomPreviewViewModelProtocol)? {
         guard let client else { return nil }
-        return RoomPreviewViewModel(roomId: roomId, client: client)
+        return RoomPreviewViewModel(roomId: roomId, client: client.underlyingClient)
     }
 
     public func leaveRoom(id: String) async throws {
@@ -280,7 +283,7 @@ public final class MatrixService: MatrixServiceProtocol {
                 }
             }
             do {
-                handle = try client.observeRoomAccountDataEvent(
+                handle = try client.underlyingClient.observeRoomAccountDataEvent(
                     roomId: roomId,
                     eventType: .fullyRead,
                     listener: listener
@@ -422,24 +425,24 @@ public final class MatrixService: MatrixServiceProtocol {
 
     public func searchDirectory(query: String) async throws -> [DirectoryRoom] {
         guard let client else { return [] }
-        return try await directorySearch.search(query: query, client: client)
+        return try await directorySearch.search(query: query, client: client.underlyingClient)
     }
 
     // MARK: - Media
 
     public func avatarThumbnail(mxcURL: String, size: CGFloat) async -> NSImage? {
         guard let client else { return nil }
-        return await media.avatarThumbnail(mxcURL: mxcURL, size: size, client: client)
+        return await media.avatarThumbnail(mxcURL: mxcURL, size: size, client: client.underlyingClient)
     }
 
     public func mediaContent(mxcURL: String) async -> Data? {
         guard let client else { return nil }
-        return await media.mediaContent(mxcURL: mxcURL, client: client)
+        return await media.mediaContent(mxcURL: mxcURL, client: client.underlyingClient)
     }
 
     public func mediaThumbnail(mxcURL: String, width: UInt64, height: UInt64) async -> Data? {
         guard let client else { return nil }
-        return await media.mediaThumbnail(mxcURL: mxcURL, width: width, height: height, client: client)
+        return await media.mediaThumbnail(mxcURL: mxcURL, width: width, height: height, client: client.underlyingClient)
     }
 
     // MARK: - Notification Settings
@@ -448,6 +451,7 @@ public final class MatrixService: MatrixServiceProtocol {
         guard let client else { throw MatrixServiceError.notLoggedIn }
         return await client.getNotificationSettings()
     }
+
 
     private func sdkMode(from mode: DefaultNotificationMode) -> RoomNotificationMode {
         switch mode {
@@ -546,10 +550,10 @@ public final class MatrixService: MatrixServiceProtocol {
     public func getDevices() async throws -> [DeviceInfo] {
         guard let client else { throw MatrixServiceError.notLoggedIn }
 
-        let currentDeviceId = try? client.deviceId()
+        let currentDeviceId = client.deviceID
         let session = try client.session()
 
-        var request = URLRequest(url: URL(string: "\(client.homeserver())_matrix/client/v3/devices")!)
+        var request = URLRequest(url: URL(string: "\(client.homeserver)_matrix/client/v3/devices")!)
         request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
 
         let (data, _) = try await URLSession.shared.data(for: request)

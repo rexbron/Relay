@@ -254,4 +254,38 @@ public final class ClientProxy: ClientProxyProtocol, @unchecked Sendable {
     public func getStoreSizes() async throws -> StoreSizes {
         try await client.getStoreSizes()
     }
+
+    // MARK: - OAuth / OIDC
+
+    public func homeserverLoginDetails() async -> HomeserverLoginDetails {
+        await client.homeserverLoginDetails()
+    }
+
+    public func urlForOidc(
+        oidcConfiguration: OidcConfiguration,
+        prompt: OidcPrompt?,
+        loginHint: String?,
+        deviceId: String?,
+        additionalScopes: [String]?
+    ) async throws -> OAuthAuthorizationData {
+        try await client.urlForOidc(
+            oidcConfiguration: oidcConfiguration,
+            prompt: prompt,
+            loginHint: loginHint,
+            deviceId: deviceId,
+            additionalScopes: additionalScopes
+        )
+    }
+
+    public func loginWithOidcCallback(callbackUrl: String) async throws {
+        try await client.loginWithOidcCallback(callbackUrl: callbackUrl)
+    }
+
+    public func session() throws -> Session {
+        try client.session()
+    }
+
+    // MARK: - Underlying Client
+
+    public var underlyingClient: Client { client }
 }

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import AppKit
+import AuthenticationServices
 import RelayInterface
 import SwiftUI
 
@@ -23,6 +24,7 @@ import SwiftUI
 /// public homeservers is provided for new users.
 struct LoginView: View {
     @Environment(\.matrixService) private var matrixService
+    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
     @State private var matrixID = MatrixID()
     @State private var password = ""
     @State private var errorMessage: String?
@@ -122,7 +124,19 @@ struct LoginView: View {
         errorMessage = nil
         Task {
             do {
-                try await matrixService.startOAuthLogin(homeserver: matrixID.homeserver)
+                try await matrixService.startOAuthLogin(
+                    homeserver: matrixID.homeserver
+                ) { [webAuthenticationSession] url in
+                    try await webAuthenticationSession.authenticate(
+                        using: url,
+                        callbackURLScheme: "com.github.subpop.relay",
+                        preferredBrowserSession: .ephemeral
+                    )
+                }
+            } catch let error as ASWebAuthenticationSessionError
+                where error.code == .canceledLogin {
+                // User cancelled the browser — silently revert to logged-out state
+                return
             } catch {
                 errorMessage = error.localizedDescription
             }

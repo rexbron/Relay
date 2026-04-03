@@ -298,4 +298,54 @@ public protocol ClientProxyProtocol: AnyObject, Sendable {
     /// - Returns: The store sizes.
     /// - Throws: `ClientError` if the sizes cannot be read.
     func getStoreSizes() async throws -> StoreSizes
+
+    // MARK: - OAuth / OIDC
+
+    /// Returns the login methods supported by the homeserver.
+    ///
+    /// - Returns: The homeserver login details.
+    func homeserverLoginDetails() async -> HomeserverLoginDetails
+
+    /// Requests an OIDC authorization URL for login.
+    ///
+    /// The SDK handles dynamic client registration, PKCE code generation, and
+    /// nonce management internally. The returned ``OAuthAuthorizationData``
+    /// contains the authorization URL and opaque state needed for the callback.
+    ///
+    /// - Parameters:
+    ///   - oidcConfiguration: The OIDC client configuration.
+    ///   - prompt: An optional prompt hint for the authorization server.
+    ///   - loginHint: An optional login hint (e.g. username).
+    ///   - deviceId: An optional device ID to reuse.
+    ///   - additionalScopes: Optional additional OAuth scopes.
+    /// - Returns: The authorization data including the login URL.
+    /// - Throws: `ClientError` if OIDC setup fails.
+    func urlForOidc(
+        oidcConfiguration: OidcConfiguration,
+        prompt: OidcPrompt?,
+        loginHint: String?,
+        deviceId: String?,
+        additionalScopes: [String]?
+    ) async throws -> OAuthAuthorizationData
+
+    /// Completes an OIDC login by exchanging the authorization callback URL for tokens.
+    ///
+    /// - Parameter callbackUrl: The full callback URL received from the browser.
+    /// - Throws: `ClientError` if the token exchange fails.
+    func loginWithOidcCallback(callbackUrl: String) async throws
+
+    /// Returns the current session data including tokens and OIDC state.
+    ///
+    /// - Returns: The session.
+    /// - Throws: `ClientError` if session data is unavailable.
+    func session() throws -> Session
+
+    // MARK: - Underlying Client
+
+    /// The raw SDK `Client` instance.
+    ///
+    /// Use this only when interfacing with sub-services that have not yet been
+    /// migrated to use ``ClientProxyProtocol``. Prefer protocol methods for
+    /// new code.
+    var underlyingClient: Client { get }
 }
