@@ -16,20 +16,6 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		3B4AFD992F638A36001F0EA1 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 3B4AFD812F638A35001F0EA1 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 3B4AFD882F638A35001F0EA1;
-			remoteInfo = Relay;
-		};
-		3B4AFDA32F638A36001F0EA1 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 3B4AFD812F638A35001F0EA1 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 3B4AFD882F638A35001F0EA1;
-			remoteInfo = Relay;
-		};
 		3BRK00032FC00003001F0EA1 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 3B4AFD812F638A35001F0EA1 /* Project object */;
@@ -55,8 +41,6 @@
 
 /* Begin PBXFileReference section */
 		3B4AFD892F638A35001F0EA1 /* Relay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Relay.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		3B4AFD982F638A36001F0EA1 /* RelayTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		3B4AFDA22F638A36001F0EA1 /* RelayUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RelayUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3BAE76A72F6A43BA000EC1E6 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		3BRK00002FC00000001F0EA1 /* RelayKit.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = RelayKit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -80,16 +64,6 @@
 			path = Relay;
 			sourceTree = "<group>";
 		};
-		3B4AFD9B2F638A36001F0EA1 /* RelayTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = RelayTests;
-			sourceTree = "<group>";
-		};
-		3B4AFDA52F638A36001F0EA1 /* RelayUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = RelayUITests;
-			sourceTree = "<group>";
-		};
 		3BRK00112FC00011001F0EA1 /* RelayKit */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = RelayKit;
@@ -105,20 +79,6 @@
 				3BRK00012FC00001001F0EA1 /* RelayKit.framework in Frameworks */,
 				3BC1A0012FA00001001F0EA1 /* SwiftSoup in Frameworks */,
 				3BRI00032FC10003001F0EA1 /* RelayInterface in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3B4AFD952F638A36001F0EA1 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3B4AFD9F2F638A36001F0EA1 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -140,8 +100,6 @@
 				3BAE76A72F6A43BA000EC1E6 /* README.md */,
 				3B4AFD8B2F638A35001F0EA1 /* Relay */,
 				3BRK00112FC00011001F0EA1 /* RelayKit */,
-				3B4AFD9B2F638A36001F0EA1 /* RelayTests */,
-				3B4AFDA52F638A36001F0EA1 /* RelayUITests */,
 				3B4AFD8A2F638A35001F0EA1 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -151,8 +109,6 @@
 			children = (
 				3B4AFD892F638A35001F0EA1 /* Relay.app */,
 				3BRK00002FC00000001F0EA1 /* RelayKit.framework */,
-				3B4AFD982F638A36001F0EA1 /* RelayTests.xctest */,
-				3B4AFDA22F638A36001F0EA1 /* RelayUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -196,52 +152,6 @@
 			productReference = 3B4AFD892F638A35001F0EA1 /* Relay.app */;
 			productType = "com.apple.product-type.application";
 		};
-		3B4AFD972F638A36001F0EA1 /* RelayTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 3B4AFDAF2F638A36001F0EA1 /* Build configuration list for PBXNativeTarget "RelayTests" */;
-			buildPhases = (
-				3B4AFD942F638A36001F0EA1 /* Sources */,
-				3B4AFD952F638A36001F0EA1 /* Frameworks */,
-				3B4AFD962F638A36001F0EA1 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				3B4AFD9A2F638A36001F0EA1 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				3B4AFD9B2F638A36001F0EA1 /* RelayTests */,
-			);
-			name = RelayTests;
-			packageProductDependencies = (
-			);
-			productName = RelayTests;
-			productReference = 3B4AFD982F638A36001F0EA1 /* RelayTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		3B4AFDA12F638A36001F0EA1 /* RelayUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 3B4AFDB22F638A36001F0EA1 /* Build configuration list for PBXNativeTarget "RelayUITests" */;
-			buildPhases = (
-				3B4AFD9E2F638A36001F0EA1 /* Sources */,
-				3B4AFD9F2F638A36001F0EA1 /* Frameworks */,
-				3B4AFDA02F638A36001F0EA1 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				3B4AFDA42F638A36001F0EA1 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				3B4AFDA52F638A36001F0EA1 /* RelayUITests */,
-			);
-			name = RelayUITests;
-			packageProductDependencies = (
-			);
-			productName = RelayUITests;
-			productReference = 3B4AFDA22F638A36001F0EA1 /* RelayUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 		3BRK00102FC00010001F0EA1 /* RelayKit */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 3BRK00202FC00020001F0EA1 /* Build configuration list for PBXNativeTarget "RelayKit" */;
@@ -280,14 +190,6 @@
 					3B4AFD882F638A35001F0EA1 = {
 						CreatedOnToolsVersion = 26.3;
 					};
-					3B4AFD972F638A36001F0EA1 = {
-						CreatedOnToolsVersion = 26.3;
-						TestTargetID = 3B4AFD882F638A35001F0EA1;
-					};
-					3B4AFDA12F638A36001F0EA1 = {
-						CreatedOnToolsVersion = 26.3;
-						TestTargetID = 3B4AFD882F638A35001F0EA1;
-					};
 					3BRK00102FC00010001F0EA1 = {
 						CreatedOnToolsVersion = 26.3;
 					};
@@ -314,28 +216,12 @@
 			targets = (
 				3B4AFD882F638A35001F0EA1 /* Relay */,
 				3BRK00102FC00010001F0EA1 /* RelayKit */,
-				3B4AFD972F638A36001F0EA1 /* RelayTests */,
-				3B4AFDA12F638A36001F0EA1 /* RelayUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		3B4AFD872F638A35001F0EA1 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3B4AFD962F638A36001F0EA1 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3B4AFDA02F638A36001F0EA1 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -359,20 +245,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		3B4AFD942F638A36001F0EA1 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3B4AFD9E2F638A36001F0EA1 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		3BRK00142FC00014001F0EA1 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -383,16 +255,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		3B4AFD9A2F638A36001F0EA1 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 3B4AFD882F638A35001F0EA1 /* Relay */;
-			targetProxy = 3B4AFD992F638A36001F0EA1 /* PBXContainerItemProxy */;
-		};
-		3B4AFDA42F638A36001F0EA1 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 3B4AFD882F638A35001F0EA1 /* Relay */;
-			targetProxy = 3B4AFDA32F638A36001F0EA1 /* PBXContainerItemProxy */;
-		};
 		3BRK00052FC00005001F0EA1 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 3BRK00102FC00010001F0EA1 /* RelayKit */;
@@ -613,86 +475,6 @@
 			};
 			name = Release;
 		};
-		3B4AFDB02F638A36001F0EA1 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 46UKXDYHHC;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = app.subpop.RelayTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Relay.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Relay";
-			};
-			name = Debug;
-		};
-		3B4AFDB12F638A36001F0EA1 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 46UKXDYHHC;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = app.subpop.RelayTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Relay.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Relay";
-			};
-			name = Release;
-		};
-		3B4AFDB32F638A36001F0EA1 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 46UKXDYHHC;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = app.subpop.RelayUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = Relay;
-			};
-			name = Debug;
-		};
-		3B4AFDB42F638A36001F0EA1 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 46UKXDYHHC;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = app.subpop.RelayUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = Relay;
-			};
-			name = Release;
-		};
 		3BRK00212FC00021001F0EA1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -772,24 +554,6 @@
 			buildConfigurations = (
 				3B4AFDAD2F638A36001F0EA1 /* Debug */,
 				3B4AFDAE2F638A36001F0EA1 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		3B4AFDAF2F638A36001F0EA1 /* Build configuration list for PBXNativeTarget "RelayTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				3B4AFDB02F638A36001F0EA1 /* Debug */,
-				3B4AFDB12F638A36001F0EA1 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		3B4AFDB22F638A36001F0EA1 /* Build configuration list for PBXNativeTarget "RelayUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				3B4AFDB32F638A36001F0EA1 /* Debug */,
-				3B4AFDB42F638A36001F0EA1 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
