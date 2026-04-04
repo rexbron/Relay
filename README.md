@@ -4,15 +4,27 @@ A native macOS chat app built with SwiftUI that wraps the [Matrix Rust SDK](http
 
 ## Feature Overview
 
-- **Room list & navigation** — browse joined rooms with unread counts and room avatars.
-- **Rich timeline** — text, emote, notice, image, video*, audio*, and file messages with proper grouping, date headers, and sender avatars.
-- **Reactions** — toggle emoji reactions on any message via context menu or emoji picker.
-- **Reply rendering** — inline reply previews with click-to-jump-to-original.
-- **Unread markers** — a "New" divider appears at the first unread message.
-- **Image attachments** — send images (with blurhash placeholders) and other files via drag-and-drop or the attach button, all sandbox-safe.
-- **Room directory search** — discover and join public rooms.
+- **Room list & navigation** — browse joined rooms with unread counts, avatars, sorting, and filtering.
+- **Rich timeline** — text, emote, notice, image, video, audio, and file messages with proper grouping, date headers, sender avatars, and big emoji for emoji-only messages.
+- **Rich text rendering** — messages display formatted bodies with interactive, clickable mentions.
+- **Message editing** — edit previously sent messages.
+- **Message redaction** — delete messages.
+- **Reactions** — toggle emoji reactions via context menu, emoji picker, or long-press.
+- **Replies** — swipe on a message to reply, rendered as overlapping bubbles with click-to-jump.
+- **Pin messages** — pin and unpin messages, view pinned messages, and jump to them in the timeline.
+- **URL previews** — link previews displayed as standalone cards alongside messages.
+- **Unread markers** — a "New" divider appears at the first unread message with jump-to support.
+- **Attachments** — stage images and files before sending via drag-and-drop, paste, or the attach button.
+- **GIF search** — search and send GIFs via GIPHY.
+- **Username autocomplete** — mention users with inline suggestions while composing.
+- **Typing indicators** — see who is currently typing in a room.
+- **Room directory & room creation** — discover and join public rooms or create new ones.
+- **Room details** — view and inspect room name, topic, and members.
+- **Deep links** — handle `matrix:` URLs and `matrix.to` links to open rooms directly.
+- **Direct messages** — start a DM with any user from their profile.
 - **Infinite scrollback** — paginate backwards through history with a single click.
 - **Auto-scroll** — the timeline stays pinned to the bottom for new messages, but won't interrupt you if you've scrolled up.
+- **Session verification** — verify new sessions with a redesigned in-app flow.
 - **Keychain-backed sessions** — login credentials are stored securely in the macOS Keychain.
 
 ## Roadmap
