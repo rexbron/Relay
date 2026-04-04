@@ -16,7 +16,7 @@ import Foundation
 import OSLog
 import RelayInterface
 
-nonisolated(unsafe) private let logger = Logger(subsystem: "RelayKit", category: "GiphyService")
+private let logger = Logger(subsystem: "RelayKit", category: "GiphyService")
 
 /// A concrete ``GIFSearchServiceProtocol`` implementation backed by the GIPHY API.
 ///
@@ -99,7 +99,10 @@ public final class GiphyService: GIFSearchServiceProtocol {
         do {
             let (_, _) = try await session.data(from: pingbackURL)
         } catch {
-            logger.debug("Analytics pingback failed: \(error.localizedDescription)")
+            await logger
+                .debug(
+                    "Analytics pingback failed: \(error.localizedDescription)"
+                )
         }
     }
 
@@ -124,7 +127,8 @@ public final class GiphyService: GIFSearchServiceProtocol {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            logger.error("GIPHY API returned status \(httpResponse.statusCode)")
+            await logger
+                .error("GIPHY API returned status \(httpResponse.statusCode)")
             throw GiphyError.httpError(statusCode: httpResponse.statusCode)
         }
 
