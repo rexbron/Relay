@@ -122,6 +122,17 @@ public protocol RoomDetailViewModelProtocol: AnyObject, Observable {
     ///   - key: The emoji character to toggle (e.g. `"👍"`).
     func toggleReaction(messageId: String, key: String) async
 
+    /// Edits the text content of a previously sent message.
+    ///
+    /// Only text messages sent by the current user can be edited. The edit replaces
+    /// the message body and formatted body with the new content.
+    ///
+    /// - Parameters:
+    ///   - messageId: The event or transaction ID of the message to edit.
+    ///   - newText: The replacement message body (may contain Markdown and Matrix.to mention links).
+    ///   - mentionedUserIds: Matrix user IDs mentioned in the new text.
+    func edit(messageId: String, newText: String, mentionedUserIds: [String]) async
+
     /// Redacts (deletes) a message from the room timeline.
     ///
     /// For local (unsent) messages the SDK attempts to cancel the send; for remote messages

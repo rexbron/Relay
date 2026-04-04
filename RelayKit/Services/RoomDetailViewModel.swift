@@ -209,6 +209,24 @@ public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
         }
     }
 
+    public func edit(messageId: String, newText: String, mentionedUserIds: [String] = []) async {
+        guard let sdkTimeline else { return }
+        let itemId: EventOrTransactionId = if messageId.hasPrefix("$") {
+            .eventId(eventId: messageId)
+        } else {
+            .transactionId(transactionId: messageId)
+        }
+        let content = messageEventContentFromMarkdown(md: newText)
+            .withMentions(mentions: Mentions(userIds: mentionedUserIds, room: false))
+        let editedContent = EditedContent.roomMessage(content: content)
+        do {
+            try await sdkTimeline.edit(eventOrTransactionId: itemId, newContent: editedContent)
+        } catch {
+            logger.error("Failed to edit message: \(error)")
+            errorReporter.report(.editFailed(error.localizedDescription))
+        }
+    }
+
     public func toggleReaction(messageId: String, key: String) async {
         guard let sdkTimeline else { return }
         let itemId: EventOrTransactionId = if messageId.hasPrefix("$") {

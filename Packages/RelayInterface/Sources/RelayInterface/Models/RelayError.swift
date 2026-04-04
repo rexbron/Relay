@@ -66,6 +66,9 @@ public enum RelayError: LocalizedError, Sendable {
     /// A reaction could not be toggled.
     case reactionFailed(String)
 
+    /// A message could not be edited.
+    case editFailed(String)
+
     /// A message could not be deleted (redacted).
     case redactFailed(String)
 
@@ -130,6 +133,8 @@ public enum RelayError: LocalizedError, Sendable {
             "Could Not Load Messages"
         case .reactionFailed:
             "Could Not Toggle Reaction"
+        case .editFailed:
+            "Could Not Edit Message"
         case .redactFailed:
             "Could Not Delete Message"
         case .mediaPreviewFailed:
@@ -178,6 +183,8 @@ public enum RelayError: LocalizedError, Sendable {
         case .messageLoadFailed(let reason):
             reason
         case .reactionFailed(let reason):
+            reason
+        case .editFailed(let reason):
             reason
         case .redactFailed(let reason):
             reason

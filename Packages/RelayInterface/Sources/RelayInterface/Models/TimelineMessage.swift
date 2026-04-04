@@ -224,6 +224,9 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
     /// Reply context, present when this message is a reply to another message.
     public var replyDetail: ReplyDetail?
 
+    /// Whether this message has been edited since it was originally sent.
+    public var isEdited: Bool
+
     /// Creates a new ``TimelineMessage`` value.
     ///
     /// - Parameters:
@@ -240,6 +243,7 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
     ///   - reactions: Aggregated reactions. Defaults to an empty array.
     ///   - isHighlighted: Whether the message mentions the current user.
     ///   - replyDetail: Reply context, if this is a reply.
+    ///   - isEdited: Whether the message has been edited. Defaults to `false`.
     nonisolated public init(
         id: String,
         senderID: String,
@@ -253,7 +257,8 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         mediaInfo: MediaInfo? = nil,
         reactions: [ReactionGroup] = [],
         isHighlighted: Bool = false,
-        replyDetail: ReplyDetail? = nil
+        replyDetail: ReplyDetail? = nil,
+        isEdited: Bool = false
     ) {
         self.id = id
         self.senderID = senderID
@@ -268,6 +273,7 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         self.reactions = reactions
         self.isHighlighted = isHighlighted
         self.replyDetail = replyDetail
+        self.isEdited = isEdited
     }
 
     /// The best available display name for the sender, falling back to the Matrix user ID.

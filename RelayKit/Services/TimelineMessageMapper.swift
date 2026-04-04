@@ -56,10 +56,12 @@ struct TimelineMessageMapper {
             let msgKind: TimelineMessage.Kind
             var msgMediaInfo: TimelineMessage.MediaInfo?
             var msgFormattedBody: String?
+            var msgIsEdited = false
             switch event.content {
             case .msgLike(let msgLikeContent):
                 switch msgLikeContent.kind {
                 case .message(let messageContent):
+                    msgIsEdited = messageContent.isEdited
                     switch messageContent.msgType {
                     case .text(let textContent):
                         msgBody = textContent.body
@@ -255,7 +257,8 @@ struct TimelineMessageMapper {
                 mediaInfo: msgMediaInfo,
                 reactions: msgReactions,
                 isHighlighted: isHighlighted,
-                replyDetail: msgReplyDetail
+                replyDetail: msgReplyDetail,
+                isEdited: msgIsEdited
             ))
         }
 
@@ -273,11 +276,13 @@ struct TimelineMessageMapper {
         let msgKind: TimelineMessage.Kind
         var msgMediaInfo: TimelineMessage.MediaInfo?
         var msgFormattedBody: String?
+        var msgIsEdited = false
 
         switch event.content {
         case .msgLike(let msgLikeContent):
             switch msgLikeContent.kind {
             case .message(let messageContent):
+                msgIsEdited = messageContent.isEdited
                 switch messageContent.msgType {
                 case .text(let textContent):
                     msgBody = textContent.body
@@ -418,7 +423,8 @@ struct TimelineMessageMapper {
             timestamp: ts,
             isOutgoing: event.isOwn,
             kind: msgKind,
-            mediaInfo: msgMediaInfo
+            mediaInfo: msgMediaInfo,
+            isEdited: msgIsEdited
         )
     }
 

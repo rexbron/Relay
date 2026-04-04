@@ -237,20 +237,29 @@ struct MessageView: View {
     // MARK: - Text Content (with markdown + links)
 
     private var textContent: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let reply = message.replyDetail {
-                inlineReply(reply, outgoing: message.isOutgoing)
+        VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
+                if let reply = message.replyDetail {
+                    inlineReply(reply, outgoing: message.isOutgoing)
+                }
+                if let resolved = htmlBody {
+                    MessageTextView(resolved: resolved, isOutgoing: message.isOutgoing, onUserTap: onUserTap, onRoomTap: onRoomTap)
+                } else {
+                    MessageTextView(attributedString: markdownBody, isOutgoing: message.isOutgoing, onUserTap: onUserTap, onRoomTap: onRoomTap)
+                }
             }
-            if let resolved = htmlBody {
-                MessageTextView(resolved: resolved, isOutgoing: message.isOutgoing, onUserTap: onUserTap, onRoomTap: onRoomTap)
-            } else {
-                MessageTextView(attributedString: markdownBody, isOutgoing: message.isOutgoing, onUserTap: onUserTap, onRoomTap: onRoomTap)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(bubbleColor)
+            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+
+            if message.isEdited {
+                Text("edited")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 12)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(bubbleColor)
-        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
     }
 
     // MARK: - Emoji-Only Content

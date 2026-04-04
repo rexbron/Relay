@@ -53,6 +53,7 @@ struct RoomDetailView: View {
 
     @State private var draftMessage = ""
     @State private var replyingTo: TimelineMessage?
+    @State private var editingMessage: TimelineMessage?
     @State private var stagedAttachments: [StagedAttachment] = []
     @State private var roomMembers: [RoomMemberDetails] = []
     @State private var draftMentions: [Mention] = []
@@ -118,6 +119,29 @@ struct RoomDetailView: View {
                             Button {
                                 withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
                                     replyingTo = nil
+                                }
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.title2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 4)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    if editingMessage != nil {
+                        HStack {
+                            Label("Editing Message", systemImage: "pencil")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button {
+                                withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
+                                    editingMessage = nil
+                                    draftMessage = ""
                                 }
                             } label: {
                                 Image(systemName: "xmark")
@@ -522,6 +546,16 @@ struct RoomDetailView: View {
             Label("Copy", systemImage: "doc.on.doc")
         }
 
+        if message.isOutgoing && message.kind == .text {
+            Button {
+                replyingTo = nil
+                editingMessage = message
+                draftMessage = message.body
+            } label: {
+                Label("Edit Message", systemImage: "pencil")
+            }
+        }
+
         if message.isOutgoing && message.kind != .redacted {
             Divider()
 
@@ -619,7 +653,6 @@ struct RoomDetailView: View {
         let text = draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         let pendingAttachments = stagedAttachments
         guard !text.isEmpty || !pendingAttachments.isEmpty else { return }
-        let replyEventId = replyingTo?.id
 
         // Capture mentions and convert to markdown with Matrix.to links
         let currentMentions = draftMentions
@@ -627,6 +660,22 @@ struct RoomDetailView: View {
         let messageText = ComposeView.markdownWithMentions(text: draftMessage, mentions: currentMentions)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // Check if we're in edit mode
+        if let editing = editingMessage {
+            let editId = editing.id
+            draftMessage = ""
+            draftMentions = []
+            withAnimation(.easeOut(duration: 0.2)) { editingMessage = nil }
+            Task {
+                if sendTypingNotifications {
+                    await matrixService.sendTypingNotice(roomId: roomId, isTyping: false)
+                }
+                await viewModel.edit(messageId: editId, newText: messageText, mentionedUserIds: mentionedUserIds)
+            }
+            return
+        }
+
+        let replyEventId = replyingTo?.id
         draftMessage = ""
         draftMentions = []
         withAnimation(.easeOut(duration: 0.2)) { replyingTo = nil }
