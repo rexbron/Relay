@@ -97,7 +97,6 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 } label: {
                     Image(systemName: "plus.bubble")
                 }
-                .padding(1)
                 .help("Create Room")
             }
             ToolbarItem(placement: .navigation) {
@@ -107,7 +106,6 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 } label: {
                     Image(systemName: "building.2")
                 }
-                .padding(1)
                 .help("Room Directory")
             }
             ToolbarItem(placement: .primaryAction) {
@@ -127,10 +125,8 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                                         } label: {
                                             Image(systemName: "pin.fill")
                                                 .foregroundStyle(.secondary)
-                                                .frame(width: 28, height: 28)
-                                                .contentShape(Circle())
+
                                         }
-                                        .buttonStyle(.plain)
                                         .help("Pinned Messages")
                                         .popover(isPresented: $showingPinnedMessages,
                                                  arrowEdge: .bottom) {
@@ -141,24 +137,14 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                                         }
                                     }
 
-                                    VStack(alignment: .trailing, spacing: 1) {
-                                        Text(summary.name)
-                                            .fontWeight(.semibold)
-                                            .lineLimit(1)
+                                    Text(summary.name)
+                                        .fontWeight(.semibold)
+                                        .lineLimit(1)
+                                        .padding(.leading, 12)
 
-                                        if let topic = summary.topic, !topic.isEmpty {
-                                            Text(topic)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                                .lineLimit(1)
-                                        }
-                                    }
-
-                                    AvatarView(name: summary.name, mxcURL: summary.avatarURL, size: 36)
+                                    AvatarView(name: summary.name, mxcURL: summary.avatarURL, size: 28)
+                                        .padding(2)
                                 }
-                                .padding(.leading, 10)
-                                .padding(.trailing, 2)
-                                .padding(.vertical, 4)
                                 .frame(maxWidth: 200)
                             }
                             .buttonStyle(.plain)
