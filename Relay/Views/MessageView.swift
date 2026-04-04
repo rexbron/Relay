@@ -101,10 +101,23 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                             let replyIsOutgoing = currentUserID != nil
                                 && reply.senderID == currentUserID
                             repliedMessageBubble(reply, outgoing: replyIsOutgoing)
-                                .padding(.trailing, message.isOutgoing ? 0 : 20)
+                                .padding(message.isOutgoing ? .trailing : .leading, 20)
                         }
 
                         messageContent
+                            .overlay {
+                                if message.isHighlighted {
+                                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                                        .strokeBorder(Color.orange, lineWidth: 1)
+                                }
+                            }
+                            .padding(message.replyDetail != nil ? 2 : 0)
+                            .background {
+                                if message.replyDetail != nil {
+                                    RoundedRectangle(cornerRadius: 19, style: .continuous)
+                                        .fill(Color(nsColor: .windowBackgroundColor))
+                                }
+                            }
                     }
                 }
                 .onLongPressGesture {
@@ -140,22 +153,7 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                 .padding(.leading, message.isOutgoing ? 0 : 34)
             }
         }
-        .padding(.vertical, message.isHighlighted ? 4 : 0)
-        .padding(.horizontal, message.isHighlighted ? 6 : 0)
-        .background {
-            if message.isHighlighted {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.orange.opacity(0.08))
-                    .overlay(alignment: .trailing) {
-                        UnevenRoundedRectangle(
-                            topLeadingRadius: 0, bottomLeadingRadius: 0,
-                            bottomTrailingRadius: 8, topTrailingRadius: 8
-                        )
-                        .fill(Color.orange)
-                        .frame(width: 3)
-                    }
-            }
-        }
+
     }
 
     // MARK: - Replied-To Message Bubble
@@ -171,14 +169,6 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
             onTapReply?(reply.eventID)
         } label: {
             VStack(alignment: .leading, spacing: 2) {
-                if !outgoing {
-                    Text(reply.displayName)
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 12)
-                }
-
                 Text(reply.body)
                     .font(.body)
                     .foregroundStyle(outgoing ? .white : .primary)
@@ -471,7 +461,10 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
     // MARK: - Bubble Color
 
     private var bubbleColor: Color {
-        message.isOutgoing ? .accentColor : Color(.unemphasizedSelectedContentBackgroundColor)
+        if message.isHighlighted {
+            return Color(red: 0.35, green: 0.22, blue: 0.10)
+        }
+        return message.isOutgoing ? .accentColor : Color(.unemphasizedSelectedContentBackgroundColor)
     }
 }
 
