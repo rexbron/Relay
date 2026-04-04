@@ -191,6 +191,23 @@ struct MessageTextView: NSViewRepresentable {
         isOutgoing ? NSColor.white.withAlphaComponent(0.9) : .controlAccentColor
     }
 
+    // MARK: - Coordinator
+
+    /// Caches the last resolved `NSAttributedString` so that `updateNSView`
+    /// can skip the expensive `resolve()` / `applyColorOverrides()` conversion
+    /// when the inputs have not changed. Without this, every SwiftUI layout
+    /// pass re-runs `NSAttributedString.init(_:)` bridge + attribute
+    /// enumeration on the main thread, which beach-balls when many messages
+    /// are visible.
+    final class Coordinator {
+        var lastAttributedString: AttributedString?
+        var lastResolvedAttributedString: NSAttributedString?
+        var lastIsOutgoing: Bool?
+        var cachedResolved: NSAttributedString?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeNSView(context: Context) -> MessageTextContent {
         let storage = NSTextStorage()
         let layoutManager = NSLayoutManager()
@@ -217,26 +234,50 @@ struct MessageTextView: NSViewRepresentable {
         view.resetHoverState()
         view.onUserTap = onUserTap
         view.onRoomTap = onRoomTap
+
+        let coordinator = context.coordinator
+
+        // Check whether the inputs that affect the resolved string have changed.
+        let inputsChanged: Bool = {
+            if coordinator.cachedResolved == nil { return true }
+            if coordinator.lastIsOutgoing != isOutgoing { return true }
+            if let pre = resolvedAttributedString {
+                return pre !== coordinator.lastResolvedAttributedString
+            }
+            if let attr = attributedString {
+                return attr != coordinator.lastAttributedString
+            }
+            return coordinator.lastAttributedString != nil
+                || coordinator.lastResolvedAttributedString != nil
+        }()
+
         let resolved: NSAttributedString
-        if let preResolved = resolvedAttributedString {
-            // HTML path: apply foreground/link color overrides to the pre-resolved string.
-            resolved = Self.applyColorOverrides(
-                preResolved,
-                foreground: foregroundColor,
-                linkColor: linkColor
-            )
-        } else if let attrString = attributedString {
-            // Markdown path: resolve InlinePresentationIntent attributes.
-            resolved = Self.resolve(
-                attrString,
-                foreground: foregroundColor,
-                linkColor: linkColor
-            )
-        } else {
-            resolved = NSAttributedString()
+        if inputsChanged {
+            if let preResolved = resolvedAttributedString {
+                // HTML path: apply foreground/link color overrides to the pre-resolved string.
+                resolved = Self.applyColorOverrides(
+                    preResolved,
+                    foreground: foregroundColor,
+                    linkColor: linkColor
+                )
+            } else if let attrString = attributedString {
+                // Markdown path: resolve InlinePresentationIntent attributes.
+                resolved = Self.resolve(
+                    attrString,
+                    foreground: foregroundColor,
+                    linkColor: linkColor
+                )
+            } else {
+                resolved = NSAttributedString()
+            }
+            coordinator.lastAttributedString = attributedString
+            coordinator.lastResolvedAttributedString = resolvedAttributedString
+            coordinator.lastIsOutgoing = isOutgoing
+            coordinator.cachedResolved = resolved
+
+            view.linkTextAttributes = [.foregroundColor: linkColor]
+            view.textStorage?.setAttributedString(resolved)
         }
-        view.linkTextAttributes = [.foregroundColor: linkColor]
-        view.textStorage?.setAttributedString(resolved)
     }
 
     func sizeThatFits(
