@@ -100,7 +100,8 @@ struct RoomDetailView: View { // swiftlint:disable:this type_body_length
                         MessageView(
                             message: reply,
                             isLastInGroup: true,
-                            showSenderName: !reply.isOutgoing
+                            showSenderName: !reply.isOutgoing,
+                            currentUserID: matrixService.userId()
                         )
                         .allowsHitTesting(false)
                         .padding(.horizontal, 16)
@@ -337,7 +338,8 @@ struct RoomDetailView: View { // swiftlint:disable:this type_body_length
                                         ?? UserProfile(userId: userId)
                                     onUserTap?(profile)
                                 },
-                                onRoomTap: onRoomTap
+                                onRoomTap: onRoomTap,
+                                currentUserID: matrixService.userId()
                             )
                         } onReply: {
                             withAnimation(.spring(duration: 0.35, bounce: 0.15)) {

@@ -58,6 +58,10 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
     /// Called when the user clicks a room link, with the room ID or alias.
     var onRoomTap: ((String) -> Void)?
 
+    /// The Matrix user ID of the signed-in user. Used to determine the bubble color
+    /// of replied-to messages (outgoing vs incoming).
+    var currentUserID: String?
+
     @Environment(\.swipeOffset) private var swipeOffset
     @State private var showEmojiPicker = false
 
@@ -92,20 +96,15 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                             .padding(.bottom, 2)
                     }
 
-                    if message.kind == .image, message.mediaInfo != nil {
-                        imageContent
-                    } else if message.kind == .video, message.mediaInfo != nil {
-                        videoContent
-                    } else if message.kind == .audio, message.mediaInfo != nil {
-                        audioContent
-                    } else if message.kind == .emote {
-                        emoteContent
-                    } else if message.isSpecialType {
-                        specialContent
-                    } else if isEmojiOnly {
-                        emojiOnlyContent
-                    } else {
-                        textContent
+                    VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: -8) {
+                        if let reply = message.replyDetail {
+                            let replyIsOutgoing = currentUserID != nil
+                                && reply.senderID == currentUserID
+                            repliedMessageBubble(reply, outgoing: replyIsOutgoing)
+                                .padding(.trailing, message.isOutgoing ? 0 : 20)
+                        }
+
+                        messageContent
                     }
                 }
                 .onLongPressGesture {
@@ -159,80 +158,85 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
         }
     }
 
-    // MARK: - Inline Reply
+    // MARK: - Replied-To Message Bubble
 
+    /// A muted message bubble rendered behind (and above) the main message, partially
+    /// covered by it. Styled to look nearly identical to the original message, just faded.
     @ViewBuilder
-    private func inlineReply(_ reply: TimelineMessage.ReplyDetail, outgoing: Bool) -> some View {
+    private func repliedMessageBubble(
+        _ reply: TimelineMessage.ReplyDetail,
+        outgoing: Bool
+    ) -> some View {
         Button {
             onTapReply?(reply.eventID)
         } label: {
-            HStack(alignment: .top, spacing: 6) {
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(outgoing ? Color.white.opacity(0.5) : Color.accentColor)
-                    .frame(width: 3, height: 28)
-
-                VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
+                if !outgoing {
                     Text(reply.displayName)
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(outgoing ? .white.opacity(0.8) : Color.accentColor)
-                        .lineLimit(1)
-                    Text(reply.body)
                         .font(.caption)
-                        .foregroundStyle(outgoing ? .white.opacity(0.6) : .secondary)
-                        .lineLimit(2)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 12)
                 }
+
+                Text(reply.body)
+                    .font(.body)
+                    .foregroundStyle(outgoing ? .white : .primary)
+                    .lineLimit(2)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(
+                        outgoing
+                            ? Color.accentColor
+                            : Color(.systemGray).opacity(0.2)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
             }
+            .opacity(0.6)
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Message Content (dispatches to the correct content variant)
+
+    @ViewBuilder
+    private var messageContent: some View {
+        if message.kind == .image, message.mediaInfo != nil {
+            imageContent
+        } else if message.kind == .video, message.mediaInfo != nil {
+            videoContent
+        } else if message.kind == .audio, message.mediaInfo != nil {
+            audioContent
+        } else if message.kind == .emote {
+            emoteContent
+        } else if message.isSpecialType {
+            specialContent
+        } else if isEmojiOnly {
+            emojiOnlyContent
+        } else {
+            textContent
+        }
     }
 
     // MARK: - Image Content
 
     private var imageContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let reply = message.replyDetail {
-                inlineReply(reply, outgoing: message.isOutgoing)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
-                    .background(bubbleColor)
-            }
-            ImageMessageView(message: message)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+        ImageMessageView(message: message)
+            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
     }
 
     // MARK: - Video Content
 
     private var videoContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let reply = message.replyDetail {
-                inlineReply(reply, outgoing: message.isOutgoing)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
-                    .background(bubbleColor)
-            }
-            VideoMessageView(message: message)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+        VideoMessageView(message: message)
+            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
     }
 
     // MARK: - Audio Content
 
     private var audioContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let reply = message.replyDetail {
-                inlineReply(reply, outgoing: message.isOutgoing)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
-                    .background(bubbleColor)
-            }
-            AudioMessageView(message: message)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+        AudioMessageView(message: message)
+            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
     }
 
     // MARK: - Text Content (with markdown + links)
@@ -240,9 +244,6 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
     private var textContent: some View {
         VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 2) {
             VStack(alignment: .leading, spacing: 4) {
-                if let reply = message.replyDetail {
-                    inlineReply(reply, outgoing: message.isOutgoing)
-                }
                 if let resolved = htmlBody {
                     MessageTextView(
                         resolved: resolved,
@@ -284,26 +285,14 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
     }
 
     private var emojiOnlyContent: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let reply = message.replyDetail {
-                inlineReply(reply, outgoing: message.isOutgoing)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(bubbleColor)
-                    .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-            }
-            Text(message.body)
-                .font(.system(size: message.body.emojiCount <= 3 ? 48 : 32))
-        }
+        Text(message.body)
+            .font(.system(size: message.body.emojiCount <= 3 ? 48 : 32))
     }
 
     // MARK: - Emote Content
 
     private var emoteContent: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let reply = message.replyDetail {
-                inlineReply(reply, outgoing: false)
-            }
+        Group {
             if let resolved = emoteHtmlBody {
                 MessageTextView(
                     resolved: resolved,
@@ -329,19 +318,14 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
     // MARK: - Special Content (media, redacted, encrypted, etc.)
 
     private var specialContent: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let reply = message.replyDetail {
-                inlineReply(reply, outgoing: message.isOutgoing)
-            }
-            Label {
-                Text(message.body)
-                    .font(.callout)
-            } icon: {
-                Image(systemName: iconForKind)
-                    .font(.callout)
-            }
-            .foregroundStyle(foregroundForKind.opacity(0.6))
+        Label {
+            Text(message.body)
+                .font(.callout)
+        } icon: {
+            Image(systemName: iconForKind)
+                .font(.callout)
         }
+        .foregroundStyle(foregroundForKind.opacity(0.6))
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(backgroundForKind)
@@ -388,35 +372,55 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
     /// The pre-resolved `NSAttributedString` when HTML is available, or `nil` for the Markdown path.
     private var htmlBody: NSAttributedString? {
         guard let html = message.formattedBody else { return nil }
-        return MatrixHTMLParser.parse(html)
+        return Self.htmlCache.value(forKey: html) {
+            MatrixHTMLParser.parse(html)
+        }
     }
 
     private var markdownBody: AttributedString {
-        Self.parseMarkdown(message.body)
+        Self.markdownCache.value(forKey: message.body) {
+            Self.parseMarkdown(message.body)
+        }
     }
 
     private var emoteBody: AttributedString {
         var name = AttributedString("*\(message.displayName)* ")
         name.inlinePresentationIntent = .emphasized
-        return name + Self.parseMarkdown(message.body)
+        return name + Self.markdownCache.value(forKey: message.body) {
+            Self.parseMarkdown(message.body)
+        }
     }
 
     /// The pre-resolved `NSAttributedString` for emote HTML, or `nil` for the Markdown path.
     private var emoteHtmlBody: NSAttributedString? {
         guard let html = message.formattedBody else { return nil }
-        guard let parsed = MatrixHTMLParser.parse(html) else { return nil }
-        // Prepend italic display name.
-        let result = NSMutableAttributedString()
-        let nameFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
-        let italicDesc = nameFont.fontDescriptor.withSymbolicTraits(.italic)
-        let italicFont = NSFont(descriptor: italicDesc, size: nameFont.pointSize) ?? nameFont
-        result.append(NSAttributedString(
-            string: "*\(message.displayName)* ",
-            attributes: [.font: italicFont]
-        ))
-        result.append(parsed)
-        return result
+        let cacheKey = "\(message.displayName)\0\(html)"
+        return Self.emoteHtmlCache.value(forKey: cacheKey) {
+            guard let parsed = MatrixHTMLParser.parse(html) else { return nil }
+            // Prepend italic display name.
+            let result = NSMutableAttributedString()
+            let nameFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+            let italicDesc = nameFont.fontDescriptor.withSymbolicTraits(.italic)
+            let italicFont = NSFont(descriptor: italicDesc, size: nameFont.pointSize) ?? nameFont
+            result.append(NSAttributedString(
+                string: "*\(message.displayName)* ",
+                attributes: [.font: italicFont]
+            ))
+            result.append(parsed)
+            return result
+        }
     }
+
+    // MARK: - Parse Caches
+
+    /// LRU cache for parsed HTML bodies. Shared across all `MessageView` instances.
+    private static let htmlCache = ParseCache<String, NSAttributedString?>(capacity: 128)
+
+    /// LRU cache for parsed Markdown bodies. Shared across all `MessageView` instances.
+    private static let markdownCache = ParseCache<String, AttributedString>(capacity: 128)
+
+    /// LRU cache for parsed emote HTML bodies. Shared across all `MessageView` instances.
+    private static let emoteHtmlCache = ParseCache<String, NSAttributedString?>(capacity: 64)
 
     private static func parseMarkdown(_ raw: String) -> AttributedString {
         var result: AttributedString
@@ -467,7 +471,7 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
     // MARK: - Bubble Color
 
     private var bubbleColor: Color {
-        message.isOutgoing ? .accentColor : Color(.systemGray).opacity(0.2)
+        message.isOutgoing ? .accentColor : Color(.unemphasizedSelectedContentBackgroundColor)
     }
 }
 
@@ -551,7 +555,8 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                     body: "Nice — I'll take a look."
                 )
             ),
-            showSenderName: true
+            showSenderName: true,
+            currentUserID: "@me:matrix.org"
         )
     }
     .padding()
