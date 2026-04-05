@@ -68,6 +68,7 @@ struct RoomDetailView: View { // swiftlint:disable:this type_body_length
     @State private var fullyReadDebounceTask: Task<Void, Never>?
     @State private var lastFullyReadEventId: String?
     @State private var isDirectRoom = false
+    @State private var highlightedMessageId: String?
 
     @AppStorage("safety.sendReadReceipts") private var sendReadReceipts = true
     @AppStorage("safety.sendTypingNotifications") private var sendTypingNotifications = true
@@ -182,10 +183,11 @@ struct RoomDetailView: View { // swiftlint:disable:this type_body_length
             }
             await viewModel.loadTimeline(focusedOnEventId: focusEventId)
 
-            // After loading, scroll to the focused event if applicable
+            // After loading, scroll to the focused event and briefly highlight it
             if let focusEventId {
                 try? await Task.sleep(for: .milliseconds(200))
                 scrollPosition.scrollTo(id: focusEventId, anchor: .center)
+                highlightedMessageId = focusEventId
             }
 
             await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts)
@@ -231,19 +233,21 @@ struct RoomDetailView: View { // swiftlint:disable:this type_body_length
             focusedMessageId = nil
 
             if viewModel.messages.contains(where: { $0.id == eventId }) {
-                // Message is already loaded — just scroll to it
+                // Message is already loaded — scroll to it and highlight
                 withAnimation(.easeInOut(duration: 0.3)) {
                     scrollPosition.scrollTo(id: eventId, anchor: .center)
                 }
+                highlightedMessageId = eventId
             } else {
                 // Message is not in the loaded timeline — load an event-focused timeline
                 Task {
                     await viewModel.focusOnEvent(eventId: eventId)
-                    // After the focused timeline loads, scroll to the target event
+                    // After the focused timeline loads, scroll to the target event and highlight
                     try? await Task.sleep(for: .milliseconds(200))
                     withAnimation(.easeInOut(duration: 0.3)) {
                         scrollPosition.scrollTo(id: eventId, anchor: .center)
                     }
+                    highlightedMessageId = eventId
                 }
             }
         }
@@ -316,6 +320,9 @@ struct RoomDetailView: View { // swiftlint:disable:this type_body_length
                             .id(message.id)
                             .help(message.formattedTime)
                             .onAppear { advanceFullyReadMarker(to: message.id) }
+                            .messageHighlight(highlightedMessageId == message.id) {
+                                highlightedMessageId = nil
+                            }
                     } else {
                         MessageSwipeActions {
                             MessageView(
@@ -326,8 +333,15 @@ struct RoomDetailView: View { // swiftlint:disable:this type_body_length
                                     Task { await viewModel.toggleReaction(messageId: message.id, key: key) }
                                 },
                                 onTapReply: { eventID in
-                                    withAnimation(.easeInOut(duration: 0.3)) {
-                                        scrollPosition.scrollTo(id: eventID, anchor: .center)
+                                    if viewModel.messages.contains(where: { $0.id == eventID }) {
+                                        withAnimation(.easeInOut(duration: 0.3)) {
+                                            scrollPosition.scrollTo(id: eventID, anchor: .center)
+                                        }
+                                        highlightedMessageId = eventID
+                                    } else {
+                                        // Replied-to message isn't loaded — route through
+                                        // the focusedMessageId handler to load a focused timeline
+                                        focusedMessageId = eventID
                                     }
                                 },
                                 onAvatarDoubleTap: {
@@ -352,6 +366,9 @@ struct RoomDetailView: View { // swiftlint:disable:this type_body_length
                         .onAppear { advanceFullyReadMarker(to: message.id) }
                         .contextMenu {
                             messageContextMenu(for: message)
+                        }
+                        .messageHighlight(highlightedMessageId == message.id) {
+                            highlightedMessageId = nil
                         }
 
                         if showURLPreviews, message.kind == .text,
