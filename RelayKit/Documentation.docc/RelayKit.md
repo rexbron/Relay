@@ -13,7 +13,7 @@ the proxy class implements it by wrapping the underlying SDK object.
 The framework bridges the SDK's callback-based listener interfaces to
 Swift's `AsyncStream`, enabling consumption via `.task { for await ... }` in
 SwiftUI. It also provides Relay's concrete service implementations
-(`MatrixService`, `RoomDetailViewModel`, etc.) that consume these proxies.
+(`MatrixService`, `TimelineViewModel`, etc.) that consume these proxies.
 
 ### Quick Example
 

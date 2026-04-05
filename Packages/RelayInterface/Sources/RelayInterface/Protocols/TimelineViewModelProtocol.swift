@@ -24,12 +24,12 @@ public enum TimelineFocusState: Equatable, Sendable {
 
 /// The view model protocol for displaying and interacting with a room's message timeline.
 ///
-/// ``RoomDetailViewModelProtocol`` defines the observable state and actions needed by the
-/// ``RoomDetailView`` to render messages, handle pagination, send messages and attachments,
-/// and toggle reactions. Concrete implementations include ``RoomDetailViewModel`` (backed
-/// by the Matrix Rust SDK) and ``PreviewRoomDetailViewModel`` (for SwiftUI previews).
+/// ``TimelineViewModelProtocol`` defines the observable state and actions needed by the
+/// ``TimelineView`` to render messages, handle pagination, send messages and attachments,
+/// and toggle reactions. Concrete implementations include ``TimelineViewModel`` (backed
+/// by the Matrix Rust SDK) and ``PreviewTimelineViewModel`` (for SwiftUI previews).
 @MainActor
-public protocol RoomDetailViewModelProtocol: AnyObject, Observable {
+public protocol TimelineViewModelProtocol: AnyObject, Observable {
     /// The ordered list of messages in the timeline, from oldest to newest.
     var messages: [TimelineMessage] { get }
 

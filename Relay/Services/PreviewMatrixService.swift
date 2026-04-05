@@ -42,8 +42,8 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func startSyncIfNeeded() {}
     func userId() -> String? { "@preview:matrix.org" }
     func avatarThumbnail(mxcURL: String, size: CGFloat) async -> NSImage? { nil }
-    func makeRoomDetailViewModel(roomId: String) -> (any RoomDetailViewModelProtocol)? {
-        PreviewRoomDetailViewModel()
+    func makeTimelineViewModel(roomId: String) -> (any TimelineViewModelProtocol)? {
+        PreviewTimelineViewModel()
     }
     func joinRoom(idOrAlias: String) async throws {}
     func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String { "!new:matrix.org" }

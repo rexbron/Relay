@@ -18,14 +18,14 @@ import RelayInterface
 import SwiftUI
 import UniformTypeIdentifiers
 
-private let logger = Logger(subsystem: "Relay", category: "RoomDetail")
+private let logger = Logger(subsystem: "Relay", category: "Timeline")
 
 /// The main chat view for a selected room, displaying the message timeline and compose bar.
 ///
-/// ``RoomDetailView`` loads the room timeline, supports backward pagination, manages
+/// ``TimelineView`` loads the room timeline, supports backward pagination, manages
 /// scroll anchoring, handles typing notifications, and provides context menus and
 /// emoji reaction popovers for individual messages.
-struct RoomDetailView: View { // swiftlint:disable:this type_body_length
+struct TimelineView: View { // swiftlint:disable:this type_body_length
     @Environment(\.matrixService) private var matrixService
     @Environment(\.errorReporter) private var errorReporter
     @Environment(\.gifSearchService) private var gifSearchService
@@ -40,7 +40,7 @@ struct RoomDetailView: View { // swiftlint:disable:this type_body_length
     var roomAvatarURL: String?
 
     /// The view model managing the room's timeline state and actions.
-    @State var viewModel: any RoomDetailViewModelProtocol
+    @State var viewModel: any TimelineViewModelProtocol
 
     /// A binding that, when set to a message event ID, causes the timeline to scroll
     /// to that message. Used by ``PinnedMessagesView`` to jump to pinned messages.
@@ -910,7 +910,7 @@ private struct TypingBubble: View {
     private let startDate = Date()
 
     var body: some View {
-        TimelineView(.animation) { context in
+        SwiftUI.TimelineView(.animation) { context in
             let elapsed = context.date.timeIntervalSince(startDate)
             HStack(spacing: 4) {
                 ForEach(0..<3, id: \.self) { index in
@@ -937,10 +937,10 @@ private struct TypingBubble: View {
 
 #Preview("Messages") {
     NavigationStack {
-        RoomDetailView(
+        TimelineView(
             roomId: "!preview:matrix.org",
             roomName: "Design Team",
-            viewModel: PreviewRoomDetailViewModel(),
+            viewModel: PreviewTimelineViewModel(),
             focusedMessageId: .constant(nil)
         )
     }
@@ -950,10 +950,10 @@ private struct TypingBubble: View {
 
 #Preview("Unread Marker") {
     NavigationStack {
-        RoomDetailView(
+        TimelineView(
             roomId: "!preview:matrix.org",
             roomName: "Design Team",
-            viewModel: PreviewRoomDetailViewModel(firstUnreadMessageId: "4"),
+            viewModel: PreviewTimelineViewModel(firstUnreadMessageId: "4"),
             focusedMessageId: .constant(nil)
         )
     }
@@ -963,10 +963,10 @@ private struct TypingBubble: View {
 
 #Preview("Loading") {
     NavigationStack {
-        RoomDetailView(
+        TimelineView(
             roomId: "!preview:matrix.org",
             roomName: "Design Team",
-            viewModel: PreviewRoomDetailViewModel(messages: [], isLoading: true),
+            viewModel: PreviewTimelineViewModel(messages: [], isLoading: true),
             focusedMessageId: .constant(nil)
         )
     }
@@ -976,10 +976,10 @@ private struct TypingBubble: View {
 
 #Preview("Typing Indicator") {
     NavigationStack {
-        RoomDetailView(
+        TimelineView(
             roomId: "!preview:matrix.org",
             roomName: "Design Team",
-            viewModel: PreviewRoomDetailViewModel(typingUserDisplayNames: ["Alice", "Bob"]),
+            viewModel: PreviewTimelineViewModel(typingUserDisplayNames: ["Alice", "Bob"]),
             focusedMessageId: .constant(nil)
         )
     }
@@ -989,10 +989,10 @@ private struct TypingBubble: View {
 
 #Preview("Empty") {
     NavigationStack {
-        RoomDetailView(
+        TimelineView(
             roomId: "!preview:matrix.org",
             roomName: "New Room",
-            viewModel: PreviewRoomDetailViewModel(messages: []),
+            viewModel: PreviewTimelineViewModel(messages: []),
             focusedMessageId: .constant(nil)
         )
     }

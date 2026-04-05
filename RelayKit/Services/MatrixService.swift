@@ -52,7 +52,7 @@ public final class MatrixService: MatrixServiceProtocol {
 
     private var client: ClientProxy?
     private var syncTask: Task<Void, Never>?
-    private var roomViewModels: [String: RoomDetailViewModel] = [:]
+    private var timelineViewModels: [String: TimelineViewModel] = [:]
     private var verificationController: SessionVerificationControllerProxy?
     private var verificationObservationTask: Task<Void, Never>?
     private var verificationStateTask: Task<Void, Never>?
@@ -136,7 +136,7 @@ public final class MatrixService: MatrixServiceProtocol {
         pendingVerificationRequest = nil
         shouldPresentVerificationSheet = false
         roomListManager.reset()
-        roomViewModels = [:]
+        timelineViewModels = [:]
         authState = .loggedOut
     }
 
@@ -256,16 +256,16 @@ public final class MatrixService: MatrixServiceProtocol {
         return client.avatarURL?.absoluteString
     }
 
-    public func makeRoomDetailViewModel(roomId: String) -> (any RoomDetailViewModelProtocol)? {
-        if let cached = roomViewModels[roomId] { return cached }
+    public func makeTimelineViewModel(roomId: String) -> (any TimelineViewModelProtocol)? {
+        if let cached = timelineViewModels[roomId] { return cached }
         guard let room = room(id: roomId) else { return nil }
         let unreadCount = rooms.first(where: { $0.id == roomId })?.unreadMessages ?? 0
         // swiftlint:disable:next identifier_name
-        let vm = RoomDetailViewModel(
+        let vm = TimelineViewModel(
             room: room, currentUserId: userId(),
             unreadCount: Int(unreadCount), errorReporter: errorReporter
         )
-        roomViewModels[roomId] = vm
+        timelineViewModels[roomId] = vm
 
         // Subscribe to this room at a higher detail level in the sliding sync.
         // This requests additional state events (including m.room.pinned_events)
@@ -346,7 +346,7 @@ public final class MatrixService: MatrixServiceProtocol {
     public func leaveRoom(id: String) async throws {
         guard let room = room(id: id) else { return }
         try await room.leave()
-        roomViewModels.removeValue(forKey: id)
+        timelineViewModels.removeValue(forKey: id)
     }
 
     // MARK: - Read Receipts & Typing

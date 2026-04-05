@@ -166,8 +166,8 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     /// Creates (or returns a cached) view model for displaying a room's message timeline.
     ///
     /// - Parameter roomId: The Matrix room identifier.
-    /// - Returns: A ``RoomDetailViewModelProtocol`` instance, or `nil` if the room is not found.
-    func makeRoomDetailViewModel(roomId: String) -> (any RoomDetailViewModelProtocol)?
+    /// - Returns: A ``TimelineViewModelProtocol`` instance, or `nil` if the room is not found.
+    func makeTimelineViewModel(roomId: String) -> (any TimelineViewModelProtocol)?
 
     /// Joins a room by its ID or alias.
     ///
@@ -406,7 +406,7 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func startSyncIfNeeded() {}
     func userId() -> String? { nil }
     func avatarThumbnail(mxcURL: String, size: CGFloat) async -> NSImage? { nil }
-    func makeRoomDetailViewModel(roomId: String) -> (any RoomDetailViewModelProtocol)? { nil }
+    func makeTimelineViewModel(roomId: String) -> (any TimelineViewModelProtocol)? { nil }
     func joinRoom(idOrAlias: String) async throws {}
     func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String { "" }
     func createRoom(options: CreateRoomOptions) async throws -> String { "" }

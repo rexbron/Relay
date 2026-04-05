@@ -21,17 +21,17 @@ import RelayInterface
 import OSLog
 import UniformTypeIdentifiers
 
-private let logger = Logger(subsystem: "RelayKit", category: "RoomDetail")
+private let logger = Logger(subsystem: "RelayKit", category: "Timeline")
 
-/// Concrete implementation of ``RoomDetailViewModelProtocol`` backed by the Matrix Rust SDK.
+/// Concrete implementation of ``TimelineViewModelProtocol`` backed by the Matrix Rust SDK.
 ///
-/// ``RoomDetailViewModel`` manages a single room's message timeline. It subscribes to live
+/// ``TimelineViewModel`` manages a single room's message timeline. It subscribes to live
 /// timeline diffs from the SDK using ``SDKListener``, converts them into ``TimelineMessage``
 /// models, handles backward pagination via ``subscribeToBackPaginationStatus``, computes the
 /// unread marker position, and observes typing notifications.
 @Observable
 // swiftlint:disable:next type_body_length
-public final class RoomDetailViewModel: RoomDetailViewModelProtocol {
+public final class TimelineViewModel: TimelineViewModelProtocol {
     public private(set) var messages: [TimelineMessage] = []
     public private(set) var isLoading = true
     public private(set) var isLoadingMore = false

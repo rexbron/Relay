@@ -38,7 +38,7 @@ proxies:
 - `MatrixService` — the facade that coordinates authentication, sync,
   room list management, media caching, and notification settings behind
   a single `@Environment(\.matrixService)` injection point.
-- `RoomDetailViewModel` and `SessionVerificationViewModel` — view models
+- `TimelineViewModel` and `SessionVerificationViewModel` — view models
   that produce view-ready state from proxy data.
 - `TimelineMessageMapper` — converts raw `TimelineItem` arrays into the
   `TimelineMessage` UI model.
@@ -52,7 +52,7 @@ The interface contract between the framework and the app. A local SPM
 package with **zero external dependencies** — pure Swift types that both
 RelayKit and the app target import:
 
-- **Protocols** — `MatrixServiceProtocol`, `RoomDetailViewModelProtocol`,
+- **Protocols** — `MatrixServiceProtocol`, `TimelineViewModelProtocol`,
   `SessionVerificationViewModelProtocol`
 - **Enums** — `AuthState`, `SyncState`, `DefaultNotificationMode`,
   `TimelineFocusState`, `VerificationState`
@@ -189,7 +189,7 @@ RelayKit/
     AuthenticationService.swift
     SyncManager.swift         SyncService lifecycle
     RoomListManager.swift     Reactive room list with enrichment
-    RoomDetailViewModel.swift Timeline ViewModel
+    TimelineViewModel.swift   Timeline ViewModel
     SessionVerificationViewModel.swift
     TimelineMessageMapper.swift
     MediaService.swift        NSCache media layer
@@ -198,7 +198,7 @@ RelayKit/
 Packages/RelayInterface/
   Sources/RelayInterface/
     MatrixServiceProtocol.swift   Protocol + AuthState/SyncState + @Environment key
-    RoomDetailViewModelProtocol.swift
+    TimelineViewModelProtocol.swift
     SessionVerificationViewModelProtocol.swift
     TimelineMessage.swift         UI message model (13 content kinds)
     RoomSummary.swift             Enriched room summary (@Observable class)
