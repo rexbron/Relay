@@ -133,6 +133,10 @@ final class PreviewMatrixService: MatrixServiceProtocol {
         PreviewSessionVerificationViewModel()
     }
 
+    func makeCallViewModel(roomId: String) -> (any CallViewModelProtocol)? {
+        PreviewCallViewModel()
+    }
+
     func declinePendingVerificationRequest() async {
         pendingVerificationRequest = nil
     }

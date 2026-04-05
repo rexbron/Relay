@@ -4,6 +4,10 @@
 <dict>
 	<key>GiphyAPIKey</key>
 	<string>$(GIPHY_API_KEY)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Relay uses the camera for video calls in Matrix rooms.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Relay uses the microphone for audio and video calls in Matrix rooms.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

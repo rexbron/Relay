@@ -34,6 +34,8 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     @State private var incomingVerificationItem: VerificationItem?
     @State private var previewingLinkedRoom: DirectoryRoom?
     @State private var isJoiningLinkedRoom = false
+    @State private var activeCallViewModel: (any CallViewModelProtocol)?
+    @State private var isShowingCall = false
 
     private func scrollToMessage(_ eventId: String) {
         showingPinnedMessages = false
@@ -107,6 +109,17 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                     Image(systemName: "building.2")
                 }
                 .help("Room Directory")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                if let selectedRoomId,
+                   matrixService.rooms.first(where: { $0.id == selectedRoomId }) != nil {
+                    Button {
+                        startCall(roomId: selectedRoomId)
+                    } label: {
+                        Image(systemName: "phone.fill")
+                    }
+                    .help("Start Call")
+                }
             }
             ToolbarItem(placement: .primaryAction) {
                 if let selectedRoomId,
@@ -199,6 +212,14 @@ struct MainView: View { // swiftlint:disable:this type_body_length
             )
             .frame(minWidth: 500, idealWidth: 600, minHeight: 400, idealHeight: 500)
         }
+        .sheet(isPresented: $isShowingCall) {
+            if let callViewModel = activeCallViewModel {
+                CallView(viewModel: callViewModel) {
+                    isShowingCall = false
+                    activeCallViewModel = nil
+                }
+            }
+        }
         .onChange(of: matrixService.pendingDeepLink) { _, deepLink in
             guard let deepLink else { return }
             handleDeepLink(deepLink)
@@ -208,6 +229,14 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 handleDeepLink(deepLink)
             }
         }
+    }
+
+    // MARK: - Call Handling
+
+    private func startCall(roomId: String) {
+        guard let viewModel = matrixService.makeCallViewModel(roomId: roomId) else { return }
+        activeCallViewModel = viewModel
+        isShowingCall = true
     }
 
     // MARK: - Deep Link Handling
