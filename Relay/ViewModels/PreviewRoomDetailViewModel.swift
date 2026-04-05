@@ -94,7 +94,7 @@ final class PreviewRoomDetailViewModel: RoomDetailViewModelProtocol {
         .init(id: "4b", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
               body: "Image", timestamp: .now.addingTimeInterval(-90), isOutgoing: false, kind: .image),
         .init(id: "5", senderID: "@bob:matrix.org", senderDisplayName: "Bob",
-              body: "Hey @me:matrix.org, check this out — the sync is way faster now!",
+              body: "Hey [Johnny Appleseed](https://matrix.to/#/@jappleseed:matrix.ort), check this out — the sync is way faster now!",
               timestamp: .now.addingTimeInterval(-60), isOutgoing: false,
               isHighlighted: true),
         .init(id: "6", senderID: "@bob:matrix.org", senderDisplayName: "Bob",
