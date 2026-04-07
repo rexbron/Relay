@@ -419,17 +419,28 @@ final class TimelineTableViewController: NSViewController {
         }
     }
 
-    /// Scrolls to the row with the given message ID.
+    /// Scrolls to the row with the given message ID, centering it vertically
+    /// in the visible area.
     func scrollToRow(id: String, animated: Bool = true) {
         guard let index = rows.firstIndex(where: { $0.id == id }) else { return }
+        let rowRect = tableView.rect(ofRow: index)
+        let visibleHeight = scrollView.contentView.bounds.height
+        // Center the row vertically within the visible area.
+        // In the unflipped coordinate system, increasing Y is upward,
+        // so we offset downward by half the visible height minus half
+        // the row height to land the row in the center.
+        let originY = rowRect.midY - visibleHeight / 2
+        let scrollPoint = NSPoint(x: 0, y: originY)
         if animated {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.3
                 context.allowsImplicitAnimation = true
-                tableView.scrollRowToVisible(index)
+                scrollView.contentView.setBoundsOrigin(scrollPoint)
             }
+            scrollView.reflectScrolledClipView(scrollView.contentView)
         } else {
-            tableView.scrollRowToVisible(index)
+            scrollView.contentView.scroll(to: scrollPoint)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
         }
     }
 
