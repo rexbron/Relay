@@ -23,7 +23,7 @@ import SwiftUI
 ///
 /// Provides native link hover behaviour (pointing-hand cursor and underline on
 /// hover) and text selection. Designed to be extended for Matrix-specific
-/// features such as mention pills, spoiler reveals, and custom emoji.
+/// features such as mention pills and `matrix.to` links.
 final class MessageTextContent: NSTextView {
 
     /// When `true`, `setFrameSize` will not update the text container's width.
@@ -211,6 +211,7 @@ struct MessageTextView: NSViewRepresentable {
         var cachedSizeProposedWidth: CGFloat?
         var cachedSizeResult: CGSize?
         var cachedSizeTextLength: Int?
+        var cachedSizeTextHash: Int?
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -234,6 +235,31 @@ struct MessageTextView: NSViewRepresentable {
         view.setContentHuggingPriority(.required, for: .vertical)
         view.onUserTap = onUserTap
         view.onRoomTap = onRoomTap
+
+        // Populate text immediately so sizeThatFits (which SwiftUI may
+        // call before updateNSView) has content to measure. Without this,
+        // the text storage is empty and sizeThatFits returns .zero,
+        // causing the hosting controller to compute incorrect row heights.
+        let coordinator = context.coordinator
+        let resolved: NSAttributedString
+        if let preResolved = resolvedAttributedString {
+            resolved = Self.applyColorOverrides(
+                preResolved, foreground: foregroundColor, linkColor: linkColor
+            )
+        } else if let attrString = attributedString {
+            resolved = Self.resolve(
+                attrString, foreground: foregroundColor, linkColor: linkColor
+            )
+        } else {
+            resolved = NSAttributedString()
+        }
+        coordinator.lastAttributedString = attributedString
+        coordinator.lastResolvedAttributedString = resolvedAttributedString
+        coordinator.lastIsOutgoing = isOutgoing
+        coordinator.cachedResolved = resolved
+        view.linkTextAttributes = [.foregroundColor: linkColor]
+        storage.setAttributedString(resolved)
+
         return view
     }
 
@@ -301,10 +327,15 @@ struct MessageTextView: NSViewRepresentable {
         else { return .zero }
 
         // Return the cached size if the proposal and text haven't changed.
+        // Use the text storage hash (not just length) to detect recycled
+        // cells where sizeThatFits is called before updateNSView replaces
+        // the text content.
         let proposedWidth = proposal.width.flatMap { $0.isFinite ? $0 : nil }
         let coordinator = context.coordinator
+        let textHash = nsView.textStorage?.string.hashValue ?? 0
         if let cached = coordinator.cachedSizeResult,
            coordinator.cachedSizeTextLength == textLength,
+           coordinator.cachedSizeTextHash == textHash,
            coordinator.cachedSizeProposedWidth == proposedWidth {
             return cached
         }
@@ -343,22 +374,40 @@ struct MessageTextView: NSViewRepresentable {
 
         let result: CGSize
 
-        // Text fits within the proposed width without extra wrapping — hug it.
         // swiftlint:disable:next identifier_name
-        if let pw = proposedWidth, tightWidth > pw {
-            // Text must wrap to fit the proposed width. Use the full proposed width
-            // so SwiftUI doesn't re-propose a narrower value (feedback loop).
-            container.containerSize = NSSize(width: pw, height: CGFloat.greatestFiniteMagnitude)
-            lm.ensureLayout(for: container)
-            let constrainedHeight = lm.usedRect(for: container).height
-            result = CGSize(width: pw, height: ceil(constrainedHeight))
+        if let pw = proposedWidth, pw > 0 {
+            if tightWidth > pw {
+                // Text must wrap to fit the proposed width.
+                container.containerSize = NSSize(width: pw, height: CGFloat.greatestFiniteMagnitude)
+                lm.ensureLayout(for: container)
+                let constrainedHeight = lm.usedRect(for: container).height
+                result = CGSize(width: pw, height: ceil(constrainedHeight))
+            } else {
+                // Text fits on fewer lines — hug the text width but never
+                // exceed the proposed width. This ensures SwiftUI sets the
+                // NSTextView frame within the bubble's clipping bounds.
+                result = CGSize(width: tightWidth, height: ceil(naturalHeight))
+            }
         } else {
-            result = CGSize(width: tightWidth, height: ceil(naturalHeight))
+            // No proposed width (ideal size query) — return natural size
+            // but cap at the bubble max width so the frame doesn't extend
+            // past the clipping boundary.
+            let cappedWidth = min(tightWidth, 476) // 500 maxBubbleWidth - 24 bubblePadding
+            if cappedWidth < tightWidth {
+                container.containerSize = NSSize(width: cappedWidth, height: CGFloat.greatestFiniteMagnitude)
+                lm.ensureLayout(for: container)
+                let h = lm.usedRect(for: container).height
+                result = CGSize(width: cappedWidth, height: ceil(h))
+            } else {
+                result = CGSize(width: tightWidth, height: ceil(naturalHeight))
+            }
         }
 
         coordinator.cachedSizeProposedWidth = proposedWidth
         coordinator.cachedSizeResult = result
         coordinator.cachedSizeTextLength = textLength
+        coordinator.cachedSizeTextHash = textHash
+
         return result
     }
 

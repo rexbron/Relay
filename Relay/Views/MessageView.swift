@@ -65,13 +65,11 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
     @Environment(\.swipeOffset) private var swipeOffset
     @State private var showEmojiPicker = false
 
+
+
     var body: some View {
         VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 2) {
             HStack(alignment: .bottom, spacing: 6) {
-                if message.isOutgoing {
-                    Spacer(minLength: 60)
-                }
-
                 if !message.isOutgoing {
                     if isLastInGroup {
                         AvatarView(
@@ -124,6 +122,7 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                             }
                     }
                 }
+                .frame(maxWidth: 500, alignment: message.isOutgoing ? .trailing : .leading)
                 .onLongPressGesture {
                     showEmojiPicker = true
                 }
@@ -144,10 +143,8 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                     }
                 }
 
-                if !message.isOutgoing {
-                    Spacer(minLength: 60)
-                }
             }
+            .frame(maxWidth: .infinity, alignment: message.isOutgoing ? .trailing : .leading)
 
             if !message.reactions.isEmpty {
                 ReactionsView(

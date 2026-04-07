@@ -15,6 +15,21 @@
 import RelayInterface
 import SwiftUI
 
+// MARK: - Swipe Offset Environment
+
+private struct SwipeOffsetKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 0
+}
+
+extension EnvironmentValues {
+    /// The current horizontal swipe offset applied during a swipe-to-reply gesture.
+    /// Child views can read this to render swipe-dependent UI (e.g. a reply arrow).
+    var swipeOffset: CGFloat {
+        get { self[SwipeOffsetKey.self] }
+        set { self[SwipeOffsetKey.self] = newValue }
+    }
+}
+
 /// A single row in the timeline, rendering either a system event or a user message
 /// with its date header, group spacer, and link preview.
 ///
@@ -39,6 +54,10 @@ struct TimelineRowView: View, Equatable {
     var onContextAction: (TimelineRowContextAction) -> Void
     var onHighlightDismissed: () -> Void
 
+    /// Observable swipe state from the table view controller. When the user
+    /// swipes this row, the offset and reply arrow are rendered here.
+    var swipeState: TimelineSwipeState?
+
     nonisolated static func == (lhs: TimelineRowView, rhs: TimelineRowView) -> Bool {
         lhs.row.message == rhs.row.message
             && lhs.row.info == rhs.row.info
@@ -53,7 +72,21 @@ struct TimelineRowView: View, Equatable {
     private var message: TimelineMessage { row.message }
     private var info: TimelineView.MessageGroupInfo { row.info }
 
+    /// The current swipe offset for this row, or 0 if not being swiped.
+    private var currentSwipeOffset: CGFloat {
+        guard let swipeState, swipeState.swipingMessageId == row.message.id else { return 0 }
+        return swipeState.offset
+    }
+
     var body: some View {
+        rowContent
+            .padding(.horizontal, 16)
+            .environment(\.swipeOffset, currentSwipeOffset)
+            .offset(x: currentSwipeOffset)
+    }
+
+    @ViewBuilder
+    private var rowContent: some View {
         if showUnreadMarker && message.id == firstUnreadMessageId {
             unreadMarker
         }
@@ -80,29 +113,25 @@ struct TimelineRowView: View, Equatable {
                     onHighlightDismissed()
                 }
         } else {
-            MessageSwipeActions {
-                MessageView(
-                    message: message,
-                    isLastInGroup: info.isLastInGroup,
-                    showSenderName: info.showSenderName,
-                    onToggleReaction: { key in
-                        onToggleReaction(message.id, key)
-                    },
-                    onTapReply: { eventID in
-                        onTapReply(eventID)
-                    },
-                    onAvatarDoubleTap: {
-                        onAvatarDoubleTap(message)
-                    },
-                    onUserTap: { userId in
-                        onUserTap(userId)
-                    },
-                    onRoomTap: onRoomTap,
-                    currentUserID: currentUserID
-                )
-            } onReply: {
-                onReply(message)
-            }
+            MessageView(
+                message: message,
+                isLastInGroup: info.isLastInGroup,
+                showSenderName: info.showSenderName,
+                onToggleReaction: { key in
+                    onToggleReaction(message.id, key)
+                },
+                onTapReply: { eventID in
+                    onTapReply(eventID)
+                },
+                onAvatarDoubleTap: {
+                    onAvatarDoubleTap(message)
+                },
+                onUserTap: { userId in
+                    onUserTap(userId)
+                },
+                onRoomTap: onRoomTap,
+                currentUserID: currentUserID
+            )
             .id(message.id)
             .help(message.formattedTime)
             .onAppear { onAppear(row) }
@@ -216,3 +245,149 @@ enum TimelineRowContextAction {
     case edit(TimelineMessage)
     case delete(TimelineMessage)
 }
+// MARK: - Previews
+
+private func previewRow(_ message: TimelineMessage, info: TimelineView.MessageGroupInfo = .default) -> TimelineRowView {
+    TimelineRowView(
+        row: .init(message: message, info: info, isPaginationTrigger: false),
+        showUnreadMarker: false,
+        firstUnreadMessageId: nil,
+        highlightedMessageId: nil,
+        showURLPreviews: true,
+        currentUserID: "@me:matrix.org",
+        onToggleReaction: { _, _ in },
+        onTapReply: { _ in },
+        onReply: { _ in },
+        onAvatarDoubleTap: { _ in },
+        onUserTap: { _ in },
+        onRoomTap: nil,
+        onAppear: { _ in },
+        onContextAction: { _ in },
+        onHighlightDismissed: {}
+    )
+}
+
+#Preview("Conversation") {
+    let messages = PreviewTimelineViewModel.sampleMessages
+    let rows = TimelineView.buildRows(for: messages, hasReachedStart: true)
+
+    ScrollView {
+        VStack(spacing: 2) {
+            ForEach(rows) { row in
+                TimelineRowView(
+                    row: row,
+                    showUnreadMarker: false,
+                    firstUnreadMessageId: nil,
+                    highlightedMessageId: nil,
+                    showURLPreviews: true,
+                    currentUserID: "@me:matrix.org",
+                    onToggleReaction: { _, _ in },
+                    onTapReply: { _ in },
+                    onReply: { _ in },
+                    onAvatarDoubleTap: { _ in },
+                    onUserTap: { _ in },
+                    onRoomTap: nil,
+                    onAppear: { _ in },
+                    onContextAction: { _ in },
+                    onHighlightDismissed: {}
+                )
+            }
+        }
+        .padding()
+    }
+    .frame(width: 500, height: 700)
+}
+
+#Preview("Incoming Message") {
+    previewRow(
+        .init(id: "1", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
+              body: "Hey, has anyone tried the **new build**? I heard the timeline loads much faster now.",
+              timestamp: .now, isOutgoing: false),
+        info: .init(isFirst: true, showDateHeader: true, isLastInGroup: true, showSenderName: true)
+    )
+    .padding()
+    .frame(width: 450)
+}
+
+#Preview("Outgoing Message") {
+    previewRow(
+        .init(id: "2", senderID: "@me:matrix.org",
+              body: "Just pushed a fix for the sync issue. The timeline should load instantly from cache now.",
+              timestamp: .now, isOutgoing: true),
+        info: .init(showDateHeader: false, isLastInGroup: true)
+    )
+    .padding()
+    .frame(width: 450)
+}
+
+#Preview("Reply") {
+    previewRow(
+        .init(id: "3", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
+              body: "Nice, rooms are loading *way* faster now.",
+              timestamp: .now, isOutgoing: false,
+              replyDetail: .init(eventID: "2", senderID: "@me:matrix.org",
+                                 senderDisplayName: "Me",
+                                 body: "Just pushed a fix for the sync issue.")),
+        info: .init(isLastInGroup: true, showSenderName: true)
+    )
+    .padding()
+    .frame(width: 450)
+}
+
+#Preview("Reactions") {
+    previewRow(
+        .init(id: "4", senderID: "@me:matrix.org",
+              body: "Check out this new feature!",
+              timestamp: .now, isOutgoing: true,
+              reactions: [
+                .init(key: "🎉", count: 3, senderIDs: ["@alice:matrix.org", "@bob:matrix.org", "@charlie:matrix.org"], highlightedByCurrentUser: false),
+                .init(key: "🚀", count: 1, senderIDs: ["@alice:matrix.org"], highlightedByCurrentUser: false),
+                .init(key: "👍", count: 2, senderIDs: ["@bob:matrix.org", "@me:matrix.org"], highlightedByCurrentUser: true)
+              ]),
+        info: .init(isLastInGroup: true)
+    )
+    .padding()
+    .frame(width: 450)
+}
+
+#Preview("System Event") {
+    previewRow(
+        .init(id: "5", senderID: "@charlie:matrix.org", senderDisplayName: "Charlie",
+              body: "joined the room.",
+              timestamp: .now, isOutgoing: false, kind: .membership)
+    )
+    .padding()
+    .frame(width: 450)
+}
+
+#Preview("Unread Marker") {
+    let messages = Array(PreviewTimelineViewModel.sampleMessages.prefix(5))
+    let rows = TimelineView.buildRows(for: messages, hasReachedStart: true)
+
+    ScrollView {
+        VStack(spacing: 2) {
+            ForEach(rows) { row in
+                TimelineRowView(
+                    row: row,
+                    showUnreadMarker: true,
+                    firstUnreadMessageId: "5",
+                    highlightedMessageId: nil,
+                    showURLPreviews: true,
+                    currentUserID: "@me:matrix.org",
+                    onToggleReaction: { _, _ in },
+                    onTapReply: { _ in },
+                    onReply: { _ in },
+                    onAvatarDoubleTap: { _ in },
+                    onUserTap: { _ in },
+                    onRoomTap: nil,
+                    onAppear: { _ in },
+                    onContextAction: { _ in },
+                    onHighlightDismissed: {}
+                )
+            }
+        }
+        .padding()
+    }
+    .frame(width: 500, height: 500)
+}
+

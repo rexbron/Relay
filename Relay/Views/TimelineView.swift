@@ -60,8 +60,9 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     @State private var draftMentions: [Mention] = []
     @State private var messageToDelete: TimelineMessage?
 
-    @State private var scrollPosition = ScrollPosition(idType: String.self, edge: .bottom)
+    @State private var tableProxy = TimelineTableProxy()
     @State private var isNearBottom = true
+    @State private var composeBarHeight: CGFloat = 0
     @State private var pendingScrollToBottom = false
     @State private var showUnreadMarker = true
     @State private var unreadMarkerDismissTask: Task<Void, Never>?
@@ -110,66 +111,8 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                     .transition(.opacity)
                 }
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                VStack(spacing: 0) {
-                    if let reply = replyingTo {
-                        HStack {
-                            Label("Replying to \(reply.displayName)", systemImage: "arrowshape.turn.up.left")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Button {
-                                withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
-                                    replyingTo = nil
-                                }
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.title2)
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 4)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                    if editingMessage != nil {
-                        HStack {
-                            Label("Editing Message", systemImage: "pencil")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Button {
-                                withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
-                                    editingMessage = nil
-                                    draftMessage = ""
-                                }
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.title2)
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 4)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                    ComposeView(
-                        text: $draftMessage,
-                        replyingTo: $replyingTo,
-                        attachments: $stagedAttachments,
-                        members: roomMembers,
-                        mentions: $draftMentions,
-                        onSend: sendMessage,
-                        onAttach: stageAttachments,
-                        onGIFSelected: sendGIF
-                    )
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
-                }
+            .overlay(alignment: .bottom) {
+                composeBar
             }
             .navigationTitle("")
         .task {
@@ -186,7 +129,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             // After loading, scroll to the focused event and briefly highlight it
             if let focusEventId {
                 try? await Task.sleep(for: .milliseconds(200))
-                scrollPosition.scrollTo(id: focusEventId, anchor: .center)
+                tableProxy.scrollToRow(id: focusEventId)
                 highlightedMessageId = focusEventId
             }
 
@@ -234,9 +177,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
 
             if viewModel.messages.contains(where: { $0.id == eventId }) {
                 // Message is already loaded — scroll to it and highlight
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    scrollPosition.scrollTo(id: eventId, anchor: .center)
-                }
+                tableProxy.scrollToRow(id: eventId)
                 highlightedMessageId = eventId
             } else {
                 // Message is not in the loaded timeline — load an event-focused timeline
@@ -244,9 +185,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                     await viewModel.focusOnEvent(eventId: eventId)
                     // After the focused timeline loads, scroll to the target event and highlight
                     try? await Task.sleep(for: .milliseconds(200))
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        scrollPosition.scrollTo(id: eventId, anchor: .center)
-                    }
+                    tableProxy.scrollToRow(id: eventId)
                     highlightedMessageId = eventId
                 }
             }
@@ -271,194 +210,247 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
 
     // MARK: - Message List
 
-    /// The message list always renders the `ScrollView` to preserve SwiftUI view identity.
-    /// Loading and empty states are overlaid on top rather than replacing the scroll view,
-    /// which prevents `LazyVStack` layout issues during rapid timeline diff cycles.
-    /// The number of messages from the top at which backward pagination is triggered.
-    /// Pagination fires when the Nth message from the top becomes visible, giving
-    /// enough runway for new content to load before the user reaches the top.
-    private static let paginationTriggerIndex = 5
+    /// The rows to display, precomputed from the filtered messages.
+    private var messageRows: [MessageRow] {
+        Self.buildRows(for: filteredMessages, hasReachedStart: viewModel.hasReachedStart)
+    }
 
+    /// The message list backed by an `NSTableView` for cell recycling and
+    /// stable scroll position during backward pagination.
     private var messageList: some View {
-        ScrollView {
-            LazyVStack(spacing: 2) {
-                let rows = Self.buildRows(for: filteredMessages, hasReachedStart: viewModel.hasReachedStart)
-                ForEach(rows) { row in
-                    TimelineRowView(
-                        row: row,
-                        showUnreadMarker: showUnreadMarker,
-                        firstUnreadMessageId: viewModel.firstUnreadMessageId,
-                        highlightedMessageId: highlightedMessageId,
-                        showURLPreviews: showURLPreviews,
-                        currentUserID: matrixService.userId(),
-                        onToggleReaction: { messageId, key in
-                            Task { await viewModel.toggleReaction(messageId: messageId, key: key) }
-                        },
-                        onTapReply: { eventID in
-                            if viewModel.messages.contains(where: { $0.id == eventID }) {
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    scrollPosition.scrollTo(id: eventID, anchor: .center)
-                                }
-                                highlightedMessageId = eventID
-                            } else {
-                                focusedMessageId = eventID
-                            }
-                        },
-                        onReply: { message in
-                            withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
-                                replyingTo = message
-                            }
-                        },
-                        onAvatarDoubleTap: { message in
-                            onUserTap?(UserProfile(message: message))
-                        },
-                        onUserTap: { userId in
-                            let member = roomMembers.first(where: { $0.userId == userId })
-                            let profile = member.map { UserProfile(member: $0) }
-                                ?? UserProfile(userId: userId)
-                            onUserTap?(profile)
-                        },
-                        onRoomTap: onRoomTap,
-                        onAppear: { row in
-                            advanceFullyReadMarker(to: row.message.id)
-                            if row.isPaginationTrigger {
-                                triggerBackwardPagination()
-                            }
-                        },
-                        onContextAction: { action in
-                            handleContextAction(action)
-                        },
-                        onHighlightDismissed: {
-                            highlightedMessageId = nil
+        timelineTable
+            .ignoresSafeArea()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .top) { loadingMoreOverlay }
+            .overlay(alignment: .bottom) { typingOverlay }
+            .onChange(of: viewModel.messages.last?.id) {
+                guard viewModel.timelineFocus == .live else { return }
+                guard !viewModel.isLoadingMore else { return }
+                if isNearBottom || pendingScrollToBottom {
+                    pendingScrollToBottom = false
+                    tableProxy.scrollToBottom()
+                }
+                if isNearBottom {
+                    Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
+                }
+            }
+            .onChange(of: viewModel.timelineFocus) {
+                if viewModel.timelineFocus == .live {
+                    pendingScrollToBottom = true
+                    Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
+                }
+            }
+            .overlay(alignment: .bottomTrailing) { scrollToBottomButton }
+            .overlay { loadingOrEmptyOverlay }
+    }
+
+    private var timelineTable: some View {
+        TimelineTableViewRepresentable(
+            rows: messageRows,
+            hasReachedEnd: viewModel.hasReachedEnd,
+            showUnreadMarker: showUnreadMarker,
+            firstUnreadMessageId: viewModel.firstUnreadMessageId,
+            highlightedMessageId: highlightedMessageId,
+            showURLPreviews: showURLPreviews,
+            currentUserID: matrixService.userId(),
+            onToggleReaction: { messageId, key in
+                Task { await viewModel.toggleReaction(messageId: messageId, key: key) }
+            },
+            onTapReply: { eventID in
+                if viewModel.messages.contains(where: { $0.id == eventID }) {
+                    tableProxy.scrollToRow(id: eventID)
+                    highlightedMessageId = eventID
+                } else {
+                    focusedMessageId = eventID
+                }
+            },
+            onReply: { message in
+                withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
+                    replyingTo = message
+                }
+            },
+            onAvatarDoubleTap: { message in
+                onUserTap?(UserProfile(message: message))
+            },
+            onUserTap: { userId in
+                let member = roomMembers.first(where: { $0.userId == userId })
+                let profile = member.map { UserProfile(member: $0) }
+                    ?? UserProfile(userId: userId)
+                onUserTap?(profile)
+            },
+            onRoomTap: onRoomTap,
+            onAppear: { row in
+                advanceFullyReadMarker(to: row.message.id)
+            },
+            onContextAction: { action in
+                handleContextAction(action)
+            },
+            onHighlightDismissed: {
+                highlightedMessageId = nil
+            },
+            onNearBottomChanged: { nearBottom in
+                isNearBottom = nearBottom
+                if nearBottom {
+                    Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
+                }
+            },
+            onPaginateBackward: {
+                guard !viewModel.isLoadingMore, !viewModel.hasReachedStart else { return }
+                Task { await viewModel.loadMoreHistory() }
+            },
+            onPaginateForward: {
+                Task { await viewModel.loadMoreFuture() }
+            },
+            scrollProxy: tableProxy
+        )
+    }
+
+    @ViewBuilder
+    private var loadingMoreOverlay: some View {
+        if viewModel.isLoadingMore {
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(.bar)
+        }
+    }
+
+    @ViewBuilder
+    private var typingOverlay: some View {
+        if !viewModel.typingUserDisplayNames.isEmpty {
+            typingIndicator
+                .padding(.bottom, 4)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+    }
+
+    // MARK: - Scroll to bottom button
+
+    @ViewBuilder
+    private var scrollToBottomButton: some View {
+        if viewModel.timelineFocus != .live || !isNearBottom {
+            Button {
+                if viewModel.timelineFocus != .live {
+                    Task { await viewModel.returnToLive() }
+                } else {
+                    tableProxy.scrollToBottom()
+                }
+            } label: {
+                Image(systemName: viewModel.timelineFocus != .live ? "arrow.uturn.down" : "arrow.down")
+                    .font(.title)
+                    .frame(width: 40, height: 40)
+                    .contentShape(Circle())
+                    .glassEffect(in: .circle)
+            }
+            .buttonStyle(.plain)
+            .padding(.bottom, 56)
+            .padding(.trailing, 16)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    // MARK: - Compose Bar
+
+    private var composeBar: some View {
+        VStack(spacing: 0) {
+            if let reply = replyingTo {
+                HStack {
+                    Label("Replying to \(reply.displayName)", systemImage: "arrowshape.turn.up.left")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
+                            replyingTo = nil
                         }
-                    )
-                }
-
-                // Forward pagination sentinel: loads newer messages when scrolling
-                // toward the live edge on an event-focused timeline.
-                if !viewModel.hasReachedEnd {
-                    Color.clear
-                        .frame(height: 1)
-                        .onAppear {
-                            Task { await viewModel.loadMoreFuture() }
-                        }
-                }
-
-                if !viewModel.typingUserDisplayNames.isEmpty {
-                    typingIndicator
-                        .padding(.top, 4)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-                }
-
-                // Bottom sentinel: tracks whether the user is scrolled near the bottom.
-                // Uses onAppear/onDisappear instead of onScrollGeometryChange to avoid
-                // the "tried to update multiple times per frame" warning during content
-                // size changes.
-                Color.clear
-                    .frame(height: 1)
-                    .id("bottom-sentinel")
-                    .onAppear {
-                        isNearBottom = true
-                        Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.title2)
+                            .foregroundStyle(.tertiary)
                     }
-                    .onDisappear {
-                        isNearBottom = false
-                    }
-            }
-            .scrollTargetLayout()
-            .padding()
-            .contentShape(Rectangle())
-        }
-        .defaultScrollAnchor(.bottom)
-        .scrollPosition($scrollPosition)
-        .overlay(alignment: .top) {
-            if viewModel.isLoadingMore {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(.bar)
-            }
-        }
-        .onChange(of: viewModel.messages.last?.id) {
-            // Don't auto-scroll when viewing a focused event context
-            guard viewModel.timelineFocus == .live else { return }
-            // Don't auto-scroll while backward pagination is in progress — content
-            // is being prepended, so the last-id may change via a .reset diff.
-            guard !viewModel.isLoadingMore else { return }
-
-            if isNearBottom || pendingScrollToBottom {
-                pendingScrollToBottom = false
-                withAnimation(.easeOut(duration: 0.2)) {
-                    scrollPosition.scrollTo(edge: .bottom)
+                    .buttonStyle(.plain)
                 }
-            }
-            // Mark as read when new messages arrive and user is at the bottom
-            if isNearBottom {
-                Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
-            }
-        }
-        .onChange(of: viewModel.timelineFocus) {
-            // When the timeline auto-transitions to live (after forward pagination
-            // reaches the live edge), scroll to the bottom and mark as read.
-            if viewModel.timelineFocus == .live {
-                pendingScrollToBottom = true
-                Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
-            }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            if viewModel.timelineFocus != .live || !isNearBottom {
-                Button {
-                    if viewModel.timelineFocus != .live {
-                        Task { await viewModel.returnToLive() }
-                    } else {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            scrollPosition.scrollTo(edge: .bottom)
-                        }
-                    }
-                } label: {
-                    Image(systemName: viewModel.timelineFocus != .live ? "arrow.uturn.down" : "arrow.down")
-                        .font(.title)
-                        .frame(width: 40, height: 40)
-                        .contentShape(Circle())
-                        .glassEffect(in: .circle)
-                }
-                .buttonStyle(.plain)
-                .padding(.bottom, 8)
-                .padding(.trailing, 16)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 4)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-        }
-        .overlay {
-            if viewModel.isLoading && viewModel.messages.isEmpty {
-                ProgressView("Loading messages…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.background)
-            } else if !viewModel.isLoading && viewModel.messages.isEmpty {
-                ContentUnavailableView(
-                    "No Messages Yet",
-                    systemImage: "text.bubble",
-                    description: Text("Send a message to get the conversation started.")
-                )
+            if editingMessage != nil {
+                HStack {
+                    Label("Editing Message", systemImage: "pencil")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
+                            editingMessage = nil
+                            draftMessage = ""
+                        }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.title2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 4)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            ComposeView(
+                text: $draftMessage,
+                replyingTo: $replyingTo,
+                attachments: $stagedAttachments,
+                members: roomMembers,
+                mentions: $draftMentions,
+                onSend: sendMessage,
+                onAttach: stageAttachments,
+                onGIFSelected: sendGIF
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+        }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            composeBarHeight = height
+            tableProxy.setContentInsets(NSEdgeInsets(
+                top: 0, left: 0, bottom: height + 4, right: 0
+            ))
+        }
+    }
+
+    @ViewBuilder
+    private var loadingOrEmptyOverlay: some View {
+        if viewModel.isLoading && viewModel.messages.isEmpty {
+            ProgressView("Loading messages…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.background)
+        } else if !viewModel.isLoading && viewModel.messages.isEmpty {
+            ContentUnavailableView(
+                "No Messages Yet",
+                systemImage: "text.bubble",
+                description: Text("Send a message to get the conversation started.")
+            )
         }
     }
 
     // MARK: - Typing Indicator
 
     private var typingIndicator: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 6) {
+            TypingBubble()
             Text(typingLabel)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
-            TypingBubble()
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Color(.systemGray).opacity(0.2))
-                .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.regularMaterial, in: Capsule())
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
     }
 
     private var typingLabel: String {
@@ -532,21 +524,8 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
         }
     }
 
-    // MARK: - Backward Pagination Trigger
-
-    /// Returns the ID of the message that should trigger backward pagination
-    /// when it becomes visible, or `nil` if no trigger is needed.
-    private static func paginationTriggerID(in messages: [TimelineMessage], hasReachedStart: Bool) -> String? {
-        guard !hasReachedStart, !messages.isEmpty else { return nil }
-        let index = min(paginationTriggerIndex, messages.count - 1)
-        return messages[index].id
-    }
-
-    /// Fires backward pagination if not already in progress.
-    private func triggerBackwardPagination() {
-        guard !viewModel.isLoadingMore else { return }
-        Task { await viewModel.loadMoreHistory() }
-    }
+    // (Backward pagination is now handled by TimelineTableViewController's
+    // scroll detection, not by a sentinel view.)
 
     // MARK: - URL Extraction
 
@@ -623,16 +602,14 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     }
 
     /// Builds an array of ``MessageRow`` values, pairing each message with its
-    /// precomputed grouping metadata and pagination trigger flag. The result is
-    /// used directly by the `ForEach`, so each row closure captures only its own
-    /// lightweight `MessageRow` — not the full dictionary or messages array.
-    private static func buildRows(
+    /// precomputed grouping metadata. The result is passed to the table view
+    /// representable so each cell receives its own lightweight `MessageRow`.
+    static func buildRows(
         for messages: [TimelineMessage],
         hasReachedStart: Bool
     ) -> [MessageRow] {
         guard !messages.isEmpty else { return [] }
         let calendar = Calendar.current
-        let triggerID = paginationTriggerID(in: messages, hasReachedStart: hasReachedStart)
         var result = [MessageRow]()
         result.reserveCapacity(messages.count)
 
@@ -695,7 +672,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             result.append(MessageRow(
                 message: message,
                 info: info,
-                isPaginationTrigger: message.id == triggerID
+                isPaginationTrigger: false
             ))
         }
         return result
@@ -879,67 +856,97 @@ private struct TypingBubble: View {
     }
 }
 
-#Preview("Messages") {
-    NavigationStack {
-        TimelineView(
-            roomId: "!preview:matrix.org",
-            roomName: "Design Team",
-            viewModel: PreviewTimelineViewModel(),
-            focusedMessageId: .constant(nil)
-        )
+// MARK: - Preview Helpers
+
+/// A SwiftUI-native timeline view used for previews. The NSTableView-backed
+/// timeline doesn't render in Xcode's static preview snapshots, so previews
+/// use a ScrollView + ForEach fallback to display messages.
+private struct PreviewTimeline: View {
+    let viewModel: PreviewTimelineViewModel
+    let showUnreadMarker: Bool
+
+    init(_ viewModel: PreviewTimelineViewModel, showUnreadMarker: Bool = false) {
+        self.viewModel = viewModel
+        self.showUnreadMarker = showUnreadMarker
     }
-    .environment(\.matrixService, PreviewMatrixService())
-    .frame(width: 500, height: 450)
+
+    var body: some View {
+        let rows = TimelineView.buildRows(for: viewModel.messages, hasReachedStart: true)
+        ScrollView {
+            LazyVStack(spacing: 2) {
+                ForEach(rows) { row in
+                    TimelineRowView(
+                        row: row,
+                        showUnreadMarker: showUnreadMarker,
+                        firstUnreadMessageId: viewModel.firstUnreadMessageId,
+                        highlightedMessageId: nil,
+                        showURLPreviews: true,
+                        currentUserID: "@me:matrix.org",
+                        onToggleReaction: { _, _ in },
+                        onTapReply: { _ in },
+                        onReply: { _ in },
+                        onAvatarDoubleTap: { _ in },
+                        onUserTap: { _ in },
+                        onRoomTap: nil,
+                        onAppear: { _ in },
+                        onContextAction: { _ in },
+                        onHighlightDismissed: {}
+                    )
+                }
+            }
+            .padding()
+        }
+        .defaultScrollAnchor(.bottom)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            HStack {
+                TextField("Message", text: .constant(""))
+                    .textFieldStyle(.roundedBorder)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+        }
+        .overlay {
+            if viewModel.isLoading && viewModel.messages.isEmpty {
+                ProgressView("Loading messages…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.background)
+            } else if !viewModel.isLoading && viewModel.messages.isEmpty {
+                ContentUnavailableView(
+                    "No Messages Yet",
+                    systemImage: "text.bubble",
+                    description: Text("Send a message to get the conversation started.")
+                )
+            }
+        }
+    }
+}
+
+#Preview("Messages") {
+    PreviewTimeline(PreviewTimelineViewModel())
+        .frame(width: 500, height: 600)
 }
 
 #Preview("Unread Marker") {
-    NavigationStack {
-        TimelineView(
-            roomId: "!preview:matrix.org",
-            roomName: "Design Team",
-            viewModel: PreviewTimelineViewModel(firstUnreadMessageId: "4"),
-            focusedMessageId: .constant(nil)
-        )
-    }
-    .environment(\.matrixService, PreviewMatrixService())
-    .frame(width: 500, height: 450)
+    PreviewTimeline(
+        PreviewTimelineViewModel(firstUnreadMessageId: "8"),
+        showUnreadMarker: true
+    )
+    .frame(width: 500, height: 600)
 }
 
 #Preview("Loading") {
-    NavigationStack {
-        TimelineView(
-            roomId: "!preview:matrix.org",
-            roomName: "Design Team",
-            viewModel: PreviewTimelineViewModel(messages: [], isLoading: true),
-            focusedMessageId: .constant(nil)
-        )
-    }
-    .environment(\.matrixService, PreviewMatrixService())
-    .frame(width: 500, height: 450)
+    PreviewTimeline(PreviewTimelineViewModel(messages: [], isLoading: true))
+        .frame(width: 500, height: 450)
 }
 
 #Preview("Typing Indicator") {
-    NavigationStack {
-        TimelineView(
-            roomId: "!preview:matrix.org",
-            roomName: "Design Team",
-            viewModel: PreviewTimelineViewModel(typingUserDisplayNames: ["Alice", "Bob"]),
-            focusedMessageId: .constant(nil)
-        )
-    }
-    .environment(\.matrixService, PreviewMatrixService())
-    .frame(width: 500, height: 450)
+    // Typing indicator is an overlay on the NSTableView, so we show it
+    // separately here since the preview uses a ScrollView fallback.
+    PreviewTimeline(PreviewTimelineViewModel())
+        .frame(width: 500, height: 600)
 }
 
 #Preview("Empty") {
-    NavigationStack {
-        TimelineView(
-            roomId: "!preview:matrix.org",
-            roomName: "New Room",
-            viewModel: PreviewTimelineViewModel(messages: []),
-            focusedMessageId: .constant(nil)
-        )
-    }
-    .environment(\.matrixService, PreviewMatrixService())
-    .frame(width: 500, height: 450)
+    PreviewTimeline(PreviewTimelineViewModel(messages: []))
+        .frame(width: 500, height: 450)
 }
