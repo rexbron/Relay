@@ -128,9 +128,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
 
             // After loading, scroll to the focused event and briefly highlight it
             if let focusEventId {
-                try? await Task.sleep(for: .milliseconds(200))
-                tableProxy.scrollToRow(id: focusEventId)
-                highlightedMessageId = focusEventId
+                await scrollToEventWhenAvailable(focusEventId)
             }
 
             await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts)
@@ -183,10 +181,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 // Message is not in the loaded timeline — load an event-focused timeline
                 Task {
                     await viewModel.focusOnEvent(eventId: eventId)
-                    // After the focused timeline loads, scroll to the target event and highlight
-                    try? await Task.sleep(for: .milliseconds(200))
-                    tableProxy.scrollToRow(id: eventId)
-                    highlightedMessageId = eventId
+                    await scrollToEventWhenAvailable(eventId)
                 }
             }
         }
@@ -459,6 +454,50 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
         default:
             return "\(names[0]) and \(names.count - 1) others are typing…"
         }
+    }
+
+    // MARK: - Scroll-to-Event Helpers
+
+    /// Waits until a message with the given event ID appears in the view
+    /// model's `messages` array, then scrolls to it and highlights it.
+    ///
+    /// Uses `withObservationTracking` to react as soon as the `@Observable`
+    /// view model publishes the target message, avoiding a fixed-duration
+    /// sleep that may fire before or after the data is ready.
+    private func scrollToEventWhenAvailable(_ eventId: String) async {
+        // If the message is already present, scroll immediately.
+        if viewModel.messages.contains(where: { $0.id == eventId }) {
+            // Allow the table one layout pass to apply the snapshot.
+            try? await Task.sleep(for: .milliseconds(100))
+            tableProxy.scrollToRow(id: eventId)
+            highlightedMessageId = eventId
+            return
+        }
+
+        // Poll via observation tracking until the message appears or we time out.
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < deadline {
+            let found = await withCheckedContinuation { continuation in
+                withObservationTracking {
+                    _ = viewModel.messages   // Access to register tracking
+                } onChange: {
+                    continuation.resume(returning: true)
+                }
+            }
+            guard found else { break }
+            if viewModel.messages.contains(where: { $0.id == eventId }) {
+                // Give the table time to apply the snapshot and measure row heights.
+                try? await Task.sleep(for: .milliseconds(100))
+                tableProxy.scrollToRow(id: eventId)
+                highlightedMessageId = eventId
+                return
+            }
+        }
+
+        // Best-effort fallback: if the message never appeared within the
+        // timeout, try scrolling anyway in case it arrived just now.
+        tableProxy.scrollToRow(id: eventId)
+        highlightedMessageId = eventId
     }
 
     // MARK: - Fully-Read Marker
