@@ -165,7 +165,7 @@ final class AuthenticationService {
 
     // MARK: - OAuth Login
 
-    static let oauthRedirectScheme = "com.github.subpop.relay"
+    static let oauthRedirectScheme = "io.github.subpop.relay"
     private static let oauthRedirectURI = "\(oauthRedirectScheme):/"
 
     /// Initiates an OAuth/OIDC login flow, using the provided closure to open the browser.

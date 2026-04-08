@@ -117,7 +117,7 @@ struct LoginView: View {
                 ) { [webAuthenticationSession] url in
                     try await webAuthenticationSession.authenticate(
                         using: url,
-                        callbackURLScheme: "com.github.subpop.relay",
+                        callbackURLScheme: "io.github.subpop.relay",
                         preferredBrowserSession: .shared
                     )
                 }
