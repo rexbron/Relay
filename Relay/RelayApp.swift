@@ -31,8 +31,10 @@ struct RelayApp: App {
     @State private var gifSearchService = GiphyService()
     @State private var notificationDelegate = NotificationDelegate()
 
+    @Environment(\.openWindow) private var openWindow
+
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             ContentView()
                 .environment(\.matrixService, matrixService)
                 .environment(\.gifSearchService, gifSearchService)
@@ -56,6 +58,21 @@ struct RelayApp: App {
                 }
         }
         .defaultSize(width: 880, height: 560)
+        .commands {
+            CommandGroup(after: .windowArrangement) {
+                Button("Relay") {
+                    NSApp.activate()
+                    if let window = NSApplication.shared.windows.first(where: { $0.canBecomeMain }) {
+                        window.deminiaturize(nil)
+                        window.makeKeyAndOrderFront(nil)
+                        NSApplication.shared.activate()
+                    } else {
+                        openWindow(id: "main")
+                    }
+                }
+                .keyboardShortcut("0", modifiers: .command)
+            }
+        }
 
         Settings {
             SettingsView()
