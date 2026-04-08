@@ -555,11 +555,13 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                         _ = try? await tl.paginateBackwards(numEvents: 100)
                     } else if self.isLoading {
                         // The initial auto-pagination loop has settled — either
-                        // we have enough items or hit the room start. Clear the
-                        // loading flag so the empty-room placeholder can appear
-                        // if needed. Message rebuilds happen continuously via
-                        // the throttled diff observer, so no explicit rebuild
-                        // is required here.
+                        // we have enough items or hit the room start. Rebuild
+                        // messages synchronously so the view has up-to-date
+                        // content before we clear the loading flag. Without
+                        // this, the throttled diff observer might not have
+                        // flushed yet, leaving `messages` empty and briefly
+                        // showing the empty-room placeholder.
+                        self.rebuildMessages()
                         self.isLoading = false
                     }
                 case .paginating:
