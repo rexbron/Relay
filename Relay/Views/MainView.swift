@@ -23,7 +23,7 @@ import SwiftUI
 struct MainView: View { // swiftlint:disable:this type_body_length
     @Environment(\.matrixService) private var matrixService
     @Environment(\.errorReporter) private var errorReporter
-    @State private var selectedRoomId: String?
+    @AppStorage("selectedRoomId") private var selectedRoomId: String?
     @State private var searchText = ""
     @State private var showingCreateRoom = false
     @State private var isBrowsingDirectory = false
