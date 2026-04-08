@@ -28,6 +28,15 @@ struct SessionVerificationBanner: View {
     @Environment(\.matrixService) private var matrixService
     @State private var verificationItem: VerificationItem?
     @State private var isDismissed = false
+    @State private var bannerWidth: CGFloat = 0
+
+    /// Width threshold below which the banner switches to compact layout.
+    private static let compactThreshold: CGFloat = 180
+
+    /// Whether the banner should display in compact mode.
+    private var isCompact: Bool {
+        bannerWidth < Self.compactThreshold
+    }
 
     /// Whether the banner should be visible.
     private var isVisible: Bool {
@@ -47,7 +56,8 @@ struct SessionVerificationBanner: View {
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.vertical, isCompact ? 12 : 8)
+            .frame(maxWidth: .infinity)
             .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 8))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -56,6 +66,12 @@ struct SessionVerificationBanner: View {
             )
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { newValue in
+                bannerWidth = newValue
+            }
+            .animation(.default, value: isCompact)
             .sheet(item: $verificationItem) { item in
                 VerificationSheet(viewModel: item.viewModel)
             }
@@ -69,30 +85,40 @@ struct SessionVerificationBanner: View {
     // MARK: - Incoming Request
 
     private var incomingRequestContent: some View {
+        Group {
+            if isCompact {
+                compactIncomingRequestContent
+            } else {
+                regularIncomingRequestContent
+            }
+        }
+    }
+
+    private var regularIncomingRequestContent: some View {
         HStack(spacing: 8) {
-                HStack {
-                    Image(systemName: "checkmark.shield.fill")
-                        .foregroundStyle(.blue)
-                        .font(.body)
-                    Text(
-                        matrixService.pendingVerificationRequest
-                            .map { "Request from device \($0.deviceId)" }
-                            ?? "Verification Request"
-                    )
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .lineLimit(1)
-                }
+            HStack {
+                Image(systemName: "checkmark.shield.fill")
+                    .foregroundStyle(.blue)
+                    .font(.body)
+                Text(
+                    matrixService.pendingVerificationRequest
+                        .map { "Request from device \($0.deviceId)" }
+                        ?? "Verification Request"
+                )
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+            }
 
-                Button(role: .destructive) {
-                    Task { await matrixService.declinePendingVerificationRequest() }
-                } label: {
-                    Image(systemName: "xmark")
-                }
-                .controlSize(.small)
+            Button(role: .destructive) {
+                Task { await matrixService.declinePendingVerificationRequest() }
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .controlSize(.small)
 
-                Button {
-                    Task {
+            Button {
+                Task {
                     // swiftlint:disable:next identifier_name
                     if let vm = try? await matrixService.makeSessionVerificationViewModel() {
                         matrixService.pendingVerificationRequest = nil
@@ -106,9 +132,43 @@ struct SessionVerificationBanner: View {
         }
     }
 
+    private var compactIncomingRequestContent: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "checkmark.shield.fill")
+                .foregroundStyle(.blue)
+                .font(.system(size: 36))
+
+            Button("Decline", systemImage: "xmark", role: .destructive) {
+                Task { await matrixService.declinePendingVerificationRequest() }
+            }
+            .controlSize(.small)
+
+            Button("Approve", systemImage: "checkmark") {
+                Task {
+                    // swiftlint:disable:next identifier_name
+                    if let vm = try? await matrixService.makeSessionVerificationViewModel() {
+                        matrixService.pendingVerificationRequest = nil
+                        verificationItem = VerificationItem(viewModel: vm)
+                    }
+                }
+            }
+            .controlSize(.small)
+        }
+    }
+
     // MARK: - Unverified Session
 
     private var unverifiedContent: some View {
+        Group {
+            if isCompact {
+                compactUnverifiedContent
+            } else {
+                regularUnverifiedContent
+            }
+        }
+    }
+
+    private var regularUnverifiedContent: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.shield.fill")
                 .foregroundStyle(.orange)
@@ -143,6 +203,36 @@ struct SessionVerificationBanner: View {
             .help("Dismiss")
         }
     }
+
+    private var compactUnverifiedContent: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "exclamationmark.shield.fill")
+                .foregroundStyle(.orange)
+                .font(.system(size: 36))
+
+            Button("Verify") {
+                Task {
+                    // swiftlint:disable:next identifier_name
+                    if let vm = try? await matrixService.makeSessionVerificationViewModel() {
+                        verificationItem = VerificationItem(viewModel: vm)
+                    }
+                }
+            }
+            .controlSize(.small)
+        }
+        .overlay(alignment: .topTrailing) {
+            Button {
+                isDismissed = true
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Dismiss")
+            .offset(x: 16, y: -4)
+        }
+    }
 }
 
 // MARK: - Previews
@@ -163,6 +253,22 @@ struct SessionVerificationBanner: View {
     .frame(width: 280, height: 200)
 }
 
+#Preview("Incoming Request (Compact)") {
+    let service = PreviewMatrixService()
+    service.isSessionVerified = false
+    service.pendingVerificationRequest = IncomingVerificationRequest(
+        deviceId: "ABCDEF1234",
+        senderId: "@alice:matrix.org",
+        flowId: "preview-flow"
+    )
+    return VStack {
+        Spacer()
+        SessionVerificationBanner()
+    }
+    .environment(\.matrixService, service)
+    .frame(width: 116, height: 200)
+}
+
 #Preview("Unverified") {
     let service = PreviewMatrixService()
     service.isSessionVerified = false
@@ -172,6 +278,17 @@ struct SessionVerificationBanner: View {
     }
     .environment(\.matrixService, service)
     .frame(width: 280, height: 200)
+}
+
+#Preview("Unverified (Compact)") {
+    let service = PreviewMatrixService()
+    service.isSessionVerified = false
+    return VStack {
+        Spacer()
+        SessionVerificationBanner()
+    }
+    .environment(\.matrixService, service)
+    .frame(width: 116, height: 200)
 }
 
 #Preview("Verified") {
