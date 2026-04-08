@@ -104,6 +104,9 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         /// The text body of the original message.
         public let body: String
 
+        /// The HTML-formatted body of the original message, if available.
+        public let formattedBody: String?
+
         /// Creates a new ``ReplyDetail`` value.
         ///
         /// - Parameters:
@@ -111,11 +114,19 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         ///   - senderID: The user ID of the original sender.
         ///   - senderDisplayName: The display name of the original sender.
         ///   - body: The body text of the original message.
-        nonisolated public init(eventID: String, senderID: String, senderDisplayName: String? = nil, body: String) {
+        ///   - formattedBody: The HTML-formatted body, if available.
+        nonisolated public init(
+            eventID: String,
+            senderID: String,
+            senderDisplayName: String? = nil,
+            body: String,
+            formattedBody: String? = nil
+        ) {
             self.eventID = eventID
             self.senderID = senderID
             self.senderDisplayName = senderDisplayName
             self.body = body
+            self.formattedBody = formattedBody
         }
 
         /// The best available display name for the original sender, falling back to the user ID.

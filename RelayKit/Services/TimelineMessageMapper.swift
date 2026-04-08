@@ -209,15 +209,27 @@ struct TimelineMessageMapper { // swiftlint:disable:this type_body_length
                         let replyDisplayName: String? =
                             if case .ready(let name, _, _) = senderProfile { name } else { nil }
                         let replyBody: String
+                        var replyFormattedBody: String?
                         if case .msgLike(let replyMl) = content,
                            case .message(let replyMsg) = replyMl.kind {
                             replyBody = replyMsg.body
+                            switch replyMsg.msgType {
+                            case .text(let tc) where tc.formatted?.format == .html:
+                                replyFormattedBody = tc.formatted?.body
+                            case .emote(let ec) where ec.formatted?.format == .html:
+                                replyFormattedBody = ec.formatted?.body
+                            case .notice(let nc) where nc.formatted?.format == .html:
+                                replyFormattedBody = nc.formatted?.body
+                            default:
+                                break
+                            }
                         } else {
                             replyBody = "Message"
                         }
                         msgReplyDetail = .init(
                             eventID: replyEventId, senderID: sender,
-                            senderDisplayName: replyDisplayName, body: replyBody
+                            senderDisplayName: replyDisplayName, body: replyBody,
+                            formattedBody: replyFormattedBody
                         )
                     case .pending:
                         msgReplyDetail = .init(eventID: replyEventId, senderID: "", senderDisplayName: nil, body: "")

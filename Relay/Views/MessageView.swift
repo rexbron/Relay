@@ -170,7 +170,7 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
             onTapReply?(reply.eventID)
         } label: {
             VStack(alignment: .leading, spacing: 2) {
-                Text(reply.body)
+                Text(Self.replyPreviewText(reply))
                     .font(.body)
                     .foregroundStyle(outgoing ? .white : .primary)
                     .lineLimit(2)
@@ -186,6 +186,30 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
             .opacity(0.6)
         }
         .buttonStyle(.plain)
+    }
+
+    /// LRU cache for parsed reply preview text. Shared across all `MessageView` instances.
+    private static let replyTextCache = ParseCache<String, String>(capacity: 128)
+
+    /// Extracts clean display text from a reply's body, resolving HTML or Markdown
+    /// formatting so that mention links and other markup are rendered as plain text.
+    private static func replyPreviewText(_ reply: TimelineMessage.ReplyDetail) -> String {
+        // Prefer HTML path: parse the formatted body and extract the plain-text string.
+        if let html = reply.formattedBody {
+            return replyTextCache.value(forKey: html) {
+                MatrixHTMLParser.parse(html)?.string ?? reply.body
+            }
+        }
+        // Markdown fallback: parse inline markdown and extract the plain-text characters.
+        return replyTextCache.value(forKey: reply.body) {
+            if let md = try? AttributedString(
+                markdown: reply.body,
+                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+            ) {
+                return String(md.characters)
+            }
+            return reply.body
+        }
     }
 
     // MARK: - Message Content (dispatches to the correct content variant)
