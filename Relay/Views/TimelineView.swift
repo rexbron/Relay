@@ -315,7 +315,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     private var typingOverlay: some View {
         if !viewModel.typingUserDisplayNames.isEmpty {
             typingIndicator
-                .padding(.bottom, 4)
+                .padding(.bottom, 48)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
     }
