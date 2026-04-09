@@ -334,6 +334,15 @@ final class TimelineTableViewController: NSViewController {
     /// `reloadData(forRowIndexes:)` targets just the visible rows, avoiding a
     /// full snapshot diff.
     func updateRows(_ newRows: [TimelineView.MessageRow]) {
+        // If the scroll view hasn't been laid out yet, defer until it has.
+        // Applying the snapshot now would call `heightOfRow` before the
+        // column has its final width, producing wildly wrong measurements.
+        if scrollView.frame.width < 1 {
+            DispatchQueue.main.async { [weak self] in
+                self?.updateRows(newRows)
+            }
+            return
+        }
         let reversed = newRows.reversed().map { $0 }
 
         let oldIDs = rows.map(\.id)
