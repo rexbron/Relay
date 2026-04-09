@@ -273,6 +273,10 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                     Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
                 }
             }
+            .overlay(alignment: .bottom) {
+                TypingIndicatorOverlay(viewModel: viewModel)
+                    .padding(.bottom, 44)
+            }
             .overlay(alignment: .bottomTrailing) { scrollToBottomButton }
             .overlay { loadingOrEmptyOverlay }
     }
@@ -378,7 +382,6 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
 
     private var composeBar: some View {
         VStack(spacing: 0) {
-            TypingIndicatorOverlay(viewModel: viewModel)
             if let reply = replyingTo {
                 HStack {
                     Label("Replying to \(reply.displayName)", systemImage: "arrowshape.turn.up.left")
