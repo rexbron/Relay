@@ -181,7 +181,14 @@ final class TimelineTableViewController: NSViewController {
     private var dataSource: NSTableViewDiffableDataSource<Section, String>?
 
     /// The current rows, stored in **reversed** order (newest = index 0).
-    private(set) var rows: [TimelineView.MessageRow] = []
+    private(set) var rows: [TimelineView.MessageRow] = [] {
+        didSet { rowIDs = rows.map(\.id) }
+    }
+
+    /// Cached identity list derived from ``rows``, updated automatically
+    /// via `didSet`. Avoids repeated O(n) `.map(\.id)` allocations in
+    /// ``updateRows(_:)``.
+    private var rowIDs: [String] = []
 
     /// Whether the forward pagination sentinel should be active.
     var hasReachedEnd = true
@@ -374,12 +381,12 @@ final class TimelineTableViewController: NSViewController {
             }
             return
         }
-        let reversed = newRows.reversed().map { $0 }
+        let reversed = Array(newRows.reversed())
 
         let oldRows = rows
-        let oldIDs = oldRows.map(\.id)
+        let oldIDs = rowIDs
         rows = reversed
-        let newIDs = rows.map(\.id)
+        let newIDs = rowIDs
 
         // Check whether the data source already has a populated snapshot.
         // When a cached view model provides rows immediately,

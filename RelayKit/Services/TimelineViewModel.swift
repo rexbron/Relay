@@ -569,7 +569,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                     throttleTask = Task { [weak self] in
                         try? await Task.sleep(for: Self.diffThrottleInterval)
                         guard !Task.isCancelled, let self else { return }
-                        if needsRebuild {
+                        // Loop: after each rebuild, check if more diffs
+                        // arrived during the background mapping pass. If
+                        // so, rebuild again immediately rather than waiting
+                        // for the next SDK callback to start a new throttle.
+                        while needsRebuild {
                             needsRebuild = false
                             await self.rebuildMessages()
                         }
