@@ -22,6 +22,7 @@ import RelayInterface
 @Observable
 final class PreviewTimelineViewModel: TimelineViewModelProtocol {
     var messages: [TimelineMessage]
+    var messagesVersion: UInt = 0
     var isLoading: Bool
     var isLoadingMore = false
     var hasReachedStart: Bool

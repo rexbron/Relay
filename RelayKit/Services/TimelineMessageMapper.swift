@@ -37,6 +37,14 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
         let unresolvedReplyEventIds: Set<String>
     }
 
+    /// The result of mapping a single timeline item to a message.
+    struct SingleItemResult: Sendable {
+        /// The mapped message.
+        let message: TimelineMessage
+        /// Whether the message has an unresolved reply that needs fetching.
+        let hasUnresolvedReply: Bool
+    }
+
     // swiftlint:disable function_body_length cyclomatic_complexity
     /// Maps an array of raw SDK timeline items into ``TimelineMessage`` models.
     ///
@@ -287,6 +295,291 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
         return MappingResult(messages: result, unresolvedReplyEventIds: pendingReplyFetchIds)
     }
 
+    /// Maps a single SDK ``TimelineItem`` into a ``SingleItemResult``.
+    ///
+    /// Returns `nil` if the item is not an event or has an unsupported content type.
+    /// This is the preferred entry point for surgical (per-item) mapping.
+    nonisolated func mapItem(_ item: TimelineItem) -> SingleItemResult? {
+        guard let event = item.asEvent() else { return nil }
+
+        let msgBody: String
+        let msgKind: TimelineMessage.Kind
+        var msgMediaInfo: TimelineMessage.MediaInfo?
+        var msgFormattedBody: String?
+        var msgIsEdited = false
+        switch event.content {
+        case .msgLike(let msgLikeContent):
+            switch msgLikeContent.kind {
+            case .message(let messageContent):
+                msgIsEdited = messageContent.isEdited
+                switch messageContent.msgType {
+                case .text(let textContent):
+                    msgBody = textContent.body
+                    msgKind = .text
+                    if case .html = textContent.formatted?.format {
+                        msgFormattedBody = textContent.formatted?.body
+                    }
+                case .emote(let emoteContent):
+                    msgBody = emoteContent.body
+                    msgKind = .emote
+                    if case .html = emoteContent.formatted?.format {
+                        msgFormattedBody = emoteContent.formatted?.body
+                    }
+                case .notice(let noticeContent):
+                    msgBody = noticeContent.body
+                    msgKind = .notice
+                    if case .html = noticeContent.formatted?.format {
+                        msgFormattedBody = noticeContent.formatted?.body
+                    }
+                case .image(let imageContent):
+                    msgBody = imageContent.caption ?? "Image"
+                    msgKind = .image
+                    msgMediaInfo = .init(
+                        mxcURL: imageContent.source.url(),
+                        filename: imageContent.filename,
+                        mimetype: imageContent.info?.mimetype,
+                        width: imageContent.info?.width,
+                        height: imageContent.info?.height,
+                        size: imageContent.info?.size,
+                        caption: imageContent.caption
+                    )
+                case .video(let videoContent):
+                    msgBody = videoContent.caption ?? videoContent.filename
+                    msgKind = .video
+                    msgMediaInfo = .init(
+                        mxcURL: videoContent.source.url(),
+                        filename: videoContent.filename,
+                        mimetype: videoContent.info?.mimetype,
+                        width: videoContent.info?.width,
+                        height: videoContent.info?.height,
+                        size: videoContent.info?.size,
+                        caption: videoContent.caption,
+                        duration: videoContent.info?.duration
+                    )
+                case .audio(let audioContent):
+                    msgBody = audioContent.caption ?? audioContent.filename
+                    msgKind = .audio
+                    msgMediaInfo = .init(
+                        mxcURL: audioContent.source.url(),
+                        filename: audioContent.filename,
+                        mimetype: audioContent.info?.mimetype,
+                        size: audioContent.info?.size,
+                        caption: audioContent.caption,
+                        duration: audioContent.info?.duration
+                    )
+                case .file(let fileContent):
+                    msgBody = fileContent.caption ?? fileContent.filename
+                    msgKind = .file
+                    msgMediaInfo = .init(
+                        mxcURL: fileContent.source.url(),
+                        filename: fileContent.filename,
+                        mimetype: fileContent.info?.mimetype,
+                        size: fileContent.info?.size,
+                        caption: fileContent.caption
+                    )
+                case .location:
+                    msgBody = "Location"
+                    msgKind = .location
+                case .gallery:
+                    msgBody = "Gallery"
+                    msgKind = .image
+                case .other:
+                    msgBody = "Message"
+                    msgKind = .other
+                }
+            case .sticker:
+                msgBody = "Sticker"
+                msgKind = .sticker
+            case .poll:
+                msgBody = "Poll"
+                msgKind = .poll
+            case .redacted:
+                msgBody = "This message was deleted"
+                msgKind = .redacted
+            case .unableToDecrypt:
+                msgBody = "Waiting for encryption key"
+                msgKind = .encrypted
+            case .other:
+                return nil
+            case .liveLocation:
+                msgBody = "Live location"
+                msgKind = .liveLocation
+            }
+        case .roomMembership(let userId, let userDisplayName, let change, _):
+            let name = userDisplayName ?? userId
+            msgBody = Self.membershipDescription(name: name, change: change)
+            msgKind = .membership
+        case .profileChange(let displayName, let prevDisplayName, let avatarUrl, let prevAvatarUrl):
+            msgBody = Self.profileChangeDescription(
+                displayName: displayName,
+                prevDisplayName: prevDisplayName,
+                avatarUrl: avatarUrl,
+                prevAvatarUrl: prevAvatarUrl
+            )
+            msgKind = .profileChange
+        case .state(_, let content):
+            msgBody = Self.stateEventDescription(content)
+            msgKind = .stateEvent
+        default:
+            return nil
+        }
+
+        var msgReactions: [TimelineMessage.ReactionGroup] = []
+        var isHighlighted = false
+        var msgReplyDetail: TimelineMessage.ReplyDetail?
+        var hasUnresolvedReply = false
+        // swiftlint:disable:next identifier_name
+        if case .msgLike(let ml) = event.content {
+            msgReactions = ml.reactions.map { reaction in
+                TimelineMessage.ReactionGroup(
+                    key: reaction.key,
+                    count: reaction.senders.count,
+                    senderIDs: reaction.senders.map(\.senderId),
+                    highlightedByCurrentUser: reaction.senders.contains { $0.senderId == currentUserId }
+                )
+            }
+
+            if !event.isOwn, let userId = currentUserId {
+                // swiftlint:disable:next identifier_name
+                if case .message(let mc) = ml.kind, let mentions = mc.mentions {
+                    isHighlighted = mentions.userIds.contains(userId) || mentions.room
+                }
+                if !isHighlighted {
+                    isHighlighted = msgBody.contains(userId)
+                }
+            }
+
+            if let replyTo = ml.inReplyTo {
+                let replyEventId = replyTo.eventId()
+                switch replyTo.event() {
+                case .ready(let content, let sender, let senderProfile, _, _):
+                    let replyDisplayName: String? =
+                        if case .ready(let name, _, _) = senderProfile { name } else { nil }
+                    let replyBody: String
+                    var replyFormattedBody: String?
+                    if case .msgLike(let replyMl) = content,
+                       case .message(let replyMsg) = replyMl.kind {
+                        replyBody = replyMsg.body
+                        switch replyMsg.msgType {
+                        case .text(let tc) where tc.formatted?.format == .html:
+                            replyFormattedBody = tc.formatted?.body
+                        case .emote(let ec) where ec.formatted?.format == .html:
+                            replyFormattedBody = ec.formatted?.body
+                        case .notice(let nc) where nc.formatted?.format == .html:
+                            replyFormattedBody = nc.formatted?.body
+                        default:
+                            break
+                        }
+                    } else {
+                        replyBody = "Message"
+                    }
+                    msgReplyDetail = .init(
+                        eventID: replyEventId, senderID: sender,
+                        senderDisplayName: replyDisplayName, body: replyBody,
+                        formattedBody: replyFormattedBody
+                    )
+                case .pending:
+                    msgReplyDetail = .init(eventID: replyEventId, senderID: "", senderDisplayName: nil, body: "")
+                    hasUnresolvedReply = true
+                case .unavailable:
+                    msgReplyDetail = .init(eventID: replyEventId, senderID: "", senderDisplayName: nil, body: "")
+                    hasUnresolvedReply = true
+                case .error:
+                    msgReplyDetail = .init(eventID: replyEventId, senderID: "", senderDisplayName: nil, body: "")
+                }
+            }
+        }
+
+        let (displayName, avatarURL): (String?, String?) =
+            switch event.senderProfile {
+            case .ready(let name, _, let url):
+                (name, url)
+            default:
+                (nil, nil)
+            }
+
+        // swiftlint:disable:next identifier_name
+        let ts = Date(timeIntervalSince1970: TimeInterval(event.timestamp) / 1000)
+
+        let eventId: String
+        switch event.eventOrTransactionId {
+        case .eventId(let id):
+            eventId = id
+        case .transactionId(let id):
+            eventId = id
+        }
+
+        let message = TimelineMessage(
+            id: eventId,
+            senderID: event.sender,
+            senderDisplayName: displayName,
+            senderAvatarURL: avatarURL,
+            body: msgBody,
+            formattedBody: msgFormattedBody,
+            timestamp: ts,
+            isOutgoing: event.isOwn,
+            kind: msgKind,
+            mediaInfo: msgMediaInfo,
+            reactions: msgReactions,
+            isHighlighted: isHighlighted,
+            replyDetail: msgReplyDetail,
+            isEdited: msgIsEdited
+        )
+        return SingleItemResult(message: message, hasUnresolvedReply: hasUnresolvedReply)
+    }
+
+    /// Maps an array of SDK timeline items into messages, reusing cached messages
+    /// for items at unchanged indices.
+    ///
+    /// - Parameters:
+    ///   - items: The full timeline items array.
+    ///   - changedIndices: Indices that were modified by the latest diff batch.
+    ///     Pass `nil` to remap all items (equivalent to a reset).
+    ///   - existingMessages: Previously mapped messages keyed by event/transaction ID,
+    ///     used to avoid remapping unchanged items.
+    /// - Returns: A ``MappingResult`` with the ordered messages and unresolved reply IDs.
+    @concurrent
+    func mapItemsIncrementally(
+        _ items: [TimelineItem],
+        changedIndices: IndexSet?,
+        existingMessages: [String: TimelineMessage]
+    ) async -> MappingResult {
+        var result: [TimelineMessage] = []
+        result.reserveCapacity(items.count)
+        var pendingReplyFetchIds: Set<String> = []
+
+        for index in items.indices {
+            let item = items[index]
+
+            // If we have a known set of changed indices and this index isn't
+            // in it, try to reuse the cached message. We still need the item's
+            // event ID to look it up, so extract it cheaply.
+            if let changedIndices, !changedIndices.contains(index) {
+                if let event = item.asEvent() {
+                    let eventId: String
+                    switch event.eventOrTransactionId {
+                    case .eventId(let id): eventId = id
+                    case .transactionId(let id): eventId = id
+                    }
+                    if let cached = existingMessages[eventId] {
+                        result.append(cached)
+                        continue
+                    }
+                }
+            }
+
+            // Map the item from scratch.
+            if let mapped = mapItem(item) {
+                if mapped.hasUnresolvedReply {
+                    pendingReplyFetchIds.insert(mapped.message.id)
+                }
+                result.append(mapped.message)
+            }
+        }
+
+        return MappingResult(messages: result, unresolvedReplyEventIds: pendingReplyFetchIds)
+    }
+
     // swiftlint:disable function_body_length cyclomatic_complexity
     /// Maps a single `EventTimelineItem` into a ``TimelineMessage``, if it is a supported event.
     ///
@@ -457,7 +750,7 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
 
     // swiftlint:disable cyclomatic_complexity
     /// Returns a human-readable description for a membership change event.
-    static func membershipDescription(name: String, change: MembershipChange?) -> String {
+    nonisolated static func membershipDescription(name: String, change: MembershipChange?) -> String {
     // swiftlint:enable cyclomatic_complexity
         guard let change else { return "\(name) membership changed" }
         switch change {
@@ -495,7 +788,7 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
     }
 
     /// Returns a human-readable description for a profile change event.
-    static func profileChangeDescription(
+    nonisolated static func profileChangeDescription(
         displayName: String?,
         prevDisplayName: String?,
         avatarUrl: String?,
@@ -530,7 +823,7 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
 
     // swiftlint:disable cyclomatic_complexity
     /// Returns a human-readable description for a room state change event.
-    static func stateEventDescription(_ state: OtherState) -> String {
+    nonisolated static func stateEventDescription(_ state: OtherState) -> String {
     // swiftlint:enable cyclomatic_complexity
         switch state {
         case .roomName(let name):

@@ -247,7 +247,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             .ignoresSafeArea()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .top) { loadingMoreOverlay }
-            .onChange(of: viewModel.messages) {
+            .onChange(of: viewModel.messagesVersion) {
                 rebuildCachedRows()
             }
             .onChange(of: viewModel.hasReachedStart) {

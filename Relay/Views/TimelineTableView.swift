@@ -214,8 +214,10 @@ final class TimelineTableViewController: NSViewController {
 
     /// A reusable hosting controller used to measure SwiftUI row heights
     /// for rows that don't have a live cell on screen. Only used as a
-    /// fallback when no cached height exists.
-    private let measurementHost = NSHostingController(rootView: AnyView(EmptyView()))
+    /// fallback when no cached height exists. Using the concrete
+    /// ``TimelineRowView`` type avoids `AnyView` type-erasure overhead
+    /// and lets SwiftUI reuse the internal view hierarchy between measurements.
+    private var measurementHost: NSHostingController<TimelineRowView>?
 
     /// Caches measured row heights keyed on `(messageID, roundedWidth)`.
     /// Avoids redundant `NSHostingController.sizeThatFits` calls during
@@ -721,10 +723,15 @@ extension TimelineTableViewController: NSTableViewDelegate {
         // 2. Fall back to the measurement host for rows without a cached
         //    value (initial load, pagination, first resize at a new width).
         let rowView = callbacks.makeRowView(messageRow, false)
-        measurementHost.rootView = AnyView(rowView)
-        measurementHost.sizingOptions = [.standardBounds]
+        if let host = measurementHost {
+            host.rootView = rowView
+        } else {
+            let host = NSHostingController(rootView: rowView)
+            host.sizingOptions = [.standardBounds]
+            measurementHost = host
+        }
 
-        let size = measurementHost.sizeThatFits(in: CGSize(
+        let size = measurementHost!.sizeThatFits(in: CGSize(
             width: targetWidth,
             height: CGFloat.greatestFiniteMagnitude
         ))

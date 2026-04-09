@@ -33,6 +33,7 @@ private let logger = Logger(subsystem: "RelayKit", category: "Timeline")
 // swiftlint:disable:next type_body_length
 public final class TimelineViewModel: TimelineViewModelProtocol {
     public private(set) var messages: [TimelineMessage] = []
+    public private(set) var messagesVersion: UInt = 0
     public private(set) var isLoading = true
     public private(set) var isLoadingMore = false
     public private(set) var hasReachedStart = false
@@ -56,6 +57,20 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
     private var hasComputedUnreadMarker = false
     private var isSendingFullyReadReceipt = false
     private var fetchedReplyEventIds: Set<String> = []
+
+    /// Tracks which indices in ``timelineItems`` were modified by the latest
+    /// batch of diffs. `nil` means a full remap is required (e.g. after a
+    /// reset or clear). An empty set means nothing changed.
+    private var pendingChangedIndices: IndexSet?
+
+    /// Previously mapped messages keyed by event/transaction ID for O(1) reuse
+    /// during incremental rebuilds. Updated after each ``rebuildMessages()``
+    /// call so unchanged items are never re-mapped.
+    private var messageCache: [String: TimelineMessage] = [:]
+
+    /// Monotonically increasing counter used to discard stale results from
+    /// background mapping tasks that were superseded by a newer rebuild.
+    private var rebuildGeneration: UInt = 0
 
     /// Continuation that is resumed once the first batch of timeline diffs has
     /// been received and applied.  Both the pagination-status observer (live
@@ -195,7 +210,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         if let diffStream = initialDiffsStream {
             for await _ in diffStream { break }
         }
-        rebuildMessages()
+        await rebuildMessages()
         isLoading = false
     }
 
@@ -463,6 +478,9 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         hasReachedEnd = true
         isLoadingMore = false
         fetchedReplyEventIds = []
+        pendingChangedIndices = IndexSet()
+        messageCache = [:]
+        rebuildGeneration &+= 1
         initialDiffsContinuation?.finish()
         initialDiffsContinuation = nil
         initialDiffsStream = nil
@@ -553,7 +571,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                         guard !Task.isCancelled, let self else { return }
                         if needsRebuild {
                             needsRebuild = false
-                            self.rebuildMessages()
+                            await self.rebuildMessages()
                         }
                         throttleTask = nil
                     }
@@ -562,7 +580,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
 
             // Flush any remaining diffs when the stream ends.
             if needsRebuild {
-                self.rebuildMessages()
+                await self.rebuildMessages()
             }
         }
     }
@@ -595,11 +613,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                         // we have enough items or hit the room start.  Wait for
                         // the diff observer to deliver at least one batch so
                         // `timelineItems` is populated, then rebuild messages
-                        // synchronously before clearing the loading flag.
+                        // before clearing the loading flag.
                         if let diffStream = self.initialDiffsStream {
                             for await _ in diffStream { break }
                         }
-                        self.rebuildMessages()
+                        await self.rebuildMessages()
                         self.isLoading = false
                     }
                 case .paginating:
@@ -639,43 +657,164 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             switch diff {
             case .reset(let values):
                 timelineItems = values
+                // Full remap required — discard incremental tracking.
+                pendingChangedIndices = nil
+
             case .append(let values):
+                let start = timelineItems.count
                 timelineItems.append(contentsOf: values)
+                markIndicesChanged(start ..< timelineItems.count)
+
             case .pushBack(let value):
+                let idx = timelineItems.count
                 timelineItems.append(value)
+                markIndexChanged(idx)
+
             case .pushFront(let value):
+                // Inserting at 0 shifts every existing index up by 1.
+                shiftPendingIndices(by: 1, from: 0)
                 timelineItems.insert(value, at: 0)
+                markIndexChanged(0)
+
             // swiftlint:disable identifier_name
             case .insert(let index, let value):
                 let i = Int(index)
                 if i <= timelineItems.count {
+                    shiftPendingIndices(by: 1, from: i)
                     timelineItems.insert(value, at: i)
+                    markIndexChanged(i)
                 }
+
             case .set(let index, let value):
                 let i = Int(index)
                 if i < timelineItems.count {
                     timelineItems[i] = value
+                    markIndexChanged(i)
                 }
+
             case .remove(let index):
                 let i = Int(index)
                 if i < timelineItems.count {
                     timelineItems.remove(at: i)
+                    // Remove this index and shift everything above it down.
+                    pendingChangedIndices?.remove(i)
+                    shiftPendingIndices(by: -1, from: i + 1)
+                    // Mark the new occupant of this index as changed, since
+                    // it may now pair with a different neighbor for grouping.
+                    if i < timelineItems.count {
+                        markIndexChanged(i)
+                    }
                 }
             // swiftlint:enable identifier_name
+
             case .clear:
                 timelineItems.removeAll()
+                pendingChangedIndices = nil
+
             case .popBack:
-                if !timelineItems.isEmpty { timelineItems.removeLast() }
+                if !timelineItems.isEmpty {
+                    timelineItems.removeLast()
+                    // No index to mark — the item is gone. Cache will be
+                    // pruned naturally when it's absent from the next rebuild.
+                }
+
             case .popFront:
-                if !timelineItems.isEmpty { timelineItems.removeFirst() }
+                if !timelineItems.isEmpty {
+                    timelineItems.removeFirst()
+                    pendingChangedIndices?.remove(0)
+                    shiftPendingIndices(by: -1, from: 1)
+                    if !timelineItems.isEmpty {
+                        markIndexChanged(0)
+                    }
+                }
+
             case .truncate(let length):
                 timelineItems = Array(timelineItems.prefix(Int(length)))
+                // Discard any tracked indices beyond the new length.
+                if var indices = pendingChangedIndices {
+                    indices = indices.filteredIndexSet { $0 < Int(length) }
+                    pendingChangedIndices = indices
+                }
             }
         }
     }
 
-    private func rebuildMessages() {
-        let mapping = messageMapper.mapItems(timelineItems)
+    // MARK: - Index Tracking Helpers
+
+    /// Records a single index as changed, initializing the set if needed.
+    private func markIndexChanged(_ index: Int) {
+        if pendingChangedIndices == nil {
+            // nil means "full remap" — no point tracking individual indices.
+            return
+        }
+        pendingChangedIndices?.insert(index)
+    }
+
+    /// Records a range of indices as changed.
+    private func markIndicesChanged(_ range: Range<Int>) {
+        if pendingChangedIndices == nil { return }
+        pendingChangedIndices?.insert(integersIn: range)
+    }
+
+    /// Shifts all tracked indices >= `from` by `delta` (positive = right, negative = left).
+    private func shiftPendingIndices(by delta: Int, from start: Int) {
+        guard var indices = pendingChangedIndices else { return }
+        let affected = indices.filteredIndexSet { $0 >= start }
+        indices.subtract(affected)
+        for idx in affected {
+            let shifted = idx + delta
+            if shifted >= 0 {
+                indices.insert(shifted)
+            }
+        }
+        pendingChangedIndices = indices
+    }
+
+    /// Performs an incremental rebuild of messages, mapping only changed items
+    /// on a background thread and reusing cached messages for unchanged items.
+    ///
+    /// This method is `async` so callers that need to wait for the result
+    /// (e.g. the initial load path) can `await` it. The throttled diff path
+    /// wraps the call in an unstructured `Task` to fire-and-forget.
+    private func rebuildMessages() async {
+        // Capture the current state for the background mapping pass.
+        let items = timelineItems
+        let changedIndices = pendingChangedIndices
+        let cache = messageCache
+        let mapper = messageMapper
+
+        // Bump the generation so we can discard stale results from
+        // a superseded background task.
+        rebuildGeneration &+= 1
+        let generation = rebuildGeneration
+
+        // Reset the pending set to empty (not nil) so subsequent diffs
+        // accumulate into a fresh set while the background work runs.
+        pendingChangedIndices = IndexSet()
+
+        let mapping = await mapper.mapItemsIncrementally(
+            items,
+            changedIndices: changedIndices,
+            existingMessages: cache
+        )
+
+        // Discard the result if a newer rebuild was started while we
+        // were mapping on the background thread.
+        guard generation == rebuildGeneration else { return }
+
+        // Back on MainActor — apply the result.
+        applyMappingResult(mapping)
+    }
+
+    /// Applies a mapping result to the view model's published state.
+    private func applyMappingResult(_ mapping: TimelineMessageMapper.MappingResult) {
+        // Update the cache with the freshly mapped messages.
+        var newCache: [String: TimelineMessage] = [:]
+        newCache.reserveCapacity(mapping.messages.count)
+        for message in mapping.messages {
+            newCache[message.id] = message
+        }
+        messageCache = newCache
 
         // Suppress the @Observable notification when the mapped messages
         // haven't actually changed. Without this guard, every diff batch
@@ -685,6 +824,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         // a read receipt or delivery status).
         if mapping.messages != messages {
             messages = mapping.messages
+            messagesVersion &+= 1
         }
 
         computeUnreadMarkerIfNeeded(mapping.messages)
