@@ -1,4 +1,4 @@
-Relay is a Matrix client that doesn't look like a Matrix client.
+Relay - All the power of Matrix. None of the complexity.
 
 ![Main app screenshot](./docs/Screenshot.png)
 
