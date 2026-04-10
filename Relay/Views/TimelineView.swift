@@ -75,6 +75,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     @State private var highlightedMessageId: String?
     @State private var memberRefreshTask: Task<Void, Never>?
     @State private var cachedMessageRows: [MessageRow] = []
+    @State private var isTimelineDropTargeted = false
 
     /// Number of membership events observed in the timeline, used to trigger
     /// a member list refresh when new joins/leaves arrive.
@@ -126,6 +127,36 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 composeBar
             }
             .navigationTitle("")
+            .dropDestination(for: URL.self) { urls, _ in
+                let fileURLs = urls.filter(\.isFileURL)
+                guard !fileURLs.isEmpty else { return false }
+                stageAttachments(fileURLs)
+                return true
+            } isTargeted: { targeted in
+                withAnimation(.easeOut(duration: 0.15)) {
+                    isTimelineDropTargeted = targeted
+                }
+            }
+            .overlay {
+                if isTimelineDropTargeted {
+                    ZStack {
+                        Rectangle()
+                            .fill(.ultraThinMaterial)
+                            .ignoresSafeArea()
+
+                        VStack(spacing: 8) {
+                            Image(systemName: "square.and.arrow.down")
+                                .font(.largeTitle)
+                                .foregroundStyle(.secondary)
+                            Text("Drop files to attach")
+                                .font(.headline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                }
+            }
         .task {
             // Cache isDirect once — avoids O(n) room scan on every body evaluation.
             isDirectRoom = matrixService.rooms.first(where: { $0.id == roomId })?.isDirect ?? false
