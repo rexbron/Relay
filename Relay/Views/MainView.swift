@@ -28,7 +28,6 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     @State private var searchText = ""
     @State private var isBrowsingDirectory = false
     @State private var showingInspector = false
-    @State private var inspectorProfile: UserProfile?
     @State private var showingPinnedMessages = false
     @State private var focusedMessageId: String?
     @State private var incomingVerificationItem: VerificationItem?
@@ -42,7 +41,6 @@ struct MainView: View { // swiftlint:disable:this type_body_length
 
     private func showUserProfile(_ profile: UserProfile) {
         withAnimation(.easeInOut(duration: 0.25)) {
-            inspectorProfile = profile
             showingInspector = true
         }
     }
@@ -57,7 +55,6 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 .onChange(of: selectedRoomId) {
                     if selectedRoomId != nil {
                         isBrowsingDirectory = false
-                        inspectorProfile = nil
                         showingPinnedMessages = false
                     }
                 }
@@ -155,7 +152,6 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                             Button {
                                 withAnimation(.easeInOut(duration: 0.25)) {
                                     showingInspector = false
-                                    inspectorProfile = nil
                                 }
                             } label: {
                                 Image(systemName: "xmark")
@@ -288,53 +284,24 @@ struct MainView: View { // swiftlint:disable:this type_body_length
 
     // MARK: - Inspector Panel
 
-    @ViewBuilder
     private func inspectorPanel(roomId: String) -> some View {
-        if let profile = inspectorProfile {
-            VStack(spacing: 0) {
-                HStack {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            inspectorProfile = nil
+        TimelineInspectorView(
+            roomId: roomId,
+            onMessageUser: { userId in
+                Task {
+                    do {
+                        let dmRoomId = try await matrixService.createDirectMessage(userId: userId)
+                        selectedRoomId = dmRoomId
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showingInspector = false
                         }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                            Text("Room Info")
-                        }
-                        .font(.callout)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.tint)
-                    Spacer()
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-
-                Divider()
-
-                UserDetailView(profile: profile) {
-                    Task {
-                        do {
-                            let roomId = try await matrixService.createDirectMessage(userId: profile.userId)
-                            selectedRoomId = roomId
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                inspectorProfile = nil
-                                showingInspector = false
-                            }
-                        } catch {
-                            errorReporter.report(.dmCreationFailed(error.localizedDescription))
-                        }
+                    } catch {
+                        errorReporter.report(.dmCreationFailed(error.localizedDescription))
                     }
                 }
-            }
-        } else {
-            RoomInfoView(
-                roomId: roomId,
-                onMemberTap: { profile in showUserProfile(profile) },
-                onPinnedMessageTap: scrollToMessage
-            )
-        }
+            },
+            onScrollToMessage: scrollToMessage
+        )
     }
 }
 

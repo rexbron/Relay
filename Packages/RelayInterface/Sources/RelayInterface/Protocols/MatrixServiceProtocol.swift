@@ -64,6 +64,34 @@ public enum DefaultNotificationMode: Sendable, Equatable, CaseIterable {
     }
 }
 
+/// The notification mode for a specific room, corresponding to Matrix push rule overrides.
+public enum RoomNotificationMode: Sendable, Equatable, CaseIterable {
+    /// Notify for every message in the room.
+    case allMessages
+    /// Notify only when the user is mentioned or a keyword matches.
+    case mentionsAndKeywordsOnly
+    /// Suppress all notifications from the room.
+    case mute
+
+    /// A human-readable label for display in settings UI.
+    nonisolated public var label: String {
+        switch self {
+        case .allMessages: "All Messages"
+        case .mentionsAndKeywordsOnly: "Mentions Only"
+        case .mute: "Mute"
+        }
+    }
+
+    /// An SF Symbol icon name suitable for display alongside the label.
+    nonisolated public var icon: String {
+        switch self {
+        case .allMessages: "bell.fill"
+        case .mentionsAndKeywordsOnly: "at"
+        case .mute: "bell.slash"
+        }
+    }
+}
+
 // MARK: - Incoming Verification Request
 
 /// A lightweight representation of an incoming session verification request
@@ -378,6 +406,101 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
 
     /// Enables or disables notifications for `@user` mentions.
     func setUserMentionEnabled(_ enabled: Bool) async throws
+
+    // MARK: Per-Room Notification Settings
+
+    /// Returns the notification mode for a specific room.
+    ///
+    /// - Parameter roomId: The Matrix room identifier.
+    /// - Returns: The room's notification mode, or `nil` if the room uses the default.
+    func getRoomNotificationMode(roomId: String) async throws -> RoomNotificationMode?
+
+    /// Sets the notification mode for a specific room.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - mode: The notification mode to apply.
+    func setRoomNotificationMode(roomId: String, mode: RoomNotificationMode) async throws
+
+    /// Restores the default notification mode for a room, removing any per-room override.
+    ///
+    /// - Parameter roomId: The Matrix room identifier.
+    func restoreDefaultRoomNotificationMode(roomId: String) async throws
+
+    // MARK: Power Levels
+
+    /// Sets a member's power level in a room.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - userId: The user ID whose power level to change.
+    ///   - powerLevel: The new power level value.
+    func setMemberPowerLevel(roomId: String, userId: String, powerLevel: Int64) async throws
+
+    // MARK: Room Access Settings
+
+    /// Updates the join rule for a room.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - rule: The join rule string (`"public"`, `"invite"`, `"knock"`).
+    func updateJoinRule(roomId: String, rule: String) async throws
+
+    /// Updates the history visibility for a room.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - visibility: The history visibility string (`"joined"`, `"invited"`, `"shared"`, `"world_readable"`).
+    func updateHistoryVisibility(roomId: String, visibility: String) async throws
+
+    /// Updates the room directory visibility.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - isPublic: Whether the room should be listed in the public directory.
+    func updateRoomVisibility(roomId: String, isPublic: Bool) async throws
+
+    // MARK: Member Moderation
+
+    /// Kicks a user from a room.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - userId: The user to kick.
+    ///   - reason: An optional reason for the kick.
+    func kickMember(roomId: String, userId: String, reason: String?) async throws
+
+    /// Bans a user from a room, preventing them from rejoining.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - userId: The user to ban.
+    ///   - reason: An optional reason for the ban.
+    func banMember(roomId: String, userId: String, reason: String?) async throws
+
+    /// Unbans a user from a room, allowing them to rejoin.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - userId: The user to unban.
+    func unbanMember(roomId: String, userId: String) async throws
+
+    // MARK: Ignore List
+
+    /// Returns whether a user is on the ignore list.
+    ///
+    /// - Parameter userId: The user to check.
+    func isUserIgnored(userId: String) async throws -> Bool
+
+    /// Adds a user to the ignore list. Ignored users' messages are hidden.
+    ///
+    /// - Parameter userId: The user to ignore.
+    func ignoreUser(userId: String) async throws
+
+    /// Removes a user from the ignore list.
+    ///
+    /// - Parameter userId: The user to unignore.
+    func unignoreUser(userId: String) async throws
 }
 
 // MARK: - Environment Key
@@ -453,4 +576,17 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func setRoomMentionEnabled(_ enabled: Bool) async throws {}
     func isUserMentionEnabled() async throws -> Bool { true }
     func setUserMentionEnabled(_ enabled: Bool) async throws {}
+    func getRoomNotificationMode(roomId: String) async throws -> RoomNotificationMode? { nil }
+    func setRoomNotificationMode(roomId: String, mode: RoomNotificationMode) async throws {}
+    func restoreDefaultRoomNotificationMode(roomId: String) async throws {}
+    func setMemberPowerLevel(roomId: String, userId: String, powerLevel: Int64) async throws {}
+    func updateJoinRule(roomId: String, rule: String) async throws {}
+    func updateHistoryVisibility(roomId: String, visibility: String) async throws {}
+    func updateRoomVisibility(roomId: String, isPublic: Bool) async throws {}
+    func kickMember(roomId: String, userId: String, reason: String?) async throws {}
+    func banMember(roomId: String, userId: String, reason: String?) async throws {}
+    func unbanMember(roomId: String, userId: String) async throws {}
+    func isUserIgnored(userId: String) async throws -> Bool { false }
+    func ignoreUser(userId: String) async throws {}
+    func unignoreUser(userId: String) async throws {}
 }

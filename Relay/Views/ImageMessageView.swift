@@ -23,7 +23,15 @@ struct ImageMessageView: View {
     @Environment(\.matrixService) private var matrixService
     @Environment(\.mediaAutoReveal) private var autoReveal
     @Environment(\.errorReporter) private var errorReporter
-    @AppStorage("behavior.animateGIFs") private var animateGIFs = GIFAnimationMode.onHover
+    @Environment(\.gifAnimationOverride) private var gifAnimationOverride
+    @AppStorage("behavior.animateGIFs") private var globalAnimateGIFs = GIFAnimationMode.onHover
+
+    private var animateGIFs: GIFAnimationMode {
+        if let override = gifAnimationOverride, let mode = GIFAnimationMode(rawValue: override) {
+            return mode
+        }
+        return globalAnimateGIFs
+    }
     let message: TimelineMessage
 
     @State private var image: NSImage?

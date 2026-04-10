@@ -417,24 +417,47 @@ public final class MatrixService: MatrixServiceProtocol {
         if let membersIterator = try? await room.members() {
             let chunk = membersIterator.nextChunk(chunkSize: 200)
             if let chunk {
-                memberDetails = chunk.compactMap { member in
+                memberDetails = chunk.compactMap { member -> RoomMemberDetails? in
                     guard member.membership == .join else { return nil }
                     let role: RoomMemberDetails.Role = switch member.suggestedRoleForPowerLevel {
                     case .administrator: .administrator
                     case .moderator: .moderator
                     default: .user
                     }
+                    let pl: Int64 = switch member.powerLevel {
+                    case .value(let value): value
+                    case .infinite: 100
+                    }
                     return RoomMemberDetails(
                         userId: member.userId,
                         displayName: member.displayName,
                         avatarURL: member.avatarUrl,
-                        role: role
+                        role: role,
+                        powerLevel: pl
                     )
                 }
             }
         }
 
         let pinnedEventIds = info?.pinnedEventIds ?? []
+
+        let joinRuleString: String? = switch info?.joinRule {
+        case .public: "public"
+        case .invite: "invite"
+        case .knock: "knock"
+        case .restricted: "restricted"
+        case .knockRestricted: "knock_restricted"
+        case .custom(let rule): rule
+        default: nil
+        }
+
+        let histVisString: String? = switch info?.historyVisibility {
+        case .joined: "joined"
+        case .invited: "invited"
+        case .shared: "shared"
+        case .worldReadable: "world_readable"
+        default: nil
+        }
 
         return RoomDetails(
             id: room.id(),
@@ -447,7 +470,9 @@ public final class MatrixService: MatrixServiceProtocol {
             canonicalAlias: canonicalAlias,
             memberCount: memberCount,
             members: memberDetails,
-            pinnedEventIds: pinnedEventIds
+            pinnedEventIds: pinnedEventIds,
+            joinRule: joinRuleString,
+            historyVisibility: histVisString
         )
     }
 
@@ -466,12 +491,17 @@ public final class MatrixService: MatrixServiceProtocol {
                 case .moderator: .moderator
                 default: .user
                 }
+                let pl: Int64 = switch member.powerLevel {
+                case .value(let value): value
+                case .infinite: 100
+                }
                 memberDetails.append(
                     RoomMemberDetails(
                         userId: member.userId,
                         displayName: member.displayName,
                         avatarURL: member.avatarUrl,
-                        role: role
+                        role: role,
+                        powerLevel: pl
                     )
                 )
             }
@@ -581,7 +611,7 @@ public final class MatrixService: MatrixServiceProtocol {
         return await client.getNotificationSettings()
     }
 
-    private func sdkMode(from mode: DefaultNotificationMode) -> RoomNotificationMode {
+    private func sdkMode(from mode: DefaultNotificationMode) -> MatrixRustSDK.RoomNotificationMode {
         switch mode {
         case .allMessages: .allMessages
         case .mentionsAndKeywordsOnly: .mentionsAndKeywordsOnly
@@ -589,7 +619,27 @@ public final class MatrixService: MatrixServiceProtocol {
         }
     }
 
-    private func appMode(from mode: RoomNotificationMode) -> DefaultNotificationMode {
+    private func appMode(from mode: MatrixRustSDK.RoomNotificationMode) -> DefaultNotificationMode {
+        switch mode {
+        case .allMessages: .allMessages
+        case .mentionsAndKeywordsOnly: .mentionsAndKeywordsOnly
+        case .mute: .mute
+        }
+    }
+
+    private func sdkRoomMode(
+        from mode: RelayInterface.RoomNotificationMode
+    ) -> MatrixRustSDK.RoomNotificationMode {
+        switch mode {
+        case .allMessages: .allMessages
+        case .mentionsAndKeywordsOnly: .mentionsAndKeywordsOnly
+        case .mute: .mute
+        }
+    }
+
+    private func appRoomMode(
+        from mode: MatrixRustSDK.RoomNotificationMode
+    ) -> RelayInterface.RoomNotificationMode {
         switch mode {
         case .allMessages: .allMessages
         case .mentionsAndKeywordsOnly: .mentionsAndKeywordsOnly
@@ -640,6 +690,110 @@ public final class MatrixService: MatrixServiceProtocol {
 
     public func setUserMentionEnabled(_ enabled: Bool) async throws {
         try await notificationSettings().setUserMentionEnabled(enabled: enabled)
+    }
+
+    // MARK: - Per-Room Notification Settings
+
+    public func getRoomNotificationMode(roomId: String) async throws -> RelayInterface.RoomNotificationMode? {
+        guard let sdkRoom = room(id: roomId) else { return nil }
+        let settings = try await notificationSettings()
+        let info = try? await sdkRoom.roomInfo()
+        let isEncrypted = info?.encryptionState != .notEncrypted
+        let isOneToOne = info?.isDirect ?? false
+        let roomSettings = try await settings.getRoomNotificationSettings(
+            roomId: roomId,
+            isEncrypted: isEncrypted,
+            isOneToOne: isOneToOne
+        )
+        guard !roomSettings.isDefault else { return nil }
+        return appRoomMode(from: roomSettings.mode)
+    }
+
+    public func setRoomNotificationMode(
+        roomId: String,
+        mode: RelayInterface.RoomNotificationMode
+    ) async throws {
+        let settings = try await notificationSettings()
+        try await settings.setRoomNotificationMode(roomId: roomId, mode: sdkRoomMode(from: mode))
+    }
+
+    public func restoreDefaultRoomNotificationMode(roomId: String) async throws {
+        let settings = try await notificationSettings()
+        try await settings.restoreDefaultRoomNotificationMode(roomId: roomId)
+    }
+
+    // MARK: - Power Levels
+
+    public func setMemberPowerLevel(roomId: String, userId: String, powerLevel: Int64) async throws {
+        guard let sdkRoom = room(id: roomId) else { return }
+        let update = UserPowerLevelUpdate(userId: userId, powerLevel: powerLevel)
+        try await sdkRoom.updatePowerLevelsForUsers(updates: [update])
+    }
+
+    // MARK: - Room Access Settings
+
+    public func updateJoinRule(roomId: String, rule: String) async throws {
+        guard let sdkRoom = room(id: roomId) else { return }
+        let joinRule: JoinRule = switch rule {
+        case "public": .public
+        case "invite": .invite
+        case "knock": .knock
+        default: .invite
+        }
+        try await sdkRoom.updateJoinRules(newRule: joinRule)
+    }
+
+    public func updateHistoryVisibility(roomId: String, visibility: String) async throws {
+        guard let sdkRoom = room(id: roomId) else { return }
+        let histVis: MatrixRustSDK.RoomHistoryVisibility = switch visibility {
+        case "joined": .joined
+        case "invited": .invited
+        case "shared": .shared
+        case "world_readable": .worldReadable
+        default: .shared
+        }
+        try await sdkRoom.updateHistoryVisibility(visibility: histVis)
+    }
+
+    public func updateRoomVisibility(roomId: String, isPublic: Bool) async throws {
+        guard let sdkRoom = room(id: roomId) else { return }
+        let visibility: RoomVisibility = isPublic ? .public : .private
+        try await sdkRoom.updateRoomVisibility(visibility: visibility)
+    }
+
+    // MARK: - Member Moderation
+
+    public func kickMember(roomId: String, userId: String, reason: String?) async throws {
+        guard let sdkRoom = room(id: roomId) else { return }
+        try await sdkRoom.kickUser(userId: userId, reason: reason)
+    }
+
+    public func banMember(roomId: String, userId: String, reason: String?) async throws {
+        guard let sdkRoom = room(id: roomId) else { return }
+        try await sdkRoom.banUser(userId: userId, reason: reason)
+    }
+
+    public func unbanMember(roomId: String, userId: String) async throws {
+        guard let sdkRoom = room(id: roomId) else { return }
+        try await sdkRoom.unbanUser(userId: userId, reason: nil)
+    }
+
+    // MARK: - Ignore List
+
+    public func isUserIgnored(userId: String) async throws -> Bool {
+        guard let client else { return false }
+        let ignored = try await client.ignoredUsers()
+        return ignored.contains(userId)
+    }
+
+    public func ignoreUser(userId: String) async throws {
+        guard let client else { throw RelayError.notLoggedIn }
+        try await client.ignoreUser(userId: userId)
+    }
+
+    public func unignoreUser(userId: String) async throws {
+        guard let client else { throw RelayError.notLoggedIn }
+        try await client.unignoreUser(userId: userId)
     }
 
     // MARK: - Session Verification

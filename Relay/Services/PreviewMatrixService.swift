@@ -74,16 +74,24 @@ final class PreviewMatrixService: MatrixServiceProtocol {
             isEncrypted: !summary.isDirect,
             isPublic: false,
             isDirect: summary.isDirect,
-            canonicalAlias: "#\(summary.name.lowercased().replacingOccurrences(of: " ", with: "-")):matrix.org",
+            canonicalAlias: "#\(summary.name.lowercased().replacing(" ", with: "-")):matrix.org",
             memberCount: 5,
             members: [
-                RoomMemberDetails(userId: "@alice:matrix.org", displayName: "Alice Smith", role: .administrator),
-                RoomMemberDetails(userId: "@bob:matrix.org", displayName: "Bob Chen", role: .moderator),
-                RoomMemberDetails(userId: "@charlie:matrix.org", displayName: "Charlie Davis", role: .user),
-                RoomMemberDetails(userId: "@diana:matrix.org", displayName: "Diana Evans", role: .user),
-                RoomMemberDetails(userId: "@preview:matrix.org", displayName: "You", role: .user)
+                RoomMemberDetails(
+                    userId: "@alice:matrix.org", displayName: "Alice Smith",
+                    role: .administrator, powerLevel: 100
+                ),
+                RoomMemberDetails(
+                    userId: "@bob:matrix.org", displayName: "Bob Chen",
+                    role: .moderator, powerLevel: 50
+                ),
+                RoomMemberDetails(userId: "@charlie:matrix.org", displayName: "Charlie Davis"),
+                RoomMemberDetails(userId: "@diana:matrix.org", displayName: "Diana Evans"),
+                RoomMemberDetails(userId: "@preview:matrix.org", displayName: "You")
             ],
-            pinnedEventIds: summary.pinnedEventIds
+            pinnedEventIds: summary.pinnedEventIds,
+            joinRule: "invite",
+            historyVisibility: "shared"
         )
     }
 
@@ -132,6 +140,19 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func setRoomMentionEnabled(_ enabled: Bool) async throws {}
     func isUserMentionEnabled() async throws -> Bool { true }
     func setUserMentionEnabled(_ enabled: Bool) async throws {}
+    func getRoomNotificationMode(roomId: String) async throws -> RoomNotificationMode? { nil }
+    func setRoomNotificationMode(roomId: String, mode: RoomNotificationMode) async throws {}
+    func restoreDefaultRoomNotificationMode(roomId: String) async throws {}
+    func setMemberPowerLevel(roomId: String, userId: String, powerLevel: Int64) async throws {}
+    func updateJoinRule(roomId: String, rule: String) async throws {}
+    func updateHistoryVisibility(roomId: String, visibility: String) async throws {}
+    func updateRoomVisibility(roomId: String, isPublic: Bool) async throws {}
+    func kickMember(roomId: String, userId: String, reason: String?) async throws {}
+    func banMember(roomId: String, userId: String, reason: String?) async throws {}
+    func unbanMember(roomId: String, userId: String) async throws {}
+    func isUserIgnored(userId: String) async throws -> Bool { false }
+    func ignoreUser(userId: String) async throws {}
+    func unignoreUser(userId: String) async throws {}
 
     func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)? {
         PreviewSessionVerificationViewModel()

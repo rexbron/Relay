@@ -86,12 +86,29 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     @AppStorage("safety.sendReadReceipts") private var sendReadReceipts = true
     @AppStorage("safety.sendTypingNotifications") private var sendTypingNotifications = true
     @AppStorage("safety.mediaPreviewMode") private var mediaPreviewMode = "privateOnly"
-    @AppStorage("behavior.showURLPreviews") private var showURLPreviews = true
+    @AppStorage("behavior.showURLPreviews") private var globalShowURLPreviews = true
     @AppStorage("behavior.alwaysLoadNewest") private var alwaysLoadNewest = true
-    @AppStorage("behavior.showMembershipEvents") private var showMembershipEvents = true
-    @AppStorage("behavior.showStateEvents") private var showStateEvents = true
+    @AppStorage("behavior.showMembershipEvents") private var globalShowMembershipEvents = true
+    @AppStorage("behavior.showStateEvents") private var globalShowStateEvents = true
+
+    private var roomOverrides: RoomBehaviorOverrides {
+        RoomBehaviorStore.shared.overrides(for: roomId)
+    }
+
+    private var showURLPreviews: Bool {
+        roomOverrides.showURLPreviews ?? globalShowURLPreviews
+    }
+
+    private var showMembershipEvents: Bool {
+        roomOverrides.showMembershipEvents ?? globalShowMembershipEvents
+    }
+
+    private var showStateEvents: Bool {
+        roomOverrides.showStateEvents ?? globalShowStateEvents
+    }
 
     private var shouldAutoRevealMedia: Bool {
+        if let override = roomOverrides.showMediaPreviews { return override }
         if mediaPreviewMode == "allRooms" { return true }
         return isDirectRoom
     }
@@ -99,6 +116,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     var body: some View {
         messageList
             .environment(\.mediaAutoReveal, shouldAutoRevealMedia)
+            .environment(\.gifAnimationOverride, roomOverrides.animateGIFs)
             .overlay {
                 if let reply = replyingTo {
                     ZStack {
