@@ -64,6 +64,12 @@ public final class RoomSummary: Identifiable {
     /// Whether this room has any pinned messages.
     public var hasPinnedMessages: Bool { !pinnedEventIds.isEmpty }
 
+    /// Whether this room's notification mode is set to mute.
+    ///
+    /// When `true`, the room should not display unread indicators in the sidebar
+    /// and should not participate in recency-based sorting.
+    public var isMuted: Bool
+
     /// Creates a new ``RoomSummary`` instance.
     ///
     /// - Parameters:
@@ -78,6 +84,7 @@ public final class RoomSummary: Identifiable {
     ///   - isDirect: Whether this is a direct message conversation.
     ///   - canonicalAlias: The canonical alias for the room.
     ///   - pinnedEventIds: The event IDs of pinned messages in this room.
+    ///   - isMuted: Whether the room's notification mode is set to mute.
     public init(
         id: String,
         name: String,
@@ -89,7 +96,8 @@ public final class RoomSummary: Identifiable {
         unreadMentions: UInt = 0,
         isDirect: Bool = false,
         canonicalAlias: String? = nil,
-        pinnedEventIds: [String] = []
+        pinnedEventIds: [String] = [],
+        isMuted: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -102,5 +110,6 @@ public final class RoomSummary: Identifiable {
         self.isDirect = isDirect
         self.canonicalAlias = canonicalAlias
         self.pinnedEventIds = pinnedEventIds
+        self.isMuted = isMuted
     }
 }

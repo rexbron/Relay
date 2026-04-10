@@ -1,0 +1,132 @@
+// Copyright 2026 Link Dupont
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import RelayInterface
+import SwiftUI
+
+/// A single room row in the sidebar list, showing the avatar, name, last message preview,
+/// unread indicator, and muted state.
+struct RoomListRow: View {
+    let room: RoomSummary
+
+    /// Whether this room has unread activity and is not muted.
+    private var hasVisibleUnread: Bool {
+        !room.isMuted && (room.unreadMessages > 0 || room.unreadMentions > 0)
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if room.isMuted {
+                Image(systemName: "bell.slash.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Circle()
+                    .fill(room.unreadMentions > 0 ? Color.red : Color.accentColor)
+                    .frame(width: 8, height: 8)
+                    .opacity(hasVisibleUnread ? 1 : 0)
+            }
+
+            AvatarView(name: room.name, mxcURL: room.avatarURL, size: 48)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(room.name)
+                        .font(.headline)
+                        .fontWeight(hasVisibleUnread ? .semibold : .regular)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    // swiftlint:disable:next identifier_name
+                    if let ts = room.lastMessageTimestamp {
+                        Text(Self.formatTimestamp(ts))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let msg = room.lastMessage {
+                    Text(msg)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .padding(4)
+        }
+        .padding(.vertical, 8)
+    }
+}
+
+// MARK: - Helpers
+
+extension RoomListRow {
+    /// Formats a message timestamp for display in the room list.
+    ///
+    /// - Today: "11:54 AM"
+    /// - Yesterday: "Yesterday"
+    /// - Within the last week: "Wednesday"
+    /// - Older: "Apr 3"
+    static func formatTimestamp(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return date.formatted(date: .omitted, time: .shortened)
+        } else if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        } else if let daysAgo = calendar.dateComponents([.day], from: date, to: .now).day, daysAgo < 7 {
+            return date.formatted(.dateTime.weekday(.wide))
+        } else {
+            return date.formatted(.dateTime.month(.abbreviated).day())
+        }
+    }
+}
+
+// MARK: - Previews
+
+#Preview("Unread Mentions") {
+    RoomListRow(room: RoomSummary(
+        id: "!design:matrix.org",
+        name: "Design Team",
+        lastMessage: AttributedString("Let's finalize the mockups tomorrow"),
+        lastMessageTimestamp: .now.addingTimeInterval(-300),
+        unreadCount: 3,
+        unreadMentions: 1
+    ))
+    .frame(width: 300)
+}
+
+#Preview("Muted Room") {
+    RoomListRow(room: RoomSummary(
+        id: "!hq:matrix.org",
+        name: "Matrix HQ",
+        lastMessage: AttributedString("General discussion"),
+        lastMessageTimestamp: .now.addingTimeInterval(-7200),
+        unreadCount: 42,
+        isMuted: true
+    ))
+    .frame(width: 300)
+}
+
+#Preview("No Unread") {
+    RoomListRow(room: RoomSummary(
+        id: "!alice:matrix.org",
+        name: "Alice",
+        lastMessage: AttributedString("Sounds good, talk soon!"),
+        lastMessageTimestamp: .now.addingTimeInterval(-7200),
+        isDirect: true
+    ))
+    .frame(width: 300)
+}

@@ -293,6 +293,7 @@ private final class RoomEntry: Identifiable {
         summary.isDirect = info.isDirect
         summary.canonicalAlias = info.canonicalAlias
         summary.pinnedEventIds = info.pinnedEventIds
+        summary.isMuted = info.cachedUserDefinedNotificationMode == .some(.mute)
 
         // Extract latest message preview and notify the manager to re-sort
         Task { [weak self] in

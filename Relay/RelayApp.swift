@@ -110,7 +110,8 @@ struct RelayApp: App {
 
     private func updateDockBadge(rooms: [RelayInterface.RoomSummary]) {
         let count = rooms.reduce(0 as UInt) { total, room in
-            room.isDirect ? total + room.unreadMessages : total + room.unreadMentions
+            guard !room.isMuted else { return total }
+            return room.isDirect ? total + room.unreadMessages : total + room.unreadMentions
         }
         NSApp.dockTile.badgeLabel = count > 0 ? "\(count)" : nil
     }

@@ -260,7 +260,8 @@ final class PreviewMatrixService: MatrixServiceProtocol {
             lastMessage: nil,
             lastMessageTimestamp: nil,
             unreadCount: 0,
-            isDirect: false
+            isDirect: false,
+            isMuted: true
         ),
         RoomSummary(
             id: "!bob:matrix.org",
