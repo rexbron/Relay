@@ -28,7 +28,7 @@ private let logger = Logger(subsystem: "Relay", category: "DeepLink")
 @main
 struct RelayApp: App {
     @State private var matrixService = MatrixService()
-    @State private var gifSearchService = GiphyService()
+    @State private var gifSearchService = GiphyService(apiKey: Secrets.giphyAPIKey ?? "")
     @State private var notificationDelegate = NotificationDelegate()
     @State private var appActions = AppActions()
 
