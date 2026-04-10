@@ -41,8 +41,8 @@ struct RelayApp: App {
                 .environment(\.gifSearchService, gifSearchService)
                 .environment(\.errorReporter, matrixService.errorReporter)
                 .environment(appActions)
-                .onChange(of: matrixService.rooms.map(\.id)) {
-                    updateDockBadge(rooms: matrixService.rooms)
+                .onChange(of: dockBadgeCount) { _, newCount in
+                    NSApp.dockTile.badgeLabel = newCount > 0 ? "\(newCount)" : nil
                 }
                 .onChange(of: matrixService.pendingVerificationRequest?.id) { _, newValue in
                     if newValue != nil, let request = matrixService.pendingVerificationRequest {
@@ -108,12 +108,17 @@ struct RelayApp: App {
         center.setNotificationCategories([category])
     }
 
-    private func updateDockBadge(rooms: [RelayInterface.RoomSummary]) {
-        let count = rooms.reduce(0 as UInt) { total, room in
+    /// The total dock badge count, computed from every room's unread state.
+    ///
+    /// Because ``RoomSummary`` is `@Observable`, SwiftUI tracks each property
+    /// access (``unreadMessages``, ``unreadMentions``, ``isDirect``, ``isMuted``)
+    /// and re-evaluates this whenever any of them change -- unlike the previous
+    /// `onChange(of: rooms.map(\.id))` which only fired on structural list changes.
+    private var dockBadgeCount: UInt {
+        matrixService.rooms.reduce(0 as UInt) { total, room in
             guard !room.isMuted else { return total }
             return room.isDirect ? total + room.unreadMessages : total + room.unreadMentions
         }
-        NSApp.dockTile.badgeLabel = count > 0 ? "\(count)" : nil
     }
 
     private func postNotification(roomName: String, roomId: String, body: String) {
