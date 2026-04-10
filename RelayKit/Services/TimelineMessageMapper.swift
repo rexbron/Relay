@@ -283,6 +283,11 @@ struct TimelineMessageMapper { // swiftlint:disable:this type_body_length
             ))
         }
 
+        // Deduplicate consecutive call events from the same sender.
+        // When a user ends a call, the removal state event (empty content)
+        // appears as a second "started a call" — filter those out.
+        result = Self.deduplicateCallEvents(result)
+
         return MappingResult(messages: result, unresolvedReplyEventIds: pendingReplyFetchIds)
     }
 
@@ -460,6 +465,28 @@ struct TimelineMessageMapper { // swiftlint:disable:this type_body_length
             mediaInfo: msgMediaInfo,
             isEdited: msgIsEdited
         )
+    }
+
+    // MARK: - Call Event Deduplication
+
+    /// Removes duplicate consecutive call events from the same sender.
+    ///
+    /// When a user ends a call, the MatrixRTC leave event (`{}` content) appears
+    /// in the timeline as a second "started a call" message from the same sender.
+    /// This filters out those duplicates, keeping only the first occurrence in each
+    /// consecutive run.
+    private static func deduplicateCallEvents(_ messages: [TimelineMessage]) -> [TimelineMessage] {
+        var result: [TimelineMessage] = []
+        for message in messages {
+            if message.kind == .callEvent,
+               let last = result.last,
+               last.kind == .callEvent,
+               last.senderID == message.senderID {
+                continue
+            }
+            result.append(message)
+        }
+        return result
     }
 
     // MARK: - System Event Descriptions
