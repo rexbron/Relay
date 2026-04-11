@@ -41,11 +41,9 @@ struct RoomListView: View {
         .animation(.default, value: filteredRooms.map(\.id))
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search rooms")
         .toolbar {
-            RoomListToolbar(
-                sortOrder: $sortOrder,
-                sortDirection: $sortDirection,
-                typeFilter: $typeFilter
-            )
+            ToolbarItemGroup(placement: .automatic) {
+                sortMenu
+            }
         }
         .overlay {
             if matrixService.rooms.isEmpty {
@@ -69,6 +67,61 @@ struct RoomListView: View {
         } message: { room in
             Text("Are you sure you want to leave \"\(room.name)\"? You'll need to be re-invited or rejoin manually.")
         }
+    }
+
+    // MARK: - Sort Menu
+
+    private var sortMenu: some View {
+        Menu {
+            Section("Sort By") {
+                ForEach(RoomSortOrder.allCases, id: \.self) { order in
+                    Toggle(isOn: Binding(
+                        get: { sortOrder == order },
+                        set: { isOn in
+                            if isOn {
+                                withAnimation { sortOrder = order }
+                            }
+                        }
+                    )) {
+                        Label(order.label, systemImage: order.icon)
+                    }
+                }
+            }
+
+            Section("Order") {
+                Toggle(isOn: Binding(
+                    get: { sortDirection == .ascending },
+                    set: { _ in withAnimation { sortDirection = .ascending } }
+                )) {
+                    Label("Ascending", systemImage: "arrow.up")
+                }
+
+                Toggle(isOn: Binding(
+                    get: { sortDirection == .descending },
+                    set: { _ in withAnimation { sortDirection = .descending } }
+                )) {
+                    Label("Descending", systemImage: "arrow.down")
+                }
+            }
+
+            Section("Show") {
+                ForEach(RoomTypeFilter.allCases, id: \.self) { filter in
+                    Toggle(isOn: Binding(
+                        get: { typeFilter == filter },
+                        set: { isOn in
+                            if isOn {
+                                withAnimation { typeFilter = filter }
+                            }
+                        }
+                    )) {
+                        Label(filter.label, systemImage: filter.icon)
+                    }
+                }
+            }
+        } label: {
+            Label("Sort and Filter", systemImage: "line.3.horizontal.decrease")
+        }
+        .menuIndicator(.hidden)
     }
 }
 

@@ -144,7 +144,6 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             .overlay(alignment: .bottom) {
                 composeBar
             }
-            .navigationTitle("")
             .dropDestination(for: URL.self) { urls, _ in
                 let fileURLs = urls.filter(\.isFileURL)
                 guard !fileURLs.isEmpty else { return false }

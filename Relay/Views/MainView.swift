@@ -32,6 +32,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     @State private var focusedMessageId: String?
     @State private var incomingVerificationItem: VerificationItem?
     @State private var previewingLinkedRoom: DirectoryRoom?
+    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var isJoiningLinkedRoom = false
 
     private func scrollToMessage(_ eventId: String) {
@@ -46,7 +47,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             RoomListView(
                     selectedRoomId: $selectedRoomId,
                     searchText: $searchText
@@ -87,88 +88,8 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 )
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    appActions.showCreateRoom = true
-                } label: {
-                    Image(systemName: "plus.bubble")
-                }
-                .help("Create Room")
-            }
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    appActions.showRoomDirectory = true
-                } label: {
-                    Image(systemName: "building.2")
-                }
-                .help("Room Directory")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                if let selectedRoomId,
-                   let summary = matrixService.rooms.first(where: { $0.id == selectedRoomId }) {
-                    GlassEffectContainer {
-                        if !showingInspector {
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.25)) {
-                                    showingInspector = true
-                                }
-                            } label: {
-                                HStack(spacing: 8) {
-                                    if summary.hasPinnedMessages {
-                                        Button {
-                                            showingPinnedMessages.toggle()
-                                        } label: {
-                                            Image(systemName: "pin.fill")
-                                                .foregroundStyle(.secondary)
-
-                                        }
-                                        .help("Pinned Messages")
-                                        .popover(isPresented: $showingPinnedMessages,
-                                                 arrowEdge: .bottom) {
-                                            PinnedMessagesView(
-                                                roomId: selectedRoomId,
-                                                onSelectMessage: scrollToMessage
-                                            )
-                                        }
-                                    }
-
-                                    Text(summary.name)
-                                        .fontWeight(.semibold)
-                                        .lineLimit(1)
-                                        .padding(.leading, 12)
-
-                                    AvatarView(name: summary.name, mxcURL: summary.avatarURL, size: 28)
-                                        .padding(2)
-                                }
-                                .frame(maxWidth: 200)
-                            }
-                            .buttonStyle(.plain)
-                            .glassEffect(in: .capsule)
-                            .help("Show Room Info")
-                        }
-
-                        if showingInspector {
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.25)) {
-                                    showingInspector = false
-                                }
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.title2)
-                                    .foregroundStyle(.primary)
-                                    .frame(width: 36, height: 36)
-                                    .contentShape(Circle())
-                            }
-                            .buttonStyle(.plain)
-                            .glassEffect(in: .circle)
-                            .help("Hide Room Info")
-                        }
-                    }
-                }
-            }
-            .sharedBackgroundVisibility(.hidden)
-        }
+        .navigationTitle("")
+        .toolbar { windowToolbarContent }
         .onChange(of: matrixService.shouldPresentVerificationSheet) { _, shouldPresent in
             guard shouldPresent else { return }
             matrixService.shouldPresentVerificationSheet = false
@@ -213,6 +134,75 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 isBrowsingDirectory = true
             }
         }
+    }
+
+    // MARK: - Toolbar
+
+    private var currentRoom: RoomSummary? {
+        if selectedRoomId != nil, let room = matrixService.rooms.first(
+            where: { $0.id == selectedRoomId
+            }) {
+            room
+        } else {
+            nil
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var windowToolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            roomDirectoryButton
+        }
+
+        if selectedRoomId != nil {
+            ToolbarItem(placement: .secondaryAction) {
+                toolbarTitleCapsule
+            }
+        }
+        
+        ToolbarItem(placement: .primaryAction) {
+            showInspectorButton
+        }
+
+    }
+
+    private var toolbarTitleCapsule: some View {
+        HStack(spacing: 0) {
+            if let currentRoom {
+                AvatarView(name: currentRoom.name,
+                           mxcURL: currentRoom.avatarURL,
+                           size: 28)
+                .padding(.leading, 4)
+                Text(currentRoom.name)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var roomDirectoryButton: some View {
+        Button {
+            appActions.showRoomDirectory = true
+        } label: {
+            Label("Room Directory", systemImage: "building.2")
+        }
+        .help("Room Directory")
+    }
+
+    @ViewBuilder
+    private var showInspectorButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showingInspector.toggle()
+            }
+        } label: {
+            Label("Toggle Inspector", systemImage: "sidebar.trailing")
+        }
+        .help(showingInspector ? "Hide Inspector" : "Show Inspector")
+        .disabled(selectedRoomId == nil)
     }
 
     // MARK: - Deep Link Handling

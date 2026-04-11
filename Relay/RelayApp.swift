@@ -62,6 +62,7 @@ struct RelayApp: App {
         .defaultSize(width: 880, height: 560)
         .commands {
             FileMenuCommands(appActions: appActions)
+            SidebarCommands()
 
             CommandGroup(after: .windowArrangement) {
                 Button("Relay") {
