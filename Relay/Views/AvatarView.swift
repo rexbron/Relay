@@ -81,9 +81,7 @@ struct AvatarView: View {
     }
 
     private func color(for name: String) -> Color {
-        let hash = abs(name.hashValue)
-        let hue = Double(hash % 360) / 360.0
-        return Color(hue: hue, saturation: 0.5, brightness: 0.7)
+        StableNameColor.color(for: name)
     }
 }
 

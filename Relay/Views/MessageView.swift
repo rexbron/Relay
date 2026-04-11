@@ -62,6 +62,7 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
     /// of replied-to messages (outgoing vs incoming).
     var currentUserID: String?
 
+    @AppStorage("appearance.coloredBubbles") private var coloredBubbles = false
     @Environment(\.swipeOffset) private var swipeOffset
     @State private var showEmojiPicker = false
 
@@ -166,21 +167,26 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
         _ reply: TimelineMessage.ReplyDetail,
         outgoing: Bool
     ) -> some View {
+        let replyUsesWhiteText = outgoing || coloredBubbles
+        let replyBackground: Color = if outgoing {
+            .accentColor
+        } else if coloredBubbles {
+            StableNameColor.color(for: reply.senderID)
+        } else {
+            Color(.systemGray).opacity(0.2)
+        }
+
         Button {
             onTapReply?(reply.eventID)
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(Self.replyPreviewText(reply))
                     .font(.body)
-                    .foregroundStyle(outgoing ? .white : .primary)
+                    .foregroundStyle(replyUsesWhiteText ? .white : .primary)
                     .lineLimit(2)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
-                    .background(
-                        outgoing
-                            ? Color.accentColor
-                            : Color(.systemGray).opacity(0.2)
-                    )
+                    .background(replyBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
             }
             .opacity(0.6)
@@ -262,14 +268,14 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                 if let resolved = htmlBody {
                     MessageTextView(
                         resolved: resolved,
-                        isOutgoing: message.isOutgoing,
+                        isOutgoing: usesWhiteText,
                         onUserTap: onUserTap,
                         onRoomTap: onRoomTap
                     )
                 } else {
                     MessageTextView(
                         attributedString: markdownBody,
-                        isOutgoing: message.isOutgoing,
+                        isOutgoing: usesWhiteText,
                         onUserTap: onUserTap,
                         onRoomTap: onRoomTap
                     )
@@ -486,8 +492,19 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
 
     // MARK: - Bubble Color
 
+    /// Whether this bubble should render with white text (outgoing, or colored incoming).
+    private var usesWhiteText: Bool {
+        message.isOutgoing || (!message.isOutgoing && coloredBubbles)
+    }
+
     private var bubbleColor: Color {
-        message.isOutgoing ? .accentColor : Color(.unemphasizedSelectedContentBackgroundColor)
+        if message.isOutgoing {
+            return .accentColor
+        }
+        if coloredBubbles {
+            return StableNameColor.color(for: message.senderID)
+        }
+        return Color(.unemphasizedSelectedContentBackgroundColor)
     }
 }
 
