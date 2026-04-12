@@ -592,6 +592,18 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
             showSenderName: true,
             currentUserID: "@me:matrix.org"
         )
+        MessageView(
+            message: TimelineMessage(
+                id: "4",
+                senderID: "@me:matrix.org",
+                body: "Sure. It's up on [GitHub](https://github.com).",
+                timestamp: .now.addingTimeInterval(-20),
+                isOutgoing: true,
+                reactions: [],
+                replyDetail: nil,
+            ),
+            currentUserID: "@me:matrix.org"
+        )
     }
     .padding()
     .frame(width: 500)
