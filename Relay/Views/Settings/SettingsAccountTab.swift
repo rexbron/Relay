@@ -29,19 +29,25 @@ struct SettingsAccountTab: View {
 
     private var userId: String? { matrixService.userId() }
 
+    private var resolvedDisplayName: String {
+        displayName.isEmpty ? (userId ?? "?") : displayName
+    }
+
     var body: some View {
         Form {
             Section {
-                HStack(spacing: 14) {
+                VStack(spacing: 8) {
                     AvatarView(
-                        name: displayName.isEmpty ? (userId ?? "?") : displayName,
+                        name: resolvedDisplayName,
                         mxcURL: avatarURL,
-                        size: 64
+                        size: 80
                     )
-                    VStack(alignment: .leading, spacing: 2) {
+
+                    VStack(spacing: 2) {
                         Text(displayName.isEmpty ? "Not set" : displayName)
-                            .font(.title3)
-                            .fontWeight(.medium)
+                            .font(.title2)
+                            .bold()
+
                         if let userId {
                             Text(userId)
                                 .font(.subheadline)
@@ -50,12 +56,8 @@ struct SettingsAccountTab: View {
                         }
                     }
                 }
-                .padding(.vertical, 4)
-
-                Button("Log Out…", role: .destructive) {
-                    showLogoutConfirmation = true
-                }
-                .controlSize(.small)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
             }
 
             Section("Profile") {
@@ -67,18 +69,22 @@ struct SettingsAccountTab: View {
                             Text(userId)
                                 .foregroundStyle(.secondary)
                                 .textSelection(.enabled)
-                            Button {
+                            Button("Copy User ID", systemImage: "doc.on.doc") {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(userId, forType: .string)
-                            } label: {
-                                Image(systemName: "doc.on.doc")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
                             }
+                            .labelStyle(.iconOnly)
                             .buttonStyle(.borderless)
-                            .help("Copy User ID")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
                         }
                     }
+                }
+            }
+
+            Section {
+                Button("Log Out…", role: .destructive) {
+                    showLogoutConfirmation = true
                 }
             }
         }
