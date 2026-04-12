@@ -1,0 +1,38 @@
+name: Build
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Relay
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.app/Contents/Developer
+
+      - name: Create Secrets.xcconfig
+        run: cp Secrets.xcconfig.example Secrets.xcconfig
+
+      - name: Resolve packages
+        run: xcodebuild -resolvePackageDependencies -project Relay.xcodeproj -scheme Relay
+
+      - name: Build
+        run: >
+          xcodebuild build
+          -project Relay.xcodeproj
+          -scheme Relay
+          -destination 'generic/platform=macOS'
+          CODE_SIGN_IDENTITY="-"
+          CODE_SIGNING_ALLOWED=NO
+          | xcpretty && exit ${PIPESTATUS[0]}
