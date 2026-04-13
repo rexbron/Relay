@@ -314,13 +314,18 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                     pendingScrollToBottom = false
                     tableProxy.scrollToBottom()
                 }
-                if isNearBottom {
+                if isNearBottom, NSApp.isActive {
                     Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
                 }
             }
             .onChange(of: viewModel.timelineFocus) {
-                if viewModel.timelineFocus == .live {
+                if viewModel.timelineFocus == .live, NSApp.isActive {
                     pendingScrollToBottom = true
+                    Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                if isNearBottom {
                     Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
                 }
             }
@@ -375,7 +380,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             },
             onNearBottomChanged: { nearBottom in
                 isNearBottom = nearBottom
-                if nearBottom {
+                if nearBottom, NSApp.isActive {
                     Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
                 }
             },

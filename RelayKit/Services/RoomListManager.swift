@@ -32,6 +32,8 @@ public struct RoomNotificationEvent: Sendable {
     public let isMention: Bool
     /// Whether the new activity is in a direct message room.
     public let isDirect: Bool
+    /// The room's per-room notification mode override, or `nil` if using the default.
+    public let notificationMode: RelayInterface.RoomNotificationMode?
 }
 
 /// Maintains the sorted list of joined rooms using the SDK's reactive `RoomListService`.
@@ -68,6 +70,17 @@ final class RoomListManager {
     ///
     /// The app layer uses this to post system notifications.
     var onNotificationEvent: ((RoomNotificationEvent) -> Void)?
+
+    /// The signed-in user's Matrix ID, used for client-side highlight detection.
+    var currentUserId: String?
+
+    /// The user's notification keywords, used for client-side keyword matching.
+    ///
+    /// The Matrix Rust SDK's `highlightCount` and `numUnreadMentions` may not
+    /// reliably include keyword push-rule matches. Room entries check the latest
+    /// message body against these keywords to determine whether a new message
+    /// should be treated as a mention for notification and unread indicator purposes.
+    var notificationKeywords: [String] = []
 
     /// Starts the reactive room list using the sync service's `RoomListService`.
     ///
@@ -177,6 +190,8 @@ final class RoomListManager {
         rooms = []
         hasLoadedRooms = false
         roomListServiceState = nil
+        currentUserId = nil
+        notificationKeywords = []
     }
 
     // MARK: - Room Lookup
@@ -203,7 +218,10 @@ final class RoomListManager {
         RoomEntry(
             room: room,
             onInfoUpdated: { [weak self] in self?.scheduleResort() },
-            onNotificationEvent: { [weak self] event in self?.onNotificationEvent?(event) }
+            onNotificationEvent: { [weak self] event in self?.onNotificationEvent?(event) },
+            highlightContextProvider: { [weak self] in
+                (userId: self?.currentUserId, keywords: self?.notificationKeywords ?? [])
+            }
         )
     }
 
@@ -304,8 +322,9 @@ private final class RoomEntry: Identifiable {
     @ObservationIgnored private var onInfoUpdated: (() -> Void)?
 
     @ObservationIgnored private var onNotificationEvent: ((RoomNotificationEvent) -> Void)?
-    @ObservationIgnored private var previousUnreadMessages: UInt = 0
-    @ObservationIgnored private var previousUnreadMentions: UInt = 0
+    @ObservationIgnored private var highlightContextProvider: (() -> (userId: String?, keywords: [String]))?
+    /// The timestamp (ms) of the last event we fired a notification for.
+    @ObservationIgnored private var lastNotifiedEventTimestamp: UInt64 = 0
     @ObservationIgnored private var hasReceivedInitialInfo = false
 
     deinit {
@@ -316,12 +335,14 @@ private final class RoomEntry: Identifiable {
     init(
         room: Room,
         onInfoUpdated: (() -> Void)? = nil,
-        onNotificationEvent: ((RoomNotificationEvent) -> Void)? = nil
+        onNotificationEvent: ((RoomNotificationEvent) -> Void)? = nil,
+        highlightContextProvider: (() -> (userId: String?, keywords: [String]))? = nil
     ) {
         self.id = room.id()
         self.room = room
         self.onInfoUpdated = onInfoUpdated
         self.onNotificationEvent = onNotificationEvent
+        self.highlightContextProvider = highlightContextProvider
         self.summary = RelayInterface.RoomSummary(
             id: room.id(),
             name: room.displayName() ?? room.id()
@@ -383,11 +404,18 @@ private final class RoomEntry: Identifiable {
             summary.avatarURL = nil
         }
 
-        let newUnreadMessages = UInt(info.numUnreadMessages)
-        let newUnreadMentions = UInt(info.numUnreadMentions)
-
-        summary.unreadMessages = newUnreadMessages
-        summary.unreadMentions = newUnreadMentions
+        summary.unreadMessages = UInt(info.numUnreadMessages)
+        // Use the SDK's mention count as a floor; our client-side detection
+        // may have already incremented unreadMentions higher than what the
+        // SDK reports (e.g. for keyword matches). When the SDK value drops
+        // to zero (room marked as read), reset our count too.
+        let sdkMentions = UInt(info.numUnreadMentions)
+        if sdkMentions == 0 && info.numUnreadMessages == 0 {
+            summary.unreadMentions = 0
+            summary.hasKeywordHighlight = false
+        } else if sdkMentions > summary.unreadMentions {
+            summary.unreadMentions = sdkMentions
+        }
         summary.isDirect = info.isDirect
         summary.canonicalAlias = info.canonicalAlias
         summary.pinnedEventIds = info.pinnedEventIds
@@ -403,106 +431,166 @@ private final class RoomEntry: Identifiable {
             summary.notificationMode = nil
         }
 
-        // Detect increases in unread counts for notification delivery.
-        // Skip the initial info fetch to avoid firing notifications for
-        // pre-existing unread counts on app launch.
-        if hasReceivedInitialInfo {
-            let hadNewMessages = newUnreadMessages > previousUnreadMessages
-            let hadNewMentions = newUnreadMentions > previousUnreadMentions
-
-            if hadNewMessages || hadNewMentions {
-                let roomName = summary.name
-                let roomId = id
-                let isMention = hadNewMentions
-                let isDirect = summary.isDirect
-                Task { [weak self] in
-                    guard let self else { return }
-                    let body = await self.latestMessageBody()
-                    let author = await self.latestMessageAuthor()
-                    self.onNotificationEvent?(RoomNotificationEvent(
-                        roomId: roomId,
-                        roomName: roomName,
-                        messageAuthor: author,
-                        messageBody: body,
-                        isMention: isMention,
-                        isDirect: isDirect
-                    ))
-                }
-            }
-        }
-        previousUnreadMessages = newUnreadMessages
-        previousUnreadMentions = newUnreadMentions
+        let shouldCheckNotification = hasReceivedInitialInfo
         hasReceivedInitialInfo = true
 
-        // Extract latest message preview and notify the manager to re-sort
+        // Fetch the latest event, update the message preview, and check
+        // for new notification-worthy events in a single task.
+        // The notification check compares the latest event's timestamp
+        // against the last one we processed — this works reliably because
+        // latestEvent() is fetched asynchronously, giving the SDK time to
+        // deliver the new event before we read it.
         Task { [weak self] in
             guard let self else { return }
-            // swiftlint:disable:next identifier_name
-            let (msg, ts) = await self.latestMessagePreview()
-            self.summary.lastAuthor = await self.latestMessageAuthor()
-            self.summary.lastMessage = msg
-            self.summary.lastMessageTimestamp = ts
+
+            // Fetch the latest event exactly once — both the message
+            // preview and notification detection use the same snapshot
+            // so there is no race between two separate latestEvent() calls.
+            let latest = await self.room.latestEvent()
+            let eventInfo = Self.extractEventInfo(from: latest)
+            let preview = Self.extractPreview(from: latest)
+
+            // Update message preview for the room list.
+            self.summary.lastAuthor = eventInfo?.author
+            self.summary.lastMessage = preview.text
+            self.summary.lastMessageTimestamp = preview.date
             self.onInfoUpdated?()
+
+            guard let eventInfo else { return }
+
+            // On the first info fetch, just record the baseline.
+            guard shouldCheckNotification else {
+                self.lastNotifiedEventTimestamp = eventInfo.timestamp
+                return
+            }
+
+            // Only process events we haven't seen before.
+            guard eventInfo.timestamp > self.lastNotifiedEventTimestamp else { return }
+            self.lastNotifiedEventTimestamp = eventInfo.timestamp
+
+            // Only notify for actual messages, not state events
+            // (joins, name changes, topic changes, etc.).
+            guard eventInfo.body != nil else { return }
+
+            let roomName = self.summary.name
+            let roomId = self.id
+            let isDirect = self.summary.isDirect
+            let mode = self.summary.notificationMode
+            let highlightContext = self.highlightContextProvider?()
+
+            // Don't notify for our own messages.
+            if let userId = highlightContext?.userId,
+               eventInfo.senderId == userId {
+                return
+            }
+
+            // Determine whether this message is a mention or keyword match.
+            var isMention = false
+            if let mentions = eventInfo.mentions,
+               let userId = highlightContext?.userId {
+                isMention = mentions.userIds.contains(userId) || mentions.room
+            }
+            if !isMention {
+                isMention = HighlightMatcher.bodyMatchesHighlightRules(
+                    eventInfo.body ?? "",
+                    currentUserId: highlightContext?.userId,
+                    keywords: highlightContext?.keywords ?? []
+                )
+            }
+
+            if isMention {
+                self.summary.unreadMentions += 1
+                self.summary.hasKeywordHighlight = true
+            }
+
+            self.onNotificationEvent?(RoomNotificationEvent(
+                roomId: roomId,
+                roomName: roomName,
+                messageAuthor: eventInfo.author,
+                messageBody: eventInfo.body,
+                isMention: isMention,
+                isDirect: isDirect,
+                notificationMode: mode
+            ))
         }
     }
 
-    /// Returns a plain-text body of the latest message for notification content.
-    private func latestMessageBody() async -> String? {
-        let latest = await room.latestEvent()
+    /// Information extracted from the latest event for notification purposes.
+    struct LatestEventInfo {
+        let timestamp: UInt64
+        let senderId: String?
+        let author: String?
+        let body: String?
+        let mentions: Mentions?
+    }
+
+    /// Preview information extracted from the latest event.
+    struct PreviewInfo {
+        let text: AttributedString?
+        let date: Date?
+    }
+
+    /// Extracts notification-relevant information from a latest event snapshot.
+    private static func extractEventInfo(from latest: LatestEventValue) -> LatestEventInfo? {
+        let timestamp: UInt64
+        let senderId: String?
+        let profile: ProfileDetails
         let content: TimelineItemContent
+
         switch latest {
-        case .remote(_, _, _, _, let c): content = c
-        case .local(_, _, _, let c, _): content = c
-        case .remoteInvite: return "Invited you to join"
-        case .none: return nil
+        case .remote(let ts, let s, _, let p, let c):
+            timestamp = UInt64(ts)
+            senderId = s
+            profile = p
+            content = c
+        case .local(let ts, let s, let p, let c, _):
+            timestamp = UInt64(ts)
+            senderId = s
+            profile = p
+            content = c
+        case .remoteInvite(let ts, let s, let p):
+            let author: String? = if case .ready(let name, _, _) = p { name ?? s } else { s }
+            return LatestEventInfo(
+                timestamp: UInt64(ts), senderId: s,
+                author: author, body: "Invited you to join", mentions: nil
+            )
+        case .none:
+            return nil
         }
+
+        let author: String? = switch profile {
+        case .ready(let displayName, _, _): displayName ?? senderId
+        default: senderId
+        }
+
+        var body: String?
+        var mentions: Mentions?
         if case .msgLike(let msgLike) = content,
            case .message(let mc) = msgLike.kind {
-            switch mc.msgType {
-            case .text(let t): return t.body
-            case .image: return "Sent an image"
-            case .video: return "Sent a video"
-            case .audio: return "Sent audio"
-            case .file: return "Sent a file"
-            case .emote(let e): return "* \(e.body)"
-            case .notice(let n): return n.body
-            case .location: return "Shared a location"
-            case .gallery: return "Sent a gallery"
-            case .other: return nil
+            mentions = mc.mentions
+            body = switch mc.msgType {
+            case .text(let t): t.body
+            case .image: "Sent an image"
+            case .video: "Sent a video"
+            case .audio: "Sent audio"
+            case .file: "Sent a file"
+            case .emote(let e): "* \(e.body)"
+            case .notice(let n): n.body
+            case .location: "Shared a location"
+            case .gallery: "Sent a gallery"
+            case .other: nil
             }
         }
-        return nil
-    }
-    
-    /// Returns a plain-text representation latest author for notification content.
-    private func latestMessageAuthor() async -> String? {
-        let latest = await room.latestEvent()
-        let sender: String?
-        let profile: ProfileDetails
-        
-        switch latest {
-        case .remote(_, let s, _, let p, _):
-            sender = s
-            profile = p
-        case .local(_, let s, let p, _, _):
-            sender = s
-            profile = p
-        case .remoteInvite(_, let s, let p):
-            sender = s
-            profile = p
-        case .none: return nil
-        }
-        
-        switch (profile) {
-        case .ready(let displayName, _, _): return displayName ?? sender
-        default: return sender
-        }
+
+        return LatestEventInfo(
+            timestamp: timestamp, senderId: senderId,
+            author: author, body: body, mentions: mentions
+        )
     }
 
-    // swiftlint:disable identifier_name
-    private func latestMessagePreview() async -> (AttributedString?, Date?) {
-        let latest = await room.latestEvent()
-
+    /// Extracts a message preview from a latest event snapshot.
+    // swiftlint:disable:next identifier_name
+    private static func extractPreview(from latest: LatestEventValue) -> PreviewInfo {
         let content: TimelineItemContent
         let timestamp: Timestamp
 
@@ -512,22 +600,21 @@ private final class RoomEntry: Identifiable {
             timestamp = ts
         case .remoteInvite(let ts, _, _):
             let date = Date(timeIntervalSince1970: TimeInterval(ts) / 1000)
-            return (AttributedString("Invited you to join"), date)
+            return PreviewInfo(text: AttributedString("Invited you to join"), date: date)
         case .local(let ts, _, _, let c, _):
             content = c
             timestamp = ts
         case .none:
-            return (nil, nil)
+            return PreviewInfo(text: nil, date: nil)
         }
 
         let date = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000)
         let preview = contentPreview(content)
-        return (preview, date)
+        return PreviewInfo(text: preview, date: date)
     }
-    // swiftlint:enable identifier_name
 
     // swiftlint:disable:next cyclomatic_complexity
-    private func contentPreview(_ content: TimelineItemContent) -> AttributedString? {
+    private static func contentPreview(_ content: TimelineItemContent) -> AttributedString? {
         // swiftlint:disable identifier_name
         switch content {
         case .msgLike(let msgLike):

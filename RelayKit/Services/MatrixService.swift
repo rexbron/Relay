@@ -201,6 +201,8 @@ public final class MatrixService: MatrixServiceProtocol {
                 try await roomListManager.start(syncService: syncService)
             }
             cachedNotificationKeywords = (try? await getNotificationKeywords()) ?? []
+            roomListManager.notificationKeywords = cachedNotificationKeywords
+            roomListManager.currentUserId = client.userID
         } catch is CancellationError {
             // Logout cancelled the sync — don't overwrite state
         } catch {
@@ -402,6 +404,7 @@ public final class MatrixService: MatrixServiceProtocol {
         if let summary = rooms.first(where: { $0.id == roomId }) {
             summary.unreadMessages = 0
             summary.unreadMentions = 0
+            summary.hasKeywordHighlight = false
         }
 
         let receiptType: ReceiptType = sendPublicReceipt ? .read : .readPrivate
@@ -847,6 +850,7 @@ public final class MatrixService: MatrixServiceProtocol {
         if !cachedNotificationKeywords.contains(keyword) {
             cachedNotificationKeywords.append(keyword)
         }
+        roomListManager.notificationKeywords = cachedNotificationKeywords
     }
 
     public func removeNotificationKeyword(_ keyword: String) async throws {
@@ -868,6 +872,7 @@ public final class MatrixService: MatrixServiceProtocol {
         }
 
         cachedNotificationKeywords.removeAll { $0 == keyword }
+        roomListManager.notificationKeywords = cachedNotificationKeywords
     }
 
     // MARK: - Per-Room Notification Settings

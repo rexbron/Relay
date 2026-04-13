@@ -147,25 +147,49 @@ struct RelayApp: App {
 
     /// Handles a notification event from the room list manager.
     ///
-    /// Posts a system notification banner when a room has new unread activity
-    /// and the user is not currently looking at that room.
+    /// Posts a system notification banner and/or plays a sound when a room has new
+    /// unread activity, respecting the room's effective notification mode:
+    /// - **All Messages**: sound + banner for every message.
+    /// - **Mentions & Keywords Only**: sound + banner only for mentions.
+    /// - **Mute**: no sound or banner.
+    /// - **Default** (`nil`): DMs behave as All Messages; groups as Mentions & Keywords Only.
+    ///
+    /// When the user is actively viewing the room, the banner is suppressed but
+    /// the sound still plays (if warranted by the notification mode).
     private func handleNotificationEvent(_ event: RoomNotificationEvent) {
-        // Suppress when the user is looking at this room
-        if NSApp.isActive, selectedRoomId == event.roomId { return }
+        // Determine the effective notification mode for this room.
+        // When there is no per-room override, DMs default to "All Messages"
+        // and groups default to "Mentions & Keywords Only".
+        let effectiveMode: RelayInterface.RoomNotificationMode = event.notificationMode
+            ?? (event.isDirect ? .allMessages : .mentionsAndKeywordsOnly)
+
+        // Muted rooms produce no sound, banner, or other system notification.
+        guard effectiveMode != .mute else { return }
+
+        // For "Mentions & Keywords Only", only notify when the message is a mention.
+        if effectiveMode == .mentionsAndKeywordsOnly, !event.isMention {
+            return
+        }
 
         let content = UNMutableNotificationContent()
-        
-        if (event.isDirect) {
+
+        if event.isDirect {
             content.title = event.roomName
         } else {
             content.title = "\(event.messageAuthor ?? "Unknown sender") in \(event.roomName)"
         }
-        
+
         content.body = event.messageBody ?? "New message"
         content.sound = .default
         content.threadIdentifier = event.roomId
         content.userInfo = ["roomId": event.roomId]
         content.categoryIdentifier = NotificationDelegate.roomMessageCategoryIdentifier
+
+        // Suppress the banner when the user is actively viewing this room,
+        // but still deliver the notification so the sound plays.
+        if NSApp.isActive, selectedRoomId == event.roomId {
+            content.interruptionLevel = .passive
+        }
 
         let request = UNNotificationRequest(
             identifier: "room-\(event.roomId)-\(Date.now.timeIntervalSince1970)",
@@ -252,11 +276,17 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     weak var matrixService: MatrixService?
 
     /// Show notifications even when the app is in the foreground.
+    ///
+    /// When a notification has `.passive` interruption level (set when the user is
+    /// actively viewing the room), the banner is suppressed but the sound still plays.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+        if notification.request.content.interruptionLevel == .passive {
+            return [.sound]
+        }
+        return [.banner, .sound]
     }
 
     /// Handle the user tapping a notification.

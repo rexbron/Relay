@@ -80,6 +80,13 @@ public final class RoomSummary: Identifiable {
     /// When `true`, the room should not display unread indicators in the sidebar.
     public var isMuted: Bool { notificationMode == .mute }
 
+    /// Whether this room has an unread message that matched a notification keyword.
+    ///
+    /// The SDK's `highlightCount` may not include keyword push-rule matches, so this
+    /// flag is set by client-side keyword matching in the room list manager. It is
+    /// cleared when the room is marked as read.
+    public var hasKeywordHighlight: Bool = false
+
     /// Creates a new ``RoomSummary`` instance.
     ///
     /// - Parameters:

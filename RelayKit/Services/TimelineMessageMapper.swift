@@ -204,16 +204,20 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
                     )
                 }
 
-                if !event.isOwn, let userId = currentUserId {
-                    // swiftlint:disable:next identifier_name
-                    if case .message(let mc) = ml.kind, let mentions = mc.mentions {
+                if !event.isOwn {
+                    // Check structured mention data from the event content.
+                    if let userId = currentUserId,
+                       case .message(let mc) = ml.kind,
+                       let mentions = mc.mentions {
                         isHighlighted = mentions.userIds.contains(userId) || mentions.room
                     }
+                    // Fall back to client-side body matching for user ID and keywords.
                     if !isHighlighted {
-                        isHighlighted = msgBody.contains(userId)
-                    }
-                    if !isHighlighted {
-                        isHighlighted = notificationKeywords.contains { msgBody.localizedStandardContains($0) }
+                        isHighlighted = HighlightMatcher.bodyMatchesHighlightRules(
+                            msgBody,
+                            currentUserId: currentUserId,
+                            keywords: notificationKeywords
+                        )
                     }
                 }
 

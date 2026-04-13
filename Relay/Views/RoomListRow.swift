@@ -34,20 +34,16 @@ struct RoomListRow: View {
 
     /// The color of the unread indicator dot.
     ///
-    /// - Red: unread mentions (highest priority)
-    /// - Accent (blue): unread messages in an "all messages" room
-    /// - Grey: unread messages in a "mentions only" room (subtle activity indicator)
+    /// - Red: unread mentions, keyword matches, or any unread messages in a DM
+    /// - Accent (blue): unread messages in group rooms
     private var dotColor: Color {
-        if room.unreadMentions > 0 {
+        if room.unreadMentions > 0 || room.isDirect || room.hasKeywordHighlight {
             return .red
-        }
-        if room.notificationMode == .mentionsAndKeywordsOnly {
-            return .secondary.opacity(0.5)
         }
         return .accentColor
     }
 
-    /// Whether any dot should be visible (including subtle grey dots for mentions-only rooms).
+    /// Whether any dot should be visible.
     private var showDot: Bool {
         guard !room.isMuted else { return false }
         return room.unreadMessages > 0 || room.unreadMentions > 0
