@@ -28,6 +28,7 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     var isSyncing: Bool { false }
     var hasLoadedRooms: Bool = true
     var isSessionVerified: Bool = true
+    var hasCheckedVerificationState: Bool = true
     var pendingVerificationRequest: IncomingVerificationRequest?
     var shouldPresentVerificationSheet: Bool = false
     var pendingDeepLink: MatrixURI?

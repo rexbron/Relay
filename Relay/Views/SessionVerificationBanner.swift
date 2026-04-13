@@ -43,7 +43,9 @@ struct SessionVerificationBanner: View {
         if matrixService.pendingVerificationRequest != nil {
             return true
         }
-        return !matrixService.isSessionVerified && !isDismissed
+        return matrixService.hasCheckedVerificationState
+            && !matrixService.isSessionVerified
+            && !isDismissed
     }
 
     var body: some View {

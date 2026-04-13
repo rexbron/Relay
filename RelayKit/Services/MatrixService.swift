@@ -43,6 +43,7 @@ public final class MatrixService: MatrixServiceProtocol {
     public var hasLoadedRooms: Bool { roomListManager.hasLoadedRooms }
 
     public private(set) var isSessionVerified: Bool = false
+    public private(set) var hasCheckedVerificationState: Bool = false
     public var pendingVerificationRequest: IncomingVerificationRequest?
     public var shouldPresentVerificationSheet: Bool = false
     public var pendingDeepLink: MatrixURI?
@@ -145,6 +146,7 @@ public final class MatrixService: MatrixServiceProtocol {
         client = nil
         verificationController = nil
         isSessionVerified = false
+        hasCheckedVerificationState = false
         isVerificationFlowActive = false
         pendingVerificationRequest = nil
         shouldPresentVerificationSheet = false
@@ -238,6 +240,7 @@ public final class MatrixService: MatrixServiceProtocol {
     private func observeVerificationState(client: ClientProxy) {
         verificationStateTask?.cancel()
         isSessionVerified = client.encryption().verificationState() == .verified
+        hasCheckedVerificationState = true
         verificationStateTask = Task { [weak self] in
             let encryption = client.encryption()
             let listener = SDKListener<MatrixRustSDK.VerificationState> { [weak self] state in

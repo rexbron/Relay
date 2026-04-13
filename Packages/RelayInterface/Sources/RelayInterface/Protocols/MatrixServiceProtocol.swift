@@ -335,6 +335,14 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     /// so views can bind to it directly.
     var isSessionVerified: Bool { get }
 
+    /// Whether the verification state has been checked at least once since login.
+    ///
+    /// Because ``isSessionVerified`` defaults to `false`, UI that hides or shows
+    /// based on `!isSessionVerified` would briefly flash on launch before the SDK
+    /// reports the real state. Gates like the session-verification banner should
+    /// wait until this property is `true` before interpreting ``isSessionVerified``.
+    var hasCheckedVerificationState: Bool { get }
+
     /// An incoming verification request from another device, if one is pending.
     ///
     /// When non-`nil`, a system notification is posted allowing the user to accept.
@@ -571,6 +579,7 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     var isSyncing: Bool { false }
     var hasLoadedRooms: Bool = false
     var isSessionVerified: Bool = false
+    var hasCheckedVerificationState: Bool = false
     var pendingVerificationRequest: IncomingVerificationRequest?
     var shouldPresentVerificationSheet: Bool = false
     var pendingDeepLink: MatrixURI?
