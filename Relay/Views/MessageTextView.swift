@@ -488,7 +488,7 @@ struct MessageTextView: NSViewRepresentable {
         let baseFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
 
         // Muted color for blockquote text content.
-        let mutedForeground = foreground.withAlphaComponent(0.55)
+        let mutedForeground = foreground.withAlphaComponent(0.75)
         // Subtle color for the "│" bar character.
         let barColor = foreground.withAlphaComponent(0.25)
 
