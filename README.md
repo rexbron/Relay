@@ -34,6 +34,11 @@ A native macOS chat app built with SwiftUI that wraps the [Matrix Rust SDK](http
 - 🧵 Thread support
 - 🔔 Notification sync
 
+# Try It Out
+
+Relay is currently delivering prerelease builds through Test Flight. Join the
+[Matrix room](https://matrix.to/#/#relayapp:matrix.org) to get an invite URL.
+
 # Get Involved
 
 Join us in the Matrix room to ask questions, discuss ideas, or just say hello:
