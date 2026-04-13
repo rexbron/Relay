@@ -26,7 +26,7 @@ import SwiftUI
 ///   shows a "Verify" button to initiate verification and a dismiss button.
 struct SessionVerificationBanner: View {
     @Environment(\.matrixService) private var matrixService
-    @State private var verificationItem: VerificationItem?
+    @Binding var verificationItem: VerificationItem?
     @State private var isDismissed = false
     @State private var bannerWidth: CGFloat = 0
 
@@ -74,9 +74,6 @@ struct SessionVerificationBanner: View {
                 bannerWidth = newValue
             }
             .animation(.default, value: isCompact)
-            .sheet(item: $verificationItem) { item in
-                VerificationSheet(viewModel: item.viewModel)
-            }
         }
     }
 
@@ -240,6 +237,7 @@ struct SessionVerificationBanner: View {
 // MARK: - Previews
 
 #Preview("Incoming Request") {
+    @Previewable @State var verificationItem: VerificationItem?
     let service = PreviewMatrixService()
     service.isSessionVerified = false
     service.pendingVerificationRequest = IncomingVerificationRequest(
@@ -249,13 +247,14 @@ struct SessionVerificationBanner: View {
     )
     return VStack {
         Spacer()
-        SessionVerificationBanner()
+        SessionVerificationBanner(verificationItem: $verificationItem)
     }
     .environment(\.matrixService, service)
     .frame(width: 280, height: 200)
 }
 
 #Preview("Incoming Request (Compact)") {
+    @Previewable @State var verificationItem: VerificationItem?
     let service = PreviewMatrixService()
     service.isSessionVerified = false
     service.pendingVerificationRequest = IncomingVerificationRequest(
@@ -265,36 +264,39 @@ struct SessionVerificationBanner: View {
     )
     return VStack {
         Spacer()
-        SessionVerificationBanner()
+        SessionVerificationBanner(verificationItem: $verificationItem)
     }
     .environment(\.matrixService, service)
     .frame(width: 116, height: 200)
 }
 
 #Preview("Unverified") {
+    @Previewable @State var verificationItem: VerificationItem?
     let service = PreviewMatrixService()
     service.isSessionVerified = false
     return VStack {
         Spacer()
-        SessionVerificationBanner()
+        SessionVerificationBanner(verificationItem: $verificationItem)
     }
     .environment(\.matrixService, service)
     .frame(width: 280, height: 200)
 }
 
 #Preview("Unverified (Compact)") {
+    @Previewable @State var verificationItem: VerificationItem?
     let service = PreviewMatrixService()
     service.isSessionVerified = false
     return VStack {
         Spacer()
-        SessionVerificationBanner()
+        SessionVerificationBanner(verificationItem: $verificationItem)
     }
     .environment(\.matrixService, service)
     .frame(width: 116, height: 200)
 }
 
 #Preview("Verified") {
-    SessionVerificationBanner()
+    @Previewable @State var verificationItem: VerificationItem?
+    SessionVerificationBanner(verificationItem: $verificationItem)
         .environment(\.matrixService, PreviewMatrixService())
         .frame(width: 280, height: 200)
 }

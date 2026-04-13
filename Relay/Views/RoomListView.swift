@@ -27,6 +27,7 @@ struct RoomListView: View {
 
     @State private var roomToLeave: RoomSummary?
     @State private var showLeaveConfirmation = false
+    @State private var verificationItem: VerificationItem?
 
     var body: some View {
         List(selection: $selectedRoomId) {
@@ -61,8 +62,11 @@ struct RoomListView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 OfflineBanner()
-                SessionVerificationBanner()
+                SessionVerificationBanner(verificationItem: $verificationItem)
             }
+        }
+        .sheet(item: $verificationItem) { item in
+            VerificationSheet(viewModel: item.viewModel)
         }
         .alert("Leave Room", isPresented: $showLeaveConfirmation, presenting: roomToLeave) { room in
             Button("Cancel", role: .cancel) {}
