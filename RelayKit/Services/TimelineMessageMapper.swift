@@ -295,7 +295,8 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
                 reactions: msgReactions,
                 isHighlighted: isHighlighted,
                 replyDetail: msgReplyDetail,
-                isEdited: msgIsEdited
+                isEdited: msgIsEdited,
+                sendState: Self.mapSendState(event.localSendState)
             ))
         }
 
@@ -533,7 +534,8 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
             reactions: msgReactions,
             isHighlighted: isHighlighted,
             replyDetail: msgReplyDetail,
-            isEdited: msgIsEdited
+            isEdited: msgIsEdited,
+            sendState: Self.mapSendState(event.localSendState)
         )
         return SingleItemResult(message: message, hasUnresolvedReply: hasUnresolvedReply)
     }
@@ -752,8 +754,45 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
             isOutgoing: event.isOwn,
             kind: msgKind,
             mediaInfo: msgMediaInfo,
-            isEdited: msgIsEdited
+            isEdited: msgIsEdited,
+            sendState: Self.mapSendState(event.localSendState)
         )
+    }
+
+    // MARK: - Send State Mapping
+
+    /// Converts the SDK's ``EventSendState`` into the app's ``TimelineMessage.SendState``.
+    ///
+    /// Returns `nil` for events that have no local send state (i.e. remote events
+    /// or confirmed local echoes whose state has been cleared by the SDK).
+    nonisolated private static func mapSendState(_ sdkState: EventSendState?) -> TimelineMessage.SendState? {
+        guard let sdkState else { return nil }
+        switch sdkState {
+        case .notSentYet:
+            return .notSentYet
+        case .sendingFailed(let error, _):
+            return .sendingFailed(sendFailureDescription(error))
+        case .sent:
+            return .sent
+        }
+    }
+
+    /// Returns a human-readable description for a send queue wedge error.
+    nonisolated private static func sendFailureDescription(_ error: QueueWedgeError) -> String {
+        switch error {
+        case .insecureDevices:
+            "Unverified devices in this room"
+        case .identityViolations:
+            "A user's verification status changed"
+        case .crossVerificationRequired:
+            "Session verification required"
+        case .missingMediaContent:
+            "Media content is no longer available"
+        case .invalidMimeType(let mimeType):
+            "Invalid file type: \(mimeType)"
+        case .genericApiError(let msg):
+            msg
+        }
     }
 
     // MARK: - System Event Descriptions

@@ -20,6 +20,21 @@ import Foundation
 /// supports text, emote, media, and special event types, and carries associated metadata
 /// such as reactions, reply context, and highlight state.
 public struct TimelineMessage: Identifiable, Sendable, Equatable {
+    /// The delivery state of an outgoing message.
+    public enum SendState: Sendable, Equatable {
+        /// The message has not been sent to the server yet (local echo).
+        case notSentYet
+        /// The message failed to send. The associated value is a human-readable reason.
+        case sendingFailed(String)
+        /// The message was successfully delivered to the server.
+        case sent
+
+        /// Whether this state represents a failed send attempt.
+        nonisolated public var isFailed: Bool {
+            if case .sendingFailed = self { true } else { false }
+        }
+    }
+
     /// The content type of a timeline message.
     public enum Kind: Sendable, Equatable {
         /// A regular text message (optionally with Markdown formatting).
@@ -238,6 +253,14 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
     /// Whether this message has been edited since it was originally sent.
     public var isEdited: Bool
 
+    /// The delivery state of this message, if it is an outgoing local echo.
+    ///
+    /// `nil` for incoming messages and outgoing messages that have already been
+    /// confirmed by the server (i.e. they have an event ID rather than a
+    /// transaction ID). When non-nil, the UI displays a sending indicator
+    /// or error badge next to the message.
+    public var sendState: SendState?
+
     /// Creates a new ``TimelineMessage`` value.
     ///
     /// - Parameters:
@@ -255,6 +278,7 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
     ///   - isHighlighted: Whether the message mentions the current user.
     ///   - replyDetail: Reply context, if this is a reply.
     ///   - isEdited: Whether the message has been edited. Defaults to `false`.
+    ///   - sendState: The delivery state for outgoing messages. Defaults to `nil`.
     nonisolated public init(
         id: String,
         senderID: String,
@@ -269,7 +293,8 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         reactions: [ReactionGroup] = [],
         isHighlighted: Bool = false,
         replyDetail: ReplyDetail? = nil,
-        isEdited: Bool = false
+        isEdited: Bool = false,
+        sendState: SendState? = nil
     ) {
         self.id = id
         self.senderID = senderID
@@ -285,6 +310,7 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         self.isHighlighted = isHighlighted
         self.replyDetail = replyDetail
         self.isEdited = isEdited
+        self.sendState = sendState
     }
 
     /// The best available display name for the sender, falling back to the Matrix user ID.

@@ -40,6 +40,10 @@ public enum SyncState: Equatable, Sendable {
     case syncing
     /// The sync service is running and continuously receiving updates.
     case running
+    /// The device has no network connectivity. Sync services are stopped and
+    /// cached data remains available. Sync will restart automatically when
+    /// connectivity is restored.
+    case offline
     /// The sync service encountered an error and stopped.
     /// The associated value is a human-readable error description.
     case error(String)

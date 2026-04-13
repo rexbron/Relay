@@ -108,6 +108,58 @@ final class RoomListManager {
         }
     }
 
+    /// Restarts the room list subscriptions using a new sync service.
+    ///
+    /// Unlike ``start(syncService:)``, this method preserves existing ``roomEntries``
+    /// and ``rooms`` arrays so cached room data remains available. It cancels the
+    /// previous subscription handles and re-subscribes to the new `RoomListService`.
+    /// The SDK delivers incremental diffs from the new sync position, reconciling
+    /// the room list state without requiring a full replacement.
+    ///
+    /// - Parameter syncService: The newly rebuilt SDK sync service.
+    func restart(syncService: SyncService) async throws {
+        // Cancel existing subscriptions but preserve room data
+        entriesTask?.cancel()
+        entriesTask = nil
+        entriesHandle = nil
+        serviceStateHandle = nil
+
+        let rls = syncService.roomListService()
+        roomListService = rls
+
+        // Re-observe room list service state
+        let (stateStream, stateContinuation) = AsyncStream<RoomListServiceState>.makeStream()
+        let stateListener = SDKListener<RoomListServiceState> { state in
+            stateContinuation.yield(state)
+        }
+        serviceStateHandle = rls.state(listener: stateListener)
+        Task { [weak self] in
+            for await state in stateStream {
+                guard let self else { break }
+                self.roomListServiceState = state
+            }
+        }
+
+        // Re-subscribe to room list entries
+        let (entriesStream, entriesContinuation) = AsyncStream<[RoomListEntriesUpdate]>.makeStream()
+        let entriesListener = SDKListener<[RoomListEntriesUpdate]> { updates in
+            entriesContinuation.yield(updates)
+        }
+        let allRooms = try await rls.allRooms()
+        let handle = allRooms.entriesWithDynamicAdapters(pageSize: 100, listener: entriesListener)
+        _ = handle.controller().setFilter(kind: .all(filters: [.nonLeft, .nonSpace]))
+        entriesHandle = handle
+
+        entriesTask = Task { [weak self] in
+            for await updates in entriesStream {
+                guard let self else { break }
+                self.applyEntryUpdates(updates)
+            }
+        }
+
+        logger.info("Room list manager restarted with new sync service")
+    }
+
     /// Stops listening and clears state.
     func reset() {
         entriesTask?.cancel()

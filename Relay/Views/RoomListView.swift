@@ -59,7 +59,10 @@ struct RoomListView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            SessionVerificationBanner()
+            VStack(spacing: 0) {
+                OfflineBanner()
+                SessionVerificationBanner()
+            }
         }
         .alert("Leave Room", isPresented: $showLeaveConfirmation, presenting: roomToLeave) { room in
             Button("Cancel", role: .cancel) {}

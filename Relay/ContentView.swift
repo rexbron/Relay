@@ -32,7 +32,8 @@ struct ContentView: View {
                 ProgressView("Signing in…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .loggedIn:
-                if matrixService.syncState == .idle {
+                switch matrixService.syncState {
+                case .idle:
                     VStack(spacing: 12) {
                         ProgressView()
                             .controlSize(.large)
@@ -45,7 +46,9 @@ struct ContentView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .onAppear { matrixService.startSyncIfNeeded() }
-                } else {
+                case .syncing, .running, .offline:
+                    MainView()
+                case .error:
                     MainView()
                 }
             case .error:

@@ -260,6 +260,10 @@ public final class ClientProxy: ClientProxyProtocol, @unchecked Sendable {
         client.encryption()
     }
 
+    public func enableAllSendQueues(enable: Bool) async {
+        await client.enableAllSendQueues(enable: enable)
+    }
+
     public func syncService() -> SyncServiceBuilder {
         client.syncService()
     }

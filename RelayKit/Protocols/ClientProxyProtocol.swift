@@ -270,6 +270,17 @@ public protocol ClientProxyProtocol: AnyObject, Sendable {
     /// - Returns: The encryption proxy.
     func encryption() -> Encryption
 
+    // MARK: - Send Queue
+
+    /// Enables or disables all room send queues at once.
+    ///
+    /// When connectivity is lost, the send queues should be disabled so the SDK
+    /// stops attempting to deliver messages. When connectivity is restored, they
+    /// should be re-enabled so queued messages are flushed to the server.
+    ///
+    /// - Parameter enable: `true` to enable send queues, `false` to disable them.
+    func enableAllSendQueues(enable: Bool) async
+
     // MARK: - Sync
 
     /// Creates a sync service builder for configuring sync.

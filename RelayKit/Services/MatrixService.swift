@@ -69,14 +69,17 @@ public final class MatrixService: MatrixServiceProtocol {
     // MARK: - Sub-Services
 
     private let auth = AuthenticationService()
-    private let syncManager = SyncManager()
+    private let networkMonitor = NetworkMonitor()
+    private let syncManager: SyncManager
     private let roomListManager = RoomListManager()
     private let media = MediaService()
     private let directorySearch = DirectorySearchService()
 
     /// Creates a new ``MatrixService``. Call ``restoreSession()`` after initialization to
     /// attempt automatic sign-in from a previously saved keychain session.
-    public init() {}
+    public init() {
+        syncManager = SyncManager(networkMonitor: networkMonitor)
+    }
 
     // MARK: - Session Restore
 
@@ -133,6 +136,7 @@ public final class MatrixService: MatrixServiceProtocol {
         verificationStateTask?.cancel()
         verificationStateTask = nil
 
+        networkMonitor.stop()
         await syncManager.stop()
         try? await client?.logout()
 
@@ -160,6 +164,19 @@ public final class MatrixService: MatrixServiceProtocol {
         guard let client else { return }
 
         do {
+            // Start network monitoring before sync so the SyncManager can
+            // react to connectivity changes from the very beginning.
+            networkMonitor.start()
+
+            // Wire the restart callback so SyncManager can notify us when
+            // the sync service is rebuilt after a connectivity restoration.
+            // RoomListManager re-subscribes to the new service's room list,
+            // preserving existing room state and receiving incremental diffs.
+            syncManager.onSyncServiceRestarted = { [weak self] syncService in
+                guard let self else { return }
+                try await self.roomListManager.restart(syncService: syncService)
+            }
+
             try await syncManager.startSync(client: client)
             try await client.startObserving()
             if let sdkController = try? await client.getSessionVerificationController() {
