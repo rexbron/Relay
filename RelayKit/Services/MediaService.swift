@@ -91,6 +91,15 @@ final class MediaService {
     ///   - height: The desired thumbnail height in pixels.
     ///   - client: The authenticated client proxy.
     /// - Returns: The thumbnail data, or `nil` if the download failed.
+    /// Removes all cached avatars and media data.
+    ///
+    /// Called during logout to ensure stale media from the previous session
+    /// is not served after the next login.
+    func reset() {
+        avatarCache.removeAllObjects()
+        mediaCache.removeAllObjects()
+    }
+
     func mediaThumbnail(mxcURL: String, width: UInt64, height: UInt64, client: any ClientProxyProtocol) async -> Data? {
         let cacheKey = "\(mxcURL)_thumb_\(width)x\(height)" as NSString
         if let cached = mediaCache.object(forKey: cacheKey) {

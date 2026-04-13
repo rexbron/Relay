@@ -73,13 +73,23 @@ final class AuthenticationService {
         try? fm.removeItem(at: cacheDirectory)
     }
 
-    private let sessionDelegate = KeychainSessionDelegate()
+    /// The active session delegate, scoped to the current client lifecycle.
+    ///
+    /// A new delegate is created for each login/restore so that stale
+    /// callbacks from a previous SDK client cannot overwrite the new
+    /// session's tokens in the keychain.
+    private var sessionDelegate = KeychainSessionDelegate()
 
     // MARK: - Builder Helpers
 
     /// Creates a ``ClientBuilderProxy`` with common configuration applied.
     private func makeBuilder() -> ClientBuilderProxy {
-        ClientBuilderProxy()
+        // Invalidate the previous delegate so any lingering SDK callbacks
+        // from an old client are silently dropped.
+        sessionDelegate.invalidate()
+        sessionDelegate = KeychainSessionDelegate()
+
+        return ClientBuilderProxy()
             .sessionPaths(
                 dataPath: Self.dataDirectory.path,
                 cachePath: Self.cacheDirectory.path
@@ -231,7 +241,11 @@ final class AuthenticationService {
     }
 
     /// Clears the persisted session and local SDK data.
+    ///
+    /// Also invalidates the current session delegate so any lingering
+    /// SDK callbacks from the old client cannot write stale tokens.
     func clearSession() {
+        sessionDelegate.invalidate()
         KeychainService.delete()
         Self.resetLocalSessionData()
     }
@@ -257,10 +271,27 @@ final class AuthenticationService {
 
 // MARK: - OIDC Session Delegate
 
-final class KeychainSessionDelegate: ClientSessionDelegate, Sendable {
+final class KeychainSessionDelegate: ClientSessionDelegate, @unchecked Sendable {
     private static let logger = Logger(subsystem: "RelayKit", category: "KeychainSessionDelegate")
 
+    /// Guards against stale callbacks from a previous SDK client.
+    ///
+    /// When `AuthenticationService` creates a new client (e.g. on re-login),
+    /// it invalidates the previous delegate so that any lingering token-refresh
+    /// callbacks from the old Rust SDK client are silently dropped instead of
+    /// overwriting the new session's tokens in the keychain.
+    private var isValid = true
+
+    /// Marks this delegate as invalid so all future callbacks are ignored.
+    func invalidate() {
+        isValid = false
+    }
+
     func retrieveSessionFromKeychain(userId: String) throws -> Session {
+        guard isValid else {
+            Self.logger.warning("retrieveSessionFromKeychain: delegate invalidated, ignoring")
+            throw KeychainSessionError.sessionNotFound
+        }
         Self.logger.debug("retrieveSessionFromKeychain called for user: \(userId)")
         guard let data = KeychainService.load() else {
             Self.logger.error("No session data found in keychain")
@@ -288,6 +319,10 @@ final class KeychainSessionDelegate: ClientSessionDelegate, Sendable {
     }
 
     func saveSessionInKeychain(session: Session) {
+        guard isValid else {
+            Self.logger.warning("saveSessionInKeychain: delegate invalidated, ignoring")
+            return
+        }
         let tokenPrefix = String(session.accessToken.prefix(8))
         // swiftlint:disable:next line_length
         Self.logger.debug("saveSessionInKeychain called for user: \(session.userId), tokenPrefix=\(tokenPrefix)..., hasRefreshToken=\(session.refreshToken != nil), hasOidcData=\(session.oidcData != nil)")

@@ -45,7 +45,7 @@ struct ContentView: View {
                             .foregroundStyle(.tertiary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .onAppear { matrixService.startSyncIfNeeded() }
+                    .task { matrixService.startSyncIfNeeded() }
                 case .syncing, .running, .offline:
                     MainView()
                 case .error:

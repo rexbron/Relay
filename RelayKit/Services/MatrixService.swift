@@ -87,6 +87,7 @@ public final class MatrixService: MatrixServiceProtocol {
     public func restoreSession() async {
         if let (restoredClient, userId) = await auth.restoreSession() {
             client = restoredClient
+            await restoredClient.loadProfile()
             authState = .loggedIn(userId: userId)
         } else {
             authState = .loggedOut
@@ -102,6 +103,7 @@ public final class MatrixService: MatrixServiceProtocol {
                 username: username, password: password, homeserver: homeserver
             )
             client = newClient
+            await newClient.loadProfile()
             authState = .loggedIn(userId: userId)
         } catch {
             authState = .error(error.localizedDescription)
@@ -121,6 +123,7 @@ public final class MatrixService: MatrixServiceProtocol {
                 openURL: openURL
             )
             client = newClient
+            await newClient.loadProfile()
             authState = .loggedIn(userId: userId)
         } catch {
             authState = .error(error.localizedDescription)
@@ -130,6 +133,12 @@ public final class MatrixService: MatrixServiceProtocol {
     // MARK: - Logout
 
     public func logout() async {
+        // Set authState first so SwiftUI immediately switches to LoginView.
+        // This prevents ContentView from seeing syncState == .idle (after
+        // syncManager.stop()) and re-triggering startSyncIfNeeded() on the
+        // old client while logout is still tearing down.
+        authState = .loggedOut
+
         syncTask?.cancel()
         syncTask = nil
         verificationObservationTask?.cancel()
@@ -151,8 +160,10 @@ public final class MatrixService: MatrixServiceProtocol {
         pendingVerificationRequest = nil
         shouldPresentVerificationSheet = false
         roomListManager.reset()
+        media.reset()
         timelineViewModels = [:]
-        authState = .loggedOut
+        cachedNotificationKeywords = []
+        pendingDeepLink = nil
     }
 
     // MARK: - Sync

@@ -89,7 +89,8 @@ struct SettingsAccountTab: View {
             }
         }
         .formStyle(.grouped)
-        .task {
+        .task(id: matrixService.syncState) {
+            guard matrixService.syncState == .running else { return }
             let name = await matrixService.userDisplayName() ?? ""
             displayName = name
             savedDisplayName = name

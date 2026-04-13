@@ -168,6 +168,8 @@ final class RoomListManager {
     func reset() {
         entriesTask?.cancel()
         entriesTask = nil
+        resortTask?.cancel()
+        resortTask = nil
         entriesHandle = nil
         serviceStateHandle = nil
         roomListService = nil
@@ -305,6 +307,11 @@ private final class RoomEntry: Identifiable {
     @ObservationIgnored private var previousUnreadMessages: UInt = 0
     @ObservationIgnored private var previousUnreadMentions: UInt = 0
     @ObservationIgnored private var hasReceivedInitialInfo = false
+
+    deinit {
+        roomInfoHandle?.cancel()
+        listenerTask?.cancel()
+    }
 
     init(
         room: Room,
