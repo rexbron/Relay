@@ -63,22 +63,24 @@ struct TimelineInspectorView: View {
     /// Called when a pinned message row is tapped to scroll the timeline.
     var onScrollToMessage: ((String) -> Void)?
 
-    /// Called when the user taps a member in the timeline (for external navigation).
-    var onUserTap: ((UserProfile) -> Void)?
+    /// A profile selected externally (e.g. by tapping a `matrix.to` user link).
+    /// When set, the inspector switches to the Members tab and shows this user's
+    /// detail panel. The binding is cleared once the profile has been consumed.
+    @Binding var selectedProfile: UserProfile?
 
     @State private var viewModel: TimelineInspectorViewModel
     @State private var selectedTab: InspectorTab = .general
 
     init(
         roomId: String,
+        selectedProfile: Binding<UserProfile?> = .constant(nil),
         onMessageUser: ((String) -> Void)? = nil,
-        onScrollToMessage: ((String) -> Void)? = nil,
-        onUserTap: ((UserProfile) -> Void)? = nil
+        onScrollToMessage: ((String) -> Void)? = nil
     ) {
         self.roomId = roomId
+        self._selectedProfile = selectedProfile
         self.onMessageUser = onMessageUser
         self.onScrollToMessage = onScrollToMessage
-        self.onUserTap = onUserTap
         self._viewModel = State(initialValue: TimelineInspectorViewModel(roomId: roomId))
     }
 
@@ -93,6 +95,11 @@ struct TimelineInspectorView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
             await viewModel.load(service: matrixService)
+        }
+        .onChange(of: selectedProfile) { _, profile in
+            if profile != nil {
+                selectedTab = .members
+            }
         }
     }
 
@@ -117,6 +124,7 @@ struct TimelineInspectorView: View {
         case .members:
             InspectorMembersTab(
                 viewModel: viewModel,
+                selectedProfile: $selectedProfile,
                 onMessageUser: onMessageUser
             )
         case .behavior:
@@ -128,11 +136,6 @@ struct TimelineInspectorView: View {
         case .roles:
             InspectorRolesTab(viewModel: viewModel)
         }
-    }
-
-    /// Selects the Members tab and pre-selects a specific user profile.
-    func showMember(_ profile: UserProfile) {
-        selectedTab = .members
     }
 }
 

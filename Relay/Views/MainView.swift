@@ -35,6 +35,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     @State private var previewingInvite: RoomSummary?
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var isJoiningLinkedRoom = false
+    @State private var inspectorSelectedProfile: UserProfile?
 
     private func scrollToMessage(_ eventId: String) {
         showingPinnedMessages = false
@@ -42,6 +43,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     }
 
     private func showUserProfile(_ profile: UserProfile) {
+        inspectorSelectedProfile = profile
         withAnimation(.easeInOut(duration: 0.25)) {
             showingInspector = true
         }
@@ -413,6 +415,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     private func inspectorPanel(roomId: String) -> some View {
         TimelineInspectorView(
             roomId: roomId,
+            selectedProfile: $inspectorSelectedProfile,
             onMessageUser: { userId in
                 Task {
                     do {

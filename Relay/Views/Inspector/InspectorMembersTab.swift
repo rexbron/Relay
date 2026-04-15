@@ -20,11 +20,16 @@ import SwiftUI
 struct InspectorMembersTab: View {
     let viewModel: TimelineInspectorViewModel
 
+    /// A profile selected externally (e.g. via a `matrix.to` user link tap).
+    /// When set, the tab immediately shows the detail panel for this user and
+    /// clears the binding so that navigating back returns to the member list.
+    @Binding var selectedProfile: UserProfile?
+
     /// Called when the user taps the "Message" button on a member's detail panel.
     var onMessageUser: ((String) -> Void)?
 
     @State private var searchText = ""
-    @State private var selectedProfile: UserProfile?
+    @State private var displayedProfile: UserProfile?
 
     private var filteredMembers: [RoomMemberDetails] {
         guard !searchText.isEmpty else { return viewModel.allMembers }
@@ -36,27 +41,35 @@ struct InspectorMembersTab: View {
     }
 
     var body: some View {
-        if let profile = selectedProfile {
-            MemberDetailPanel(
-                profile: profile,
-                roomId: viewModel.roomId,
-                onMessageTap: onMessageUser.map { handler in
-                    { handler(profile.userId) }
-                },
-                onBack: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        selectedProfile = nil
+        Group {
+            if let profile = displayedProfile {
+                MemberDetailPanel(
+                    profile: profile,
+                    roomId: viewModel.roomId,
+                    onMessageTap: onMessageUser.map { handler in
+                        { handler(profile.userId) }
+                    },
+                    onBack: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            displayedProfile = nil
+                        }
+                    },
+                    onModerationAction: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            displayedProfile = nil
+                        }
+                        Task { await viewModel.loadAllMembers() }
                     }
-                },
-                onModerationAction: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        selectedProfile = nil
-                    }
-                    Task { await viewModel.loadAllMembers() }
-                }
-            )
-        } else {
-            memberList
+                )
+            } else {
+                memberList
+            }
+        }
+        .onAppear {
+            consumeExternalProfile()
+        }
+        .onChange(of: selectedProfile) {
+            consumeExternalProfile()
         }
     }
 
@@ -78,7 +91,7 @@ struct InspectorMembersTab: View {
                         }
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) {
-                                selectedProfile = UserProfile(member: member)
+                                displayedProfile = UserProfile(member: member)
                             }
                         } label: {
                             InspectorMemberRow(member: member)
@@ -102,6 +115,15 @@ struct InspectorMembersTab: View {
         }
     }
 
+    /// Consumes an externally-set ``selectedProfile`` by moving it into the
+    /// local ``displayedProfile`` state and clearing the binding.
+    private func consumeExternalProfile() {
+        if let profile = selectedProfile {
+            displayedProfile = profile
+            selectedProfile = nil
+        }
+    }
+
     // MARK: - Search
 
     private var searchField: some View {
@@ -118,7 +140,7 @@ struct InspectorMembersTab: View {
 }
 
 #Preview {
-    InspectorMembersTab(viewModel: .preview())
+    InspectorMembersTab(viewModel: .preview(), selectedProfile: .constant(nil))
         .environment(\.matrixService, PreviewMatrixService())
         .frame(width: 280, height: 600)
 }
