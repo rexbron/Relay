@@ -133,6 +133,11 @@ public protocol ClientProxyProtocol: AnyObject, Sendable {
     /// - Throws: `ClientError` if joining fails.
     func joinRoom(id: String) async throws -> Room
 
+    // MARK: - Spaces
+
+    /// Returns the SDK's space service for querying space hierarchies and membership.
+    func spaceService() async -> SpaceService
+
     // MARK: - Media
 
     /// Uploads media data to the homeserver's content repository.

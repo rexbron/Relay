@@ -15,6 +15,14 @@
 import RelayInterface
 import SwiftUI
 
+/// The context in which the inspector is being used.
+enum InspectorContext {
+    /// Inspecting a regular room (shown alongside the timeline).
+    case room
+    /// Inspecting a space (shown alongside the space detail view).
+    case space
+}
+
 /// The tabs available in the timeline inspector, displayed as an icon-only segmented control.
 enum InspectorTab: String, CaseIterable, Identifiable {
     case general
@@ -23,6 +31,7 @@ enum InspectorTab: String, CaseIterable, Identifiable {
     case notifications
     case security
     case roles
+    case settings
 
     var id: String { rawValue }
 
@@ -34,6 +43,7 @@ enum InspectorTab: String, CaseIterable, Identifiable {
         case .notifications: "bell"
         case .security: "lock.shield"
         case .roles: "crown"
+        case .settings: "gearshape"
         }
     }
 
@@ -45,17 +55,36 @@ enum InspectorTab: String, CaseIterable, Identifiable {
         case .notifications: "Notifications"
         case .security: "Security & Privacy"
         case .roles: "Roles & Permissions"
+        case .settings: "Settings"
         }
+    }
+
+    /// Whether this tab is available in the given inspector context.
+    func supports(_ context: InspectorContext) -> Bool {
+        switch self {
+        case .general, .members, .notifications:
+            true
+        case .behavior, .security, .roles:
+            context == .room
+        case .settings:
+            context == .space
+        }
+    }
+
+    /// Returns the tabs available for the given context.
+    static func tabs(for context: InspectorContext) -> [InspectorTab] {
+        allCases.filter { $0.supports(context) }
     }
 }
 
-/// An inspector panel that displays detailed room information organized into
-/// Xcode-style icon-only segmented tabs: General, Members, Notifications,
-/// Security & Privacy, and Roles & Permissions.
+/// An inspector panel that displays detailed room or space information organized into
+/// Xcode-style icon-only segmented tabs. The available tabs depend on the ``InspectorContext``:
+/// rooms show all six tabs, while spaces show General, Members, Notifications, and Settings.
 struct TimelineInspectorView: View {
     @Environment(\.matrixService) private var matrixService
 
     let roomId: String
+    let context: InspectorContext
 
     /// Called when the user taps the "Message" button on a member's detail panel.
     var onMessageUser: ((String) -> Void)?
@@ -68,20 +97,33 @@ struct TimelineInspectorView: View {
     /// detail panel. The binding is cleared once the profile has been consumed.
     @Binding var selectedProfile: UserProfile?
 
+    /// The initially selected tab. When `.settings`, the inspector opens directly
+    /// to the Settings tab (used when the "Settings" button in ``SpaceDetailView``
+    /// is tapped). The binding is cleared after being consumed.
+    @Binding var initialTab: InspectorTab?
+
     @State private var viewModel: TimelineInspectorViewModel
     @State private var selectedTab: InspectorTab = .general
 
+    private var availableTabs: [InspectorTab] {
+        InspectorTab.tabs(for: context)
+    }
+
     init(
         roomId: String,
+        context: InspectorContext = .room,
         selectedProfile: Binding<UserProfile?> = .constant(nil),
+        initialTab: Binding<InspectorTab?> = .constant(nil),
         onMessageUser: ((String) -> Void)? = nil,
         onScrollToMessage: ((String) -> Void)? = nil
     ) {
         self.roomId = roomId
+        self.context = context
         self._selectedProfile = selectedProfile
+        self._initialTab = initialTab
         self.onMessageUser = onMessageUser
         self.onScrollToMessage = onScrollToMessage
-        self._viewModel = State(initialValue: TimelineInspectorViewModel(roomId: roomId))
+        self._viewModel = State(initialValue: TimelineInspectorViewModel(roomId: roomId, context: context))
     }
 
     var body: some View {
@@ -101,12 +143,24 @@ struct TimelineInspectorView: View {
                 selectedTab = .members
             }
         }
+        .onChange(of: initialTab) { _, tab in
+            if let tab {
+                selectedTab = tab
+                initialTab = nil
+            }
+        }
+        .onAppear {
+            if let tab = initialTab {
+                selectedTab = tab
+                initialTab = nil
+            }
+        }
     }
 
     // MARK: - Tab Bar
 
     private var tabBar: some View {
-        InspectorTabBar(selection: $selectedTab)
+        InspectorTabBar(selection: $selectedTab, tabs: availableTabs)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
     }
@@ -119,11 +173,13 @@ struct TimelineInspectorView: View {
         case .general:
             InspectorGeneralTab(
                 viewModel: viewModel,
+                context: context,
                 onPinnedMessageTap: onScrollToMessage
             )
         case .members:
             InspectorMembersTab(
                 viewModel: viewModel,
+                context: context,
                 selectedProfile: $selectedProfile,
                 onMessageUser: onMessageUser
             )
@@ -135,12 +191,20 @@ struct TimelineInspectorView: View {
             InspectorSecurityTab(viewModel: viewModel)
         case .roles:
             InspectorRolesTab(viewModel: viewModel)
+        case .settings:
+            InspectorSettingsTab(viewModel: viewModel)
         }
     }
 }
 
-#Preview {
-    TimelineInspectorView(roomId: "!design:matrix.org")
+#Preview("Room") {
+    TimelineInspectorView(roomId: "!design:matrix.org", context: .room)
+        .environment(\.matrixService, PreviewMatrixService())
+        .frame(width: 280, height: 600)
+}
+
+#Preview("Space") {
+    TimelineInspectorView(roomId: "!space-work:matrix.org", context: .space)
         .environment(\.matrixService, PreviewMatrixService())
         .frame(width: 280, height: 600)
 }

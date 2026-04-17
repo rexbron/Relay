@@ -283,7 +283,9 @@ struct InspectorSecurityTab: View {
 
 // MARK: - Security Status Row
 
-private struct SecurityStatusRow: View {
+/// A read-only row displaying a status icon, title, and detail description.
+/// Used in the Security and Settings inspector tabs to show non-editable state.
+struct SecurityStatusRow: View {
     let icon: String
     let color: Color
     let title: String

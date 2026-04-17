@@ -257,7 +257,8 @@ private struct DirectoryRoomCard: View {
                         Button("Join", systemImage: "plus") {
                             onJoin()
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.bordered)
+                        .tint(.accentColor)
                         .controlSize(.small)
                     }
                 }

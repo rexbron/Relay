@@ -20,11 +20,12 @@ import SwiftUI
 /// tab is highlighted with an animated blue capsule behind the icon.
 struct InspectorTabBar: View {
     @Binding var selection: InspectorTab
+    var tabs: [InspectorTab] = InspectorTab.allCases
     @Namespace private var tabNamespace
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(InspectorTab.allCases) { tab in
+            ForEach(tabs) { tab in
                 tabButton(tab)
             }
         }

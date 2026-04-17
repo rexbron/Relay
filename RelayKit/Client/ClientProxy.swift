@@ -276,6 +276,10 @@ public final class ClientProxy: ClientProxyProtocol, @unchecked Sendable {
         client.syncService()
     }
 
+    public func spaceService() async -> SpaceService {
+        await client.spaceService()
+    }
+
     public func getNotificationSettings() async -> NotificationSettings {
         await client.getNotificationSettings()
     }

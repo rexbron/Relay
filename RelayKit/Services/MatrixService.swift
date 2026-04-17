@@ -38,6 +38,7 @@ public final class MatrixService: MatrixServiceProtocol {
     public private(set) var authState: AuthState = .unknown
     public var syncState: SyncState { syncManager.syncState }
     public var rooms: [RelayInterface.RoomSummary] { roomListManager.rooms }
+    public var spaces: [RelayInterface.RoomSummary] { spaceListManager.spaces }
 
     public var isSyncing: Bool { syncState == .syncing || syncState == .running }
     public var hasLoadedRooms: Bool { roomListManager.hasLoadedRooms }
@@ -67,12 +68,14 @@ public final class MatrixService: MatrixServiceProtocol {
     private var verificationObservationTask: Task<Void, Never>?
     private var verificationStateTask: Task<Void, Never>?
 
+
     // MARK: - Sub-Services
 
     private let auth = AuthenticationService()
     private let networkMonitor = NetworkMonitor()
     private let syncManager: SyncManager
     private let roomListManager = RoomListManager()
+    private let spaceListManager = SpaceListManager()
     private let media = MediaService()
     private let directorySearch = DirectorySearchService()
 
@@ -160,6 +163,7 @@ public final class MatrixService: MatrixServiceProtocol {
         pendingVerificationRequest = nil
         shouldPresentVerificationSheet = false
         roomListManager.reset()
+        spaceListManager.reset()
         media.reset()
         timelineViewModels = [:]
         cachedNotificationKeywords = []
@@ -200,6 +204,8 @@ public final class MatrixService: MatrixServiceProtocol {
             if let syncService = syncManager.syncService {
                 try await roomListManager.start(syncService: syncService)
             }
+            observeSpaceDescendants()
+            await spaceListManager.start(client: client)
             cachedNotificationKeywords = (try? await getNotificationKeywords()) ?? []
             roomListManager.notificationKeywords = cachedNotificationKeywords
             roomListManager.currentUserId = client.userID
@@ -267,6 +273,50 @@ public final class MatrixService: MatrixServiceProtocol {
                 try? await Task.sleep(for: .seconds(60))
             }
             handle.cancel()
+        }
+    }
+
+    // MARK: - Space Descendants
+
+    /// Observes changes to the space-to-room mapping and propagates `parentSpaceIds`
+    /// to each room's ``RoomSummary``.
+    ///
+    /// When the ``SpaceListManager`` updates its ``SpaceListManager/spaceDescendants``
+    /// mapping (due to rooms being added/removed from spaces), this method iterates
+    /// through all rooms and updates their `parentSpaceIds` accordingly.
+    private func observeSpaceDescendants() {
+        spaceListManager.onDescendantsChanged = { [weak self] in
+            self?.applySpaceDescendantsToRooms()
+        }
+        roomListManager.onRoomsRebuilt = { [weak self] in
+            self?.applySpaceDescendantsToRooms()
+        }
+    }
+
+    /// Updates each room and space summary's `parentSpaceIds` from the current space descendants map.
+    private func applySpaceDescendantsToRooms() {
+        let descendants = spaceListManager.spaceDescendants
+
+        // Apply to rooms
+        for room in roomListManager.rooms {
+            var newParents = Set<String>()
+            for (spaceId, childIds) in descendants where childIds.contains(room.id) {
+                newParents.insert(spaceId)
+            }
+            if room.parentSpaceIds != newParents {
+                room.parentSpaceIds = newParents
+            }
+        }
+
+        // Apply to spaces (so sub-spaces know their parent)
+        for space in spaceListManager.spaces {
+            var newParents = Set<String>()
+            for (spaceId, childIds) in descendants where childIds.contains(space.id) {
+                newParents.insert(spaceId)
+            }
+            if space.parentSpaceIds != newParents {
+                space.parentSpaceIds = newParents
+            }
         }
     }
 
@@ -363,7 +413,8 @@ public final class MatrixService: MatrixServiceProtocol {
             isDirect: false,
             visibility: options.isPublic ? .public : .private,
             preset: options.isPublic ? .publicChat : .privateChat,
-            canonicalAlias: options.address
+            canonicalAlias: options.address,
+            isSpace: options.isSpace
         )
         return try await client.createRoom(parameters: params)
     }
@@ -398,10 +449,101 @@ public final class MatrixService: MatrixServiceProtocol {
         return RoomPreviewViewModel(roomId: roomId, client: client, errorReporter: errorReporter)
     }
 
+    public func makeSpaceHierarchyViewModel(spaceId: String) -> (any SpaceHierarchyViewModelProtocol)? {
+        guard let client else { return nil }
+        let spaceName = spaceListManager.spaces.first(where: { $0.id == spaceId })?.name ?? ""
+        return SpaceHierarchyViewModel(
+            spaceId: spaceId,
+            spaceName: spaceName,
+            client: client,
+            errorReporter: errorReporter
+        )
+    }
+
     public func leaveRoom(id: String) async throws {
         guard let room = room(id: id) else { return }
         try await room.leave()
         timelineViewModels.removeValue(forKey: id)
+    }
+
+    public func leaveSpace(spaceId: String) async throws -> [LeaveSpaceChild] {
+        guard let client else { return [] }
+        let service = await client.spaceService()
+        let handle = try await service.leaveSpace(spaceId: spaceId)
+        return handle.rooms().map { room in
+            LeaveSpaceChild(
+                roomId: room.spaceRoom.roomId,
+                name: room.spaceRoom.displayName,
+                avatarURL: room.spaceRoom.avatarUrl,
+                isLastOwner: room.isLastOwner,
+                memberCount: room.spaceRoom.numJoinedMembers,
+                isSpace: room.spaceRoom.roomType == .space
+            )
+        }
+    }
+
+    public func confirmLeaveSpace(spaceId: String, roomIds: [String]) async throws {
+        guard let client else { return }
+        let service = await client.spaceService()
+        let handle = try await service.leaveSpace(spaceId: spaceId)
+        var allIds = roomIds
+        if !allIds.contains(spaceId) {
+            allIds.append(spaceId)
+        }
+        try await handle.leave(roomIds: allIds)
+        for id in allIds {
+            timelineViewModels.removeValue(forKey: id)
+        }
+    }
+
+    public func inviteUser(roomId: String, userId: String) async throws {
+        guard let room = room(id: roomId) else { return }
+        try await room.inviteUserById(userId: userId)
+    }
+
+    public func setRoomName(roomId: String, name: String) async throws {
+        guard let room = room(id: roomId) else { return }
+        try await room.setName(name: name)
+    }
+
+    public func setRoomTopic(roomId: String, topic: String) async throws {
+        guard let room = room(id: roomId) else { return }
+        try await room.setTopic(topic: topic)
+    }
+
+    public func uploadRoomAvatar(roomId: String, mimeType: String, data: Data) async throws {
+        guard let room = room(id: roomId) else { return }
+        try await room.uploadAvatar(mimeType: mimeType, data: data, mediaInfo: nil)
+    }
+
+    public func removeRoomAvatar(roomId: String) async throws {
+        guard let room = room(id: roomId) else { return }
+        try await room.removeAvatar()
+    }
+
+    public func editableSpaces() async -> [EditableSpace] {
+        guard let client else { return [] }
+        let service = await client.spaceService()
+        let sdkSpaces = await service.editableSpaces()
+        return sdkSpaces.map { spaceRoom in
+            EditableSpace(
+                roomId: spaceRoom.roomId,
+                name: spaceRoom.displayName,
+                avatarURL: spaceRoom.avatarUrl
+            )
+        }
+    }
+
+    public func addChildToSpace(childId: String, spaceId: String) async throws {
+        guard let client else { throw RelayError.notLoggedIn }
+        let service = await client.spaceService()
+        try await service.addChildToSpace(childId: childId, spaceId: spaceId)
+    }
+
+    public func removeChildFromSpace(childId: String, spaceId: String) async throws {
+        guard let client else { throw RelayError.notLoggedIn }
+        let service = await client.spaceService()
+        try await service.removeChildFromSpace(childId: childId, spaceId: spaceId)
     }
 
     public func setFavourite(roomId: String, isFavourite: Bool) async throws {

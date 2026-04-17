@@ -117,6 +117,20 @@ public final class RoomSummary: Identifiable {
     /// The `mxc://` avatar URL of the user who sent the invite, if available.
     public var inviterAvatarURL: String?
 
+    /// Whether this room is a Matrix space (`m.space` room type).
+    ///
+    /// Space rooms are containers for organizing other rooms and sub-spaces.
+    /// They should not display a message timeline; instead, a space detail view
+    /// shows children rooms and space metadata.
+    public var isSpace: Bool
+
+    /// The IDs of spaces that this room belongs to.
+    ///
+    /// Populated from the space graph maintained by the SDK's ``SpaceService``.
+    /// Used by the sidebar to filter rooms when a space is selected in the
+    /// space filter bar.
+    public var parentSpaceIds: Set<String>
+
     /// Creates a new ``RoomSummary`` instance.
     ///
     /// - Parameters:
@@ -136,6 +150,8 @@ public final class RoomSummary: Identifiable {
     ///   - membership: The user's membership state. Defaults to `.joined`.
     ///   - inviterName: The display name of the inviter, if this is an invited room.
     ///   - inviterAvatarURL: The avatar URL of the inviter, if available.
+    ///   - isSpace: Whether this room is a Matrix space. Defaults to `false`.
+    ///   - parentSpaceIds: The IDs of spaces this room belongs to. Defaults to empty.
     public init(
         id: String,
         name: String,
@@ -153,7 +169,9 @@ public final class RoomSummary: Identifiable {
         isFavourite: Bool = false,
         membership: RoomMembership = .joined,
         inviterName: String? = nil,
-        inviterAvatarURL: String? = nil
+        inviterAvatarURL: String? = nil,
+        isSpace: Bool = false,
+        parentSpaceIds: Set<String> = []
     ) {
         self.id = id
         self.name = name
@@ -172,5 +190,7 @@ public final class RoomSummary: Identifiable {
         self.membership = membership
         self.inviterName = inviterName
         self.inviterAvatarURL = inviterAvatarURL
+        self.isSpace = isSpace
+        self.parentSpaceIds = parentSpaceIds
     }
 }

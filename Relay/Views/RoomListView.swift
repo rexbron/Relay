@@ -23,10 +23,10 @@ struct RoomListView: View {
     @Environment(\.errorReporter) private var errorReporter
     @Binding var selectedRoomId: String?
     @Binding var searchText: String
+    @Binding var selectedSpaceId: String?
     @AppStorage("roomSortOrder") private var sortOrder: RoomSortOrder = .lastMessage
     @AppStorage("roomSortDirection") private var sortDirection: RoomSortDirection = .descending
     @AppStorage("roomTypeFilter") private var typeFilter: RoomTypeFilter = .all
-
     @State private var roomToLeave: RoomSummary?
     @State private var showLeaveConfirmation = false
     @State private var verificationItem: VerificationItem?
@@ -272,9 +272,14 @@ extension RoomListView {
         return invites
     }
 
-    /// All joined rooms with the current type filter, search filter, and sort applied.
+    /// All joined rooms with the current space, type, search filter, and sort applied.
     private var filteredRooms: [RoomSummary] {
         var rooms = matrixService.rooms.filter { !$0.isInvited }
+
+        // Apply space filter.
+        if let selectedSpaceId {
+            rooms = rooms.filter { $0.parentSpaceIds.contains(selectedSpaceId) }
+        }
 
         // Apply type filter.
         switch typeFilter {
@@ -352,10 +357,12 @@ extension RoomListView {
 #Preview("Room Rows") {
     @Previewable @State var sel: String?
     @Previewable @State var search = ""
+    @Previewable @State var space: String?
     @Previewable @State var invite: RoomSummary?
     RoomListView(
         selectedRoomId: $sel,
         searchText: $search,
+        selectedSpaceId: $space,
         previewingInvite: $invite
     )
     .environment(\.matrixService, PreviewMatrixService())
@@ -366,6 +373,7 @@ extension RoomListView {
     RoomListView(
         selectedRoomId: .constant(nil),
         searchText: .constant(""),
+        selectedSpaceId: .constant(nil),
         previewingInvite: .constant(nil)
     )
     .frame(width: 300, height: 400)

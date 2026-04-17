@@ -139,6 +139,13 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     /// The list of joined rooms, sorted by most recent activity.
     var rooms: [RoomSummary] { get }
 
+    /// The list of top-level joined spaces, updated reactively via the SDK's ``SpaceService``.
+    ///
+    /// Space rooms are containers that organize other rooms and sub-spaces. This list
+    /// drives the space filter bar in the sidebar, allowing users to narrow the room list
+    /// to rooms belonging to a particular space.
+    var spaces: [RoomSummary] { get }
+
     /// Whether the client is actively syncing (`syncing` or `running`).
     var isSyncing: Bool { get }
 
@@ -241,6 +248,12 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     /// - Returns: A ``RoomPreviewViewModelProtocol`` instance, or `nil` if not available.
     func makeRoomPreviewViewModel(roomId: String) -> (any RoomPreviewViewModelProtocol)?
 
+    /// Creates a view model for browsing the room hierarchy within a space.
+    ///
+    /// - Parameter spaceId: The Matrix room ID of the space to browse.
+    /// - Returns: A ``SpaceHierarchyViewModelProtocol`` instance, or `nil` if not available.
+    func makeSpaceHierarchyViewModel(spaceId: String) -> (any SpaceHierarchyViewModelProtocol)?
+
     /// Accepts a pending room invitation and joins the room.
     ///
     /// - Parameter roomId: The Matrix room identifier of the invited room.
@@ -255,6 +268,26 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     ///
     /// - Parameter id: The Matrix room identifier.
     func leaveRoom(id: String) async throws
+
+    /// Fetches the child rooms and sub-spaces of a space in preparation for leaving.
+    ///
+    /// Call this method to discover which rooms the user belongs to within the space.
+    /// The returned list drives the confirmation UI where the user selects which child
+    /// rooms to leave alongside the parent space.
+    ///
+    /// - Parameter spaceId: The Matrix room ID of the space.
+    /// - Returns: The list of child rooms and sub-spaces within the space.
+    func leaveSpace(spaceId: String) async throws -> [LeaveSpaceChild]
+
+    /// Confirms leaving a space and the selected child rooms.
+    ///
+    /// Performs a bulk leave of the specified rooms. The space itself is always included
+    /// in the leave operation even if not explicitly listed in `roomIds`.
+    ///
+    /// - Parameters:
+    ///   - spaceId: The Matrix room ID of the space.
+    ///   - roomIds: The room IDs selected by the user to leave alongside the space.
+    func confirmLeaveSpace(spaceId: String, roomIds: [String]) async throws
 
     /// Sets or clears the favourite (pinned) state for a room.
     ///
@@ -575,6 +608,78 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     ///
     /// - Parameter userId: The user to unignore.
     func unignoreUser(userId: String) async throws
+
+    // MARK: Room Invites
+
+    /// Invites a user to a room by their Matrix user ID.
+    ///
+    /// The user will receive an invitation that they can accept or decline.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier of the room to invite into.
+    ///   - userId: The Matrix user ID to invite (e.g. `"@alice:matrix.org"`).
+    func inviteUser(roomId: String, userId: String) async throws
+
+    // MARK: Room Editing
+
+    /// Updates the display name of a room.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - name: The new display name.
+    func setRoomName(roomId: String, name: String) async throws
+
+    /// Updates the topic of a room.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - topic: The new topic string.
+    func setRoomTopic(roomId: String, topic: String) async throws
+
+    /// Uploads and sets a new avatar image for a room.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - mimeType: The MIME type of the image (e.g. `"image/png"`).
+    ///   - data: The raw image data.
+    func uploadRoomAvatar(roomId: String, mimeType: String, data: Data) async throws
+
+    /// Removes the avatar from a room.
+    ///
+    /// - Parameter roomId: The Matrix room identifier.
+    func removeRoomAvatar(roomId: String) async throws
+
+    // MARK: Space Management
+
+    /// Returns the list of spaces where the current user has permission to
+    /// add or remove child rooms (i.e. can send `m.space.child` state events).
+    ///
+    /// Use this to determine which spaces appear in the "Add to Space" picker
+    /// and to gate admin-only actions in the space detail view.
+    ///
+    /// - Returns: An array of ``EditableSpace`` representing manageable spaces.
+    func editableSpaces() async -> [EditableSpace]
+
+    /// Adds a room or sub-space as a child of a space.
+    ///
+    /// Sends an `m.space.child` state event in the parent space pointing to
+    /// the child room. The child will appear in the space's hierarchy for all
+    /// members.
+    ///
+    /// - Parameters:
+    ///   - childId: The Matrix room ID of the room or sub-space to add.
+    ///   - spaceId: The Matrix room ID of the parent space.
+    func addChildToSpace(childId: String, spaceId: String) async throws
+
+    /// Removes a child room or sub-space from a space.
+    ///
+    /// Removes the `m.space.child` state event for the child from the parent
+    /// space. The child will no longer appear in the space's hierarchy.
+    ///
+    /// - Parameters:
+    ///   - childId: The Matrix room ID of the child to remove.
+    ///   - spaceId: The Matrix room ID of the parent space.
+    func removeChildFromSpace(childId: String, spaceId: String) async throws
 }
 
 // MARK: - Environment Key
@@ -597,6 +702,7 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     var authState: AuthState = .unknown
     var syncState: SyncState = .idle
     var rooms: [RoomSummary] = []
+    var spaces: [RoomSummary] = []
     var isSyncing: Bool { false }
     var hasLoadedRooms: Bool = false
     var isSessionVerified: Bool = false
@@ -622,9 +728,12 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func createDirectMessage(userId: String) async throws -> String { "" }
     func makeRoomDirectoryViewModel() -> (any RoomDirectoryViewModelProtocol)? { nil }
     func makeRoomPreviewViewModel(roomId: String) -> (any RoomPreviewViewModelProtocol)? { nil }
+    func makeSpaceHierarchyViewModel(spaceId: String) -> (any SpaceHierarchyViewModelProtocol)? { nil }
     func acceptInvite(roomId: String) async throws {}
     func declineInvite(roomId: String) async throws {}
     func leaveRoom(id: String) async throws {}
+    func leaveSpace(spaceId: String) async throws -> [LeaveSpaceChild] { [] }
+    func confirmLeaveSpace(spaceId: String, roomIds: [String]) async throws {}
     func setFavourite(roomId: String, isFavourite: Bool) async throws {}
     func searchDirectory(query: String) async throws -> [DirectoryRoom] { [] }
     func markAsRead(roomId: String, sendPublicReceipt: Bool) async {}
@@ -673,4 +782,12 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func isUserIgnored(userId: String) async throws -> Bool { false }
     func ignoreUser(userId: String) async throws {}
     func unignoreUser(userId: String) async throws {}
+    func inviteUser(roomId: String, userId: String) async throws {}
+    func setRoomName(roomId: String, name: String) async throws {}
+    func setRoomTopic(roomId: String, topic: String) async throws {}
+    func uploadRoomAvatar(roomId: String, mimeType: String, data: Data) async throws {}
+    func removeRoomAvatar(roomId: String) async throws {}
+    func editableSpaces() async -> [EditableSpace] { [] }
+    func addChildToSpace(childId: String, spaceId: String) async throws {}
+    func removeChildFromSpace(childId: String, spaceId: String) async throws {}
 }

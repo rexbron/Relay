@@ -20,11 +20,20 @@ import SwiftUI
 /// ``MainView`` uses a `NavigationSplitView` with the room list in the sidebar and the
 /// selected room's detail view (or compose view) in the detail area. An optional inspector
 /// panel on the trailing edge shows room info or a selected user's profile.
+/// Identifies a space the user wants to leave, carrying the children for confirmation.
+struct LeaveSpaceItem: Identifiable {
+    let id: String
+    let name: String
+    let children: [LeaveSpaceChild]
+}
+
 struct MainView: View { // swiftlint:disable:this type_body_length
     @Environment(\.matrixService) private var matrixService
     @Environment(\.errorReporter) private var errorReporter
     @Environment(AppActions.self) private var appActions
     @AppStorage("selectedRoomId") private var selectedRoomId: String?
+    @State private var selectedSpaceId: String?
+    @State private var leaveSpaceItem: LeaveSpaceItem?
     @State private var searchText = ""
     @State private var showingInspector = false
     @State private var showingPinnedMessages = false
@@ -36,6 +45,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var isJoiningLinkedRoom = false
     @State private var inspectorSelectedProfile: UserProfile?
+    @State private var inspectorInitialTab: InspectorTab?
 
     private func scrollToMessage(_ eventId: String) {
         showingPinnedMessages = false
@@ -51,12 +61,40 @@ struct MainView: View { // swiftlint:disable:this type_body_length
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            RoomListView(
+            HStack(spacing: 0) {
+                if !matrixService.spaces.isEmpty {
+                    SpaceRail(selectedSpaceId: $selectedSpaceId, onSpaceTapped: {
+                        selectedRoomId = nil
+                    }, onCreateSpace: {
+                        appActions.showCreateSpace = true
+                    }, onLeaveSpace: { space in
+                        Task {
+                            do {
+                                let children = try await matrixService.leaveSpace(spaceId: space.id)
+                                leaveSpaceItem = LeaveSpaceItem(
+                                    id: space.id,
+                                    name: space.name,
+                                    children: children
+                                )
+                            } catch {
+                                errorReporter.report(.roomLeaveFailed(error.localizedDescription))
+                            }
+                        }
+                    })
+                    Divider()
+                }
+                RoomListView(
                     selectedRoomId: $selectedRoomId,
                     searchText: $searchText,
+                    selectedSpaceId: $selectedSpaceId,
                     previewingInvite: $previewingInvite
                 )
-                .navigationSplitViewColumnWidth(min: 116, ideal: 260, max: 360)
+            }
+                .navigationSplitViewColumnWidth(
+                    min: matrixService.spaces.isEmpty ? 116 : 168,
+                    ideal: matrixService.spaces.isEmpty ? 240 : 280,
+                    max: matrixService.spaces.isEmpty ? 340 : 380
+                )
                 .onChange(of: selectedRoomId) {
                     if selectedRoomId != nil {
                         appActions.showRoomDirectory = false
@@ -65,8 +103,23 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                         showingPinnedMessages = false
                     }
                 }
+                .onChange(of: selectedSpaceId) {
+                    if selectedSpaceId != nil {
+                        selectedRoomId = nil
+                    }
+                }
         } detail: {
-            if let previewingInvite {
+            if let previewingInvite, previewingInvite.isSpace {
+                SpaceInvitePreview(
+                    invite: previewingInvite,
+                    onAccept: { acceptInviteFromPreview(previewingInvite) },
+                    onDecline: {
+                        let invite = previewingInvite
+                        self.previewingInvite = nil
+                        declineInviteFromPreview(invite)
+                    }
+                )
+            } else if let previewingInvite {
                 RoomPreviewView(
                     room: DirectoryRoom(
                         roomId: previewingInvite.id,
@@ -118,6 +171,24 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                         .id(selectedRoomId)
                         .inspectorColumnWidth(min: 200, ideal: 260, max: 320)
                 }
+            } else if let selectedSpaceId,
+                      let spaceSummary = matrixService.spaces.first(where: { $0.id == selectedSpaceId }) {
+                SpaceDetailView(
+                    spaceId: selectedSpaceId,
+                    spaceSummary: spaceSummary,
+                    selectedRoomId: $selectedRoomId,
+                    onOpenSettings: {
+                        inspectorInitialTab = .settings
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showingInspector = true
+                        }
+                    }
+                )
+                .inspector(isPresented: $showingInspector) {
+                    spaceInspectorPanel(spaceId: selectedSpaceId)
+                        .id(selectedSpaceId)
+                        .inspectorColumnWidth(min: 200, ideal: 260, max: 320)
+                }
             } else {
                 ContentUnavailableView(
                     "No Conversation Selected",
@@ -145,6 +216,9 @@ struct MainView: View { // swiftlint:disable:this type_body_length
         .sheet(isPresented: Bindable(appActions).showCreateRoom) {
             CreateRoomSheet(selectedRoomId: $selectedRoomId)
         }
+        .sheet(isPresented: Bindable(appActions).showCreateSpace) {
+            CreateSpaceSheet()
+        }
         .sheet(isPresented: Bindable(appActions).showJoinRoom) {
             JoinRoomSheet(selectedRoomId: $selectedRoomId)
         }
@@ -155,6 +229,14 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 onClose: { previewingLinkedRoom = nil }
             )
             .frame(minWidth: 500, idealWidth: 600, minHeight: 400, idealHeight: 500)
+        }
+        .sheet(item: $leaveSpaceItem) { item in
+            LeaveSpaceSheet(spaceName: item.name, spaceId: item.id, children: item.children)
+        }
+        .onChange(of: matrixService.spaces.map(\.id)) {
+            if let selectedSpaceId, !matrixService.spaces.contains(where: { $0.id == selectedSpaceId }) {
+                self.selectedSpaceId = nil
+            }
         }
         .onChange(of: matrixService.pendingDeepLink) { _, deepLink in
             guard let deepLink else { return }
@@ -291,7 +373,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
             Label("Toggle Inspector", systemImage: "sidebar.trailing")
         }
         .help(showingInspector ? "Hide Inspector" : "Show Inspector")
-        .disabled(selectedRoomId == nil)
+        .disabled(selectedRoomId == nil && selectedSpaceId == nil)
     }
 
     // MARK: - Deep Link Handling
@@ -415,6 +497,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     private func inspectorPanel(roomId: String) -> some View {
         TimelineInspectorView(
             roomId: roomId,
+            context: .room,
             selectedProfile: $inspectorSelectedProfile,
             onMessageUser: { userId in
                 Task {
@@ -430,6 +513,27 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 }
             },
             onScrollToMessage: scrollToMessage
+        )
+    }
+
+    private func spaceInspectorPanel(spaceId: String) -> some View {
+        TimelineInspectorView(
+            roomId: spaceId,
+            context: .space,
+            initialTab: $inspectorInitialTab,
+            onMessageUser: { userId in
+                Task {
+                    do {
+                        let dmRoomId = try await matrixService.createDirectMessage(userId: userId)
+                        selectedRoomId = dmRoomId
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showingInspector = false
+                        }
+                    } catch {
+                        errorReporter.report(.dmCreationFailed(error.localizedDescription))
+                    }
+                }
+            }
         )
     }
 }

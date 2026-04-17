@@ -25,6 +25,7 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     var authState: AuthState = .loggedIn(userId: "@preview:matrix.org")
     var syncState: SyncState = .running
     var rooms: [RoomSummary] = PreviewMatrixService.sampleRooms
+    var spaces: [RoomSummary] = PreviewMatrixService.sampleSpaces
     var isSyncing: Bool { false }
     var hasLoadedRooms: Bool = true
     var isSessionVerified: Bool = true
@@ -62,8 +63,29 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func makeRoomPreviewViewModel(roomId: String) -> (any RoomPreviewViewModelProtocol)? {
         PreviewRoomPreviewViewModel(roomId: roomId)
     }
+    var previewSpaceChildren: [SpaceChild]?
+
+    func makeSpaceHierarchyViewModel(spaceId: String) -> (any SpaceHierarchyViewModelProtocol)? {
+        if let previewSpaceChildren {
+            return PreviewSpaceHierarchyViewModel(children: previewSpaceChildren)
+        }
+        return PreviewSpaceHierarchyViewModel()
+    }
     func leaveRoom(id: String) async throws {
         rooms.removeAll { $0.id == id }
+    }
+    func leaveSpace(spaceId: String) async throws -> [LeaveSpaceChild] {
+        [
+            LeaveSpaceChild(roomId: "!general:matrix.org", name: "General", memberCount: 42),
+            LeaveSpaceChild(roomId: "!design:matrix.org", name: "Design", memberCount: 15),
+            LeaveSpaceChild(roomId: "!admin:matrix.org", name: "Admin", isLastOwner: true, memberCount: 3)
+        ]
+    }
+    func confirmLeaveSpace(spaceId: String, roomIds: [String]) async throws {
+        spaces.removeAll { $0.id == spaceId }
+        for id in roomIds {
+            rooms.removeAll { $0.id == id }
+        }
     }
     func setFavourite(roomId: String, isFavourite: Bool) async throws {
         if let room = rooms.first(where: { $0.id == roomId }) {
@@ -174,6 +196,20 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func isUserIgnored(userId: String) async throws -> Bool { false }
     func ignoreUser(userId: String) async throws {}
     func unignoreUser(userId: String) async throws {}
+    func inviteUser(roomId: String, userId: String) async throws {}
+    func setRoomName(roomId: String, name: String) async throws {}
+    func setRoomTopic(roomId: String, topic: String) async throws {}
+    func uploadRoomAvatar(roomId: String, mimeType: String, data: Data) async throws {}
+    func removeRoomAvatar(roomId: String) async throws {}
+    func editableSpaces() async -> [EditableSpace] {
+        [
+            EditableSpace(roomId: "!space-work:matrix.org", name: "Work"),
+            EditableSpace(roomId: "!space-eng:matrix.org", name: "Engineering"),
+            EditableSpace(roomId: "!space-friends:matrix.org", name: "Friends")
+        ]
+    }
+    func addChildToSpace(childId: String, spaceId: String) async throws {}
+    func removeChildFromSpace(childId: String, spaceId: String) async throws {}
 
     func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)? {
         PreviewSessionVerificationViewModel()
@@ -261,7 +297,8 @@ final class PreviewMatrixService: MatrixServiceProtocol {
             unreadMentions: 1,
             isDirect: false,
             pinnedEventIds: ["$pinned1", "$pinned2"],
-            isFavourite: true
+            isFavourite: true,
+            parentSpaceIds: ["!space-work:matrix.org"]
         ),
         RoomSummary(
             id: "!alice:matrix.org",
@@ -275,7 +312,8 @@ final class PreviewMatrixService: MatrixServiceProtocol {
             lastMessageTimestamp: .now.addingTimeInterval(-7200),
             unreadCount: 0,
             isDirect: true,
-            isFavourite: true
+            isFavourite: true,
+            parentSpaceIds: ["!space-friends:matrix.org"]
         ),
         RoomSummary(
             id: "!hq:matrix.org",
@@ -287,7 +325,8 @@ final class PreviewMatrixService: MatrixServiceProtocol {
             lastMessageTimestamp: nil,
             unreadCount: 0,
             isDirect: false,
-            notificationMode: .mute
+            notificationMode: .mute,
+            parentSpaceIds: ["!space-work:matrix.org"]
         ),
         RoomSummary(
             id: "!bob:matrix.org",
@@ -297,7 +336,8 @@ final class PreviewMatrixService: MatrixServiceProtocol {
             lastMessage: AttributedString("Sent an image"),
             lastMessageTimestamp: .now.addingTimeInterval(-86400 * 2),
             unreadCount: 12,
-            isDirect: true
+            isDirect: true,
+            parentSpaceIds: ["!space-friends:matrix.org"]
         ),
         RoomSummary(
             id: "!invite-eng:matrix.org",
@@ -312,6 +352,44 @@ final class PreviewMatrixService: MatrixServiceProtocol {
             isDirect: true,
             membership: .invited,
             inviterName: "Diana Evans"
+        ),
+        RoomSummary(
+            id: "!invite-space:matrix.org",
+            name: "Open Source",
+            topic: "Open source project coordination",
+            membership: .invited,
+            inviterName: "Alice Smith",
+            isSpace: true
+        )
+    ]
+
+    /// Sample spaces used to populate the space rail in previews.
+    static let sampleSpaces: [RoomSummary] = [
+        RoomSummary(
+            id: "!space-work:matrix.org",
+            name: "Work",
+            topic: "Work-related rooms",
+            isSpace: true
+        ),
+        RoomSummary(
+            id: "!space-eng:matrix.org",
+            name: "Engineering",
+            topic: "Engineering sub-space",
+            isSpace: true,
+            parentSpaceIds: ["!space-work:matrix.org"]
+        ),
+        RoomSummary(
+            id: "!space-design:matrix.org",
+            name: "Design",
+            topic: "Design sub-space",
+            isSpace: true,
+            parentSpaceIds: ["!space-work:matrix.org"]
+        ),
+        RoomSummary(
+            id: "!space-friends:matrix.org",
+            name: "Friends",
+            topic: "Personal chat rooms",
+            isSpace: true
         )
     ]
 }

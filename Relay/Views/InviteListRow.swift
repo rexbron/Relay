@@ -34,10 +34,17 @@ struct InviteListRow: View {
                 AvatarView(name: room.name, mxcURL: room.avatarURL, size: 48)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(room.name)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        if room.isSpace {
+                            Image(systemName: "square.stack.3d.up")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text(room.name)
+                            .font(.headline)
+                            .bold()
+                            .lineLimit(1)
+                    }
 
                     if let inviterName = room.inviterName {
                         Text("Invited by **\(inviterName)**")

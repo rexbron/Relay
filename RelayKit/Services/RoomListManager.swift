@@ -82,6 +82,12 @@ final class RoomListManager {
     /// should be treated as a mention for notification and unread indicator purposes.
     var notificationKeywords: [String] = []
 
+    /// Callback invoked after the room summaries list is rebuilt.
+    ///
+    /// Used by ``MatrixService`` to re-apply space membership (`parentSpaceIds`)
+    /// to newly arrived rooms.
+    var onRoomsRebuilt: (() -> Void)?
+
     /// Starts the reactive room list using the sync service's `RoomListService`.
     ///
     /// This method subscribes to room list entry diffs and applies them incrementally.
@@ -300,7 +306,7 @@ final class RoomListManager {
                 return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
             }
         }
-
+        onRoomsRebuilt?()
     }
 }
 

@@ -16,9 +16,14 @@ import RelayInterface
 import SwiftUI
 
 /// The Members tab of the timeline inspector, showing a searchable list of room members
-/// with a slide-in detail panel when a member is selected.
+/// with a slide-in detail panel when a member is selected. In space context, an invite
+/// section is shown at the top for inviting users by Matrix ID.
 struct InspectorMembersTab: View {
+    @Environment(\.matrixService) private var matrixService
+    @Environment(\.errorReporter) private var errorReporter
+
     let viewModel: TimelineInspectorViewModel
+    var context: InspectorContext = .room
 
     /// A profile selected externally (e.g. via a `matrix.to` user link tap).
     /// When set, the tab immediately shows the detail panel for this user and
@@ -30,6 +35,9 @@ struct InspectorMembersTab: View {
 
     @State private var searchText = ""
     @State private var displayedProfile: UserProfile?
+    @State private var inviteUserId = ""
+    @State private var isSendingInvite = false
+    @State private var sentInviteUserIds: [String] = []
 
     private var filteredMembers: [RoomMemberDetails] {
         guard !searchText.isEmpty else { return viewModel.allMembers }
@@ -83,10 +91,14 @@ struct InspectorMembersTab: View {
 
             ScrollView {
                 LazyVStack(spacing: 0) {
+                    if context == .space {
+                        inviteSection
+                    }
+
                     ForEach(
                         filteredMembers.enumerated(), id: \.element.id
                     ) { index, member in
-                        if index > 0 {
+                        if index > 0 || context == .space {
                             Divider().padding(.leading, 44)
                         }
                         Button {
@@ -137,10 +149,83 @@ struct InspectorMembersTab: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
+
+    // MARK: - Invite Section
+
+    /// Whether the current invite input looks like a valid Matrix user ID.
+    private var isValidInviteUserId: Bool {
+        let trimmed = inviteUserId.trimmingCharacters(in: .whitespaces)
+        return trimmed.hasPrefix("@") && trimmed.contains(":")
+    }
+
+    private var inviteSection: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Invite to Space")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 6) {
+                    TextField("@user:server.org", text: $inviteUserId)
+                        .textFieldStyle(.plain)
+                        .autocorrectionDisabled()
+                        .font(.callout)
+                        .onSubmit { sendInvite() }
+
+                    Button("Invite", systemImage: "paperplane") {
+                        sendInvite()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!isValidInviteUserId || isSendingInvite)
+                }
+
+                ForEach(sentInviteUserIds, id: \.self) { userId in
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                        Text(userId)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+    }
+
+    private func sendInvite() {
+        let trimmed = inviteUserId.trimmingCharacters(in: .whitespaces)
+        guard isValidInviteUserId, !isSendingInvite else { return }
+        isSendingInvite = true
+
+        Task {
+            do {
+                try await matrixService.inviteUser(roomId: viewModel.roomId, userId: trimmed)
+                sentInviteUserIds.append(trimmed)
+                inviteUserId = ""
+            } catch {
+                errorReporter.report(.roomJoinFailed(error.localizedDescription))
+            }
+            isSendingInvite = false
+        }
+    }
 }
 
-#Preview {
+#Preview("Room") {
     InspectorMembersTab(viewModel: .preview(), selectedProfile: .constant(nil))
         .environment(\.matrixService, PreviewMatrixService())
         .frame(width: 280, height: 600)
+}
+
+#Preview("Space") {
+    InspectorMembersTab(
+        viewModel: .preview(context: .space),
+        context: .space,
+        selectedProfile: .constant(nil)
+    )
+    .environment(\.matrixService, PreviewMatrixService())
+    .frame(width: 280, height: 600)
 }

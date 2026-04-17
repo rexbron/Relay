@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import Foundation
 import Observation
 import RelayInterface
 
@@ -36,13 +37,19 @@ final class TimelineInspectorViewModel {
     var isNotificationDefault: Bool { roomNotificationMode == nil }
     var isLoadingNotifications = true
 
+    // MARK: - Context
+
+    /// The inspector context (room or space).
+    let context: InspectorContext
+
     // MARK: - State
 
     private var matrixService: (any MatrixServiceProtocol)?
     private(set) var roomId: String
 
-    init(roomId: String) {
+    init(roomId: String, context: InspectorContext = .room) {
         self.roomId = roomId
+        self.context = context
     }
 
     // MARK: - Loading
@@ -125,6 +132,32 @@ final class TimelineInspectorViewModel {
         await reload()
     }
 
+    // MARK: - Space Settings Actions
+
+    func setRoomName(_ name: String) async throws {
+        guard let matrixService else { return }
+        try await matrixService.setRoomName(roomId: roomId, name: name)
+        await reload()
+    }
+
+    func setRoomTopic(_ topic: String) async throws {
+        guard let matrixService else { return }
+        try await matrixService.setRoomTopic(roomId: roomId, topic: topic)
+        await reload()
+    }
+
+    func uploadRoomAvatar(mimeType: String, data: Data) async throws {
+        guard let matrixService else { return }
+        try await matrixService.uploadRoomAvatar(roomId: roomId, mimeType: mimeType, data: data)
+        await reload()
+    }
+
+    func removeRoomAvatar() async throws {
+        guard let matrixService else { return }
+        try await matrixService.removeRoomAvatar(roomId: roomId)
+        await reload()
+    }
+
     /// Whether the current user has admin privileges in this room.
     var isCurrentUserAdmin: Bool {
         guard let currentUserId else { return false }
@@ -144,17 +177,18 @@ final class TimelineInspectorViewModel {
     }
 
     /// Creates a view model pre-populated with preview data for use in `#Preview` blocks.
-    /// Creates a view model pre-populated with preview data for use in `#Preview` blocks.
     ///
     /// - Parameters:
     ///   - roomId: The room ID for the preview.
+    ///   - context: The inspector context (`.room` or `.space`).
     ///   - asAdmin: When `true`, the preview user (`@preview:matrix.org`) is given the
     ///     administrator role so that admin-gated UI (e.g. editable security settings) is visible.
     static func preview(
         roomId: String = "!design:matrix.org",
+        context: InspectorContext = .room,
         asAdmin: Bool = false
     ) -> TimelineInspectorViewModel {
-        let vm = TimelineInspectorViewModel(roomId: roomId)
+        let vm = TimelineInspectorViewModel(roomId: roomId, context: context)
         let service = PreviewMatrixService()
         vm.matrixService = service
         let previewRole: RoomMemberDetails.Role = asAdmin ? .administrator : .user

@@ -19,6 +19,7 @@ import SwiftUI
 /// topic, encryption and visibility badges, about info, pinned messages, and room ID.
 struct InspectorGeneralTab: View {
     let viewModel: TimelineInspectorViewModel
+    var context: InspectorContext = .room
 
     /// Called when a pinned message row is tapped. Passes the event ID to scroll to.
     var onPinnedMessageTap: ((String) -> Void)?
@@ -39,9 +40,9 @@ struct InspectorGeneralTab: View {
     private func detailContent(_ details: RoomDetails) -> some View {
         ScrollView {
             VStack(spacing: 20) {
-                InspectorHeaderSection(details: details)
+                InspectorHeaderSection(details: details, context: context)
                 InspectorAboutSection(details: details)
-                if !details.pinnedEventIds.isEmpty {
+                if context == .room, !details.pinnedEventIds.isEmpty {
                     InspectorPinnedSection(
                         details: details,
                         onPinnedMessageTap: onPinnedMessageTap
@@ -58,6 +59,7 @@ struct InspectorGeneralTab: View {
 
 private struct InspectorHeaderSection: View {
     let details: RoomDetails
+    var context: InspectorContext = .room
 
     var body: some View {
         VStack(spacing: 6) {
@@ -84,20 +86,32 @@ private struct InspectorHeaderSection: View {
             }
 
             HStack(spacing: 12) {
-                InspectorBadge(
-                    icon: details.isEncrypted ? "lock.fill" : "lock.open",
-                    label: details.isEncrypted ? "Encrypted" : "Unencrypted",
-                    color: details.isEncrypted ? .green : .secondary
-                )
+                switch context {
+                case .room:
+                    InspectorBadge(
+                        icon: details.isEncrypted ? "lock.fill" : "lock.open",
+                        label: details.isEncrypted ? "Encrypted" : "Unencrypted",
+                        color: details.isEncrypted ? .green : .secondary
+                    )
 
-                InspectorBadge(
-                    icon: details.isPublic ? "globe" : "lock.shield",
-                    label: details.isPublic ? "Public" : "Private",
-                    color: details.isPublic ? .blue : .secondary
-                )
+                    InspectorBadge(
+                        icon: details.isPublic ? "globe" : "lock.shield",
+                        label: details.isPublic ? "Public" : "Private",
+                        color: details.isPublic ? .blue : .secondary
+                    )
 
-                if details.isDirect {
-                    InspectorBadge(icon: "person.fill", label: "Direct", color: .orange)
+                    if details.isDirect {
+                        InspectorBadge(icon: "person.fill", label: "Direct", color: .orange)
+                    }
+
+                case .space:
+                    InspectorBadge(icon: "square.stack.3d.up", label: "Space", color: .purple)
+
+                    InspectorBadge(
+                        icon: details.isPublic ? "globe" : "lock.shield",
+                        label: details.isPublic ? "Public" : "Private",
+                        color: details.isPublic ? .blue : .secondary
+                    )
                 }
             }
             .padding(.top, 4)
@@ -207,8 +221,14 @@ struct InspectorInfoRow: View {
     }
 }
 
-#Preview {
+#Preview("Room") {
     InspectorGeneralTab(viewModel: .preview())
+        .environment(\.matrixService, PreviewMatrixService())
+        .frame(width: 280, height: 600)
+}
+
+#Preview("Space") {
+    InspectorGeneralTab(viewModel: .preview(context: .space), context: .space)
         .environment(\.matrixService, PreviewMatrixService())
         .frame(width: 280, height: 600)
 }

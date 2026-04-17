@@ -226,6 +226,7 @@ struct RelayApp: App {
 @Observable
 final class AppActions {
     var showCreateRoom = false
+    var showCreateSpace = false
     var showJoinRoom = false
     var showRoomDirectory = false
 }
@@ -244,6 +245,13 @@ struct FileMenuCommands: Commands {
                 appActions.showCreateRoom = true
             }
             .keyboardShortcut("n", modifiers: .command)
+
+            Button("Create Space…") {
+                appActions.showCreateSpace = true
+            }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+
+            Divider()
 
             Button("Join Room…") {
                 appActions.showJoinRoom = true
