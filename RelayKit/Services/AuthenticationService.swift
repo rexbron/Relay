@@ -51,17 +51,29 @@ final class AuthenticationService {
     // MARK: - Data Paths
 
     static var dataDirectory: URL {
+        #if DEBUG
+        let subdirectory = "Relay/matrix-data-debug"
+        #else
+        let subdirectory = "Relay/matrix-data"
+        #endif
+
         let url = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("Relay/matrix-data", isDirectory: true)
+            .appendingPathComponent(subdirectory, isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
 
     static var cacheDirectory: URL {
+        #if DEBUG
+        let subdirectory = "Relay/matrix-cache-debug"
+        #else
+        let subdirectory = "Relay/matrix-cache"
+        #endif
+
         let url = FileManager.default
             .urls(for: .cachesDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("Relay/matrix-cache", isDirectory: true)
+            .appendingPathComponent(subdirectory, isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
