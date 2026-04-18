@@ -15,12 +15,13 @@
 import RelayInterface
 import SwiftUI
 
-/// A browsable room directory rendered as a grid of cards in the detail pane.
+/// A browsable room directory rendered as a grouped list in the detail pane.
 ///
 /// ``RoomDirectoryView`` loads popular rooms from the homeserver on appear and
 /// provides a search field for finding rooms by name or alias. Rooms are displayed
-/// as cards in an adaptive grid. Clicking a card sets `previewingRoom` so that
-/// ``MainView`` can render the preview with the standard toolbar identity.
+/// as rows with avatars (circles for rooms, rounded rectangles for spaces).
+/// Clicking a row sets `previewingRoom` so that ``MainView`` can render the
+/// preview with the standard toolbar identity.
 struct RoomDirectoryView: View {
     @Environment(\.matrixService) private var matrixService
     @Environment(\.errorReporter) private var errorReporter
@@ -37,8 +38,6 @@ struct RoomDirectoryView: View {
     @State private var searchTask: Task<Void, Never>?
     @State private var isJoining = false
     @State private var joiningRoomId: String?
-
-    private let gridColumns = [GridItem(.adaptive(minimum: 220, maximum: 300))]
 
     var body: some View {
         directoryContent
@@ -75,7 +74,7 @@ struct RoomDirectoryView: View {
                                       : "No rooms match \"\(query)\". Try a different search.")
                 )
             } else {
-                roomGrid(viewModel)
+                roomList(viewModel)
             }
         } else {
             ContentUnavailableView(
@@ -86,26 +85,19 @@ struct RoomDirectoryView: View {
         }
     }
 
-    // MARK: - Room Grid
+    // MARK: - Room List
 
-    private func roomGrid(_ viewModel: any RoomDirectoryViewModelProtocol) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                sectionHeader(query.trimmingCharacters(in: .whitespaces).isEmpty
-                              ? "Popular Rooms"
-                              : "Search Results")
-
-                LazyVGrid(columns: gridColumns) {
-                    ForEach(viewModel.rooms) { room in
-                        DirectoryRoomCard(
-                            room: room,
-                            isJoining: joiningRoomId == room.roomId,
-                            onJoin: { joinRoom(idOrAlias: room.alias ?? room.roomId) },
-                            onNavigate: { previewingRoom = room }
-                        )
-                    }
+    private func roomList(_ viewModel: any RoomDirectoryViewModelProtocol) -> some View {
+        Form {
+            Section {
+                ForEach(viewModel.rooms) { room in
+                    DirectoryRoomRow(
+                        room: room,
+                        isJoining: joiningRoomId == room.roomId,
+                        onJoin: { joinRoom(idOrAlias: room.alias ?? room.roomId) },
+                        onNavigate: { previewingRoom = room }
+                    )
                 }
-                .padding(.horizontal)
 
                 // Pagination sentinel
                 if !viewModel.isAtEnd {
@@ -113,24 +105,19 @@ struct RoomDirectoryView: View {
                         Spacer()
                         ProgressView()
                             .controlSize(.small)
-                            .padding()
                         Spacer()
                     }
                     .onAppear {
                         Task { await viewModel.loadMore() }
                     }
                 }
+            } header: {
+                Text(query.trimmingCharacters(in: .whitespaces).isEmpty
+                     ? "Popular Rooms"
+                     : "Search Results")
             }
-            .padding(.vertical)
         }
-    }
-
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.title3)
-            .bold()
-            .padding(.horizontal)
-            .padding(.bottom)
+        .formStyle(.grouped)
     }
 
     // MARK: - Search Logic
@@ -180,11 +167,13 @@ struct RoomDirectoryView: View {
     }
 }
 
-// MARK: - Directory Room Card
+// MARK: - Directory Room Row
 
-/// A card displaying a room from the directory with its avatar, metadata,
-/// and action buttons arranged in a compact grid-friendly layout.
-private struct DirectoryRoomCard: View {
+/// A single row in the directory list, styled to match ``SpaceChildRow``.
+///
+/// Spaces use a rounded-rectangle avatar (``SpaceRailIcon``), while regular
+/// rooms use a circular ``AvatarView``.
+private struct DirectoryRoomRow: View {
     let room: DirectoryRoom
     var isJoining: Bool = false
     let onJoin: () -> Void
@@ -192,83 +181,69 @@ private struct DirectoryRoomCard: View {
 
     var body: some View {
         Button(action: onNavigate) {
-            VStack(spacing: 0) {
-                // Avatar + name
-                VStack(spacing: 8) {
-                    AvatarView(
-                        name: room.name ?? room.roomId,
-                        mxcURL: room.avatarURL,
-                        size: 48
-                    )
+            HStack(spacing: 12) {
+                avatar
 
+                VStack(alignment: .leading, spacing: 2) {
                     Text(room.name ?? room.alias ?? room.roomId)
-                        .font(.headline)
+                        .fontWeight(.medium)
                         .lineLimit(1)
-                        .frame(maxWidth: .infinity)
-                }
-                .padding(.top)
-                .padding(.horizontal)
 
-                // Alias + member count
-                VStack(spacing: 4) {
-                    if let alias = room.alias {
-                        Text(alias)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-
-                    Label("\(room.memberCount) members", systemImage: "person.2")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.top, 4)
-
-                // Topic
-                if let topic = room.topic, !topic.isEmpty {
-                    Text(topic)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 8)
-                        .padding(.horizontal)
+                    subtitle
                 }
 
-                Spacer(minLength: 12)
+                Spacer()
 
-                // Action buttons
-                HStack {
-                    if room.isWorldReadable {
-                        Button("Preview", systemImage: "eye") {
-                            onNavigate()
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-
-                    Spacer()
-
-                    if isJoining {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Button("Join", systemImage: "plus") {
-                            onJoin()
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.accentColor)
-                        .controlSize(.small)
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.bottom)
+                trailingContent
             }
+            .padding(.vertical, 4)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .frame(minHeight: 180)
-        .background(.fill.quaternary, in: .rect(cornerRadius: 12))
+    }
+
+    @ViewBuilder
+    private var avatar: some View {
+        if room.isSpace {
+            SpaceRailIcon(
+                name: room.name ?? room.roomId,
+                mxcURL: room.avatarURL
+            )
+        } else {
+            AvatarView(
+                name: room.name ?? room.roomId,
+                mxcURL: room.avatarURL,
+                size: 36
+            )
+        }
+    }
+
+    private var subtitle: some View {
+        Group {
+            if let topic = room.topic, !topic.isEmpty {
+                Text(topic)
+            } else if let alias = room.alias {
+                Text(alias)
+            } else if room.memberCount > 0 {
+                Text("\(room.memberCount) members")
+            }
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+    }
+
+    @ViewBuilder
+    private var trailingContent: some View {
+        if isJoining {
+            ProgressView()
+                .controlSize(.small)
+        } else {
+            Button("Join", systemImage: "plus", action: onJoin)
+                .buttonStyle(.bordered)
+                .tint(.accentColor)
+                .controlSize(.small)
+        }
     }
 }
 
