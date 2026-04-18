@@ -47,7 +47,8 @@ Join us in the Matrix room to ask questions, discuss ideas, or just say hello:
 
 # License
 
-Apache 2.0. See the [LICENSE](./LICENSE) file for details.
+Code is licensed under the Apache 2.0 license. See the [LICENSE](./LICENSE) file for details.
+Digital artwork is licensed under the Creative Commons Attribution-ShareAlike 4.0 International license. See the [LICENSE-CC-BY-SA](./LICENSE-CC-BY-SA) for details.
 
 ---
 
