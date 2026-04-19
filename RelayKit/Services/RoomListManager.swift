@@ -118,7 +118,7 @@ final class RoomListManager {
         }
         let allRooms = try await rls.allRooms()
         let handle = allRooms.entriesWithDynamicAdapters(pageSize: 100, listener: entriesListener)
-        _ = handle.controller().setFilter(kind: .all(filters: [.nonLeft, .nonSpace]))
+        _ = handle.controller().setFilter(kind: .all(filters: [.nonLeft, .nonSpace, .deduplicateVersions]))
         entriesHandle = handle
 
         hasLoadedRooms = true
@@ -170,7 +170,7 @@ final class RoomListManager {
         }
         let allRooms = try await rls.allRooms()
         let handle = allRooms.entriesWithDynamicAdapters(pageSize: 100, listener: entriesListener)
-        _ = handle.controller().setFilter(kind: .all(filters: [.nonLeft, .nonSpace]))
+        _ = handle.controller().setFilter(kind: .all(filters: [.nonLeft, .nonSpace, .deduplicateVersions]))
         entriesHandle = handle
 
         entriesTask = Task { [weak self] in
