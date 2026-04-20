@@ -20,6 +20,7 @@ struct ContentView: View {
     @Environment(\.matrixService) private var matrixService
 
     var body: some View {
+        let _ = Self._printChanges()
         Group {
             switch matrixService.authState {
             case .unknown:

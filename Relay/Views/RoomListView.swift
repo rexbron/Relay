@@ -77,6 +77,7 @@ struct RoomListView: View {
     @State private var showLeaveConfirmation = false
 
     var body: some View {
+        let _ = Self._printChanges()
         List(selection: $selectedRoomId) {
             ForEach(filteredRooms) { room in
                 HStack(spacing: 10) {

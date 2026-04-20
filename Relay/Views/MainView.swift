@@ -50,6 +50,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     }
 
     var body: some View {
+        let _ = Self._printChanges()
         NavigationSplitView {
             RoomListView(
                     selectedRoomId: $selectedRoomId,

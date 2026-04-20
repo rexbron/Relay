@@ -32,6 +32,7 @@ struct RoomInfoView: View {
     @State private var details: RoomDetails?
 
     var body: some View {
+        let _ = Self._printChanges()
         Group {
             if let details {
                 detailContent(details)

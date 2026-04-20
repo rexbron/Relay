@@ -62,6 +62,14 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
 
     @State private var scrollPosition = ScrollPosition(idType: String.self, edge: .bottom)
     @State private var isNearBottom = true
+    /// Debounces sentinel appear/disappear events so transient flickers during
+    /// content reflow (new messages, typing indicator, scroll animations)
+    /// don't commit a new `isNearBottom` value mid-layout. Writing `@State`
+    /// synchronously from `onAppear`/`onDisappear` inside a scroll view can
+    /// feed back into the layout pass that triggered it; when the sentinel
+    /// ping-pongs appear/disappear each frame, AppKit eventually trips
+    /// "more Update Constraints in Window passes than there are views."
+    @State private var isNearBottomCommitTask: Task<Void, Never>?
     @State private var pendingScrollToBottom = false
     @State private var showUnreadMarker = true
     @State private var unreadMarkerDismissTask: Task<Void, Never>?
@@ -84,6 +92,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     }
 
     var body: some View {
+        let _ = Self._printChanges()
         messageList
             .environment(\.mediaAutoReveal, shouldAutoRevealMedia)
             .overlay {
@@ -354,16 +363,27 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 // Uses onAppear/onDisappear instead of onScrollGeometryChange to avoid
                 // the "tried to update multiple times per frame" warning during content
                 // size changes.
+                // Bottom sentinel. Two hazards this guards against:
+                //   1. A zero-height view near the bottom can flicker
+                //      appear/disappear while surrounding content
+                //      reflows (typing indicator, new messages, scroll
+                //      animations). Each transition writes to
+                //      `isNearBottom`, which re-invalidates the whole
+                //      timeline, which reflows again — a classic update
+                //      loop that eventually trips the "more Update
+                //      Constraints than views" assertion. The `if`
+                //      guards make the writes idempotent.
+                //   2. Calling `markAsRead` from `onAppear` means every
+                //      sentinel flicker dispatches an SDK call whose
+                //      completion mutates room state and feeds back
+                //      into the timeline. We only mark-as-read on the
+                //      *transition* into near-bottom, not on every
+                //      appearance.
                 Color.clear
                     .frame(height: 1)
                     .id("bottom-sentinel")
-                    .onAppear {
-                        isNearBottom = true
-                        Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
-                    }
-                    .onDisappear {
-                        isNearBottom = false
-                    }
+                    .onAppear { scheduleNearBottomCommit(true) }
+                    .onDisappear { scheduleNearBottomCommit(false) }
             }
             .scrollTargetLayout()
             .padding()
@@ -470,6 +490,43 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             return "\(names[0]) and \(names[1]) are typing…"
         default:
             return "\(names[0]) and \(names.count - 1) others are typing…"
+        }
+    }
+
+    // MARK: - Near-Bottom Tracking
+
+    /// Coalesces bottom-sentinel appear/disappear transitions and commits the
+    /// resulting `isNearBottom` value after a short quiet period, off the
+    /// layout pass that triggered the transition.
+    ///
+    /// Why: a 1pt `Color.clear` sentinel near the bottom of a `ScrollView`
+    /// that is actively re-laying out (new message, typing indicator,
+    /// content-size shift) will often flicker `onAppear`/`onDisappear` for
+    /// several frames in a row before settling. If we commit each transition
+    /// synchronously into `@State`, every write invalidates every view that
+    /// reads `isNearBottom`, re-running layout — which can push the sentinel
+    /// across the boundary again, repeating the cycle. AppKit eventually
+    /// aborts with "more Update Constraints in Window passes than there
+    /// are views in the window."
+    ///
+    /// The Task-based debounce ensures:
+    ///   1. Rapid opposing transitions cancel each other (sentinel
+    ///      bouncing in/out commits the *final* steady state, not each
+    ///      intermediate flip).
+    ///   2. The actual `@State` write and any `markAsRead` side-effect
+    ///      run after the current layout pass completes.
+    private func scheduleNearBottomCommit(_ newValue: Bool) {
+        isNearBottomCommitTask?.cancel()
+        isNearBottomCommitTask = Task { @MainActor in
+            // ~2 display frames at 60Hz — long enough to swallow a flicker,
+            // short enough that the button/badge overlay feels responsive.
+            try? await Task.sleep(nanoseconds: 33_000_000)
+            guard !Task.isCancelled else { return }
+            guard isNearBottom != newValue else { return }
+            isNearBottom = newValue
+            if newValue {
+                await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts)
+            }
         }
     }
 
