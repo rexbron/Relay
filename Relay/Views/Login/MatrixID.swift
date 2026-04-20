@@ -58,7 +58,7 @@ struct MatrixIDParseStrategy: ParseStrategy {
         return MatrixID(username: username, homeserver: homeserver)
     }
 
-    private enum FormatError: LocalizedError {
+    enum FormatError: LocalizedError {
         case missingPrefix, missingColon, emptyUsername, invalidHomeserver
 
         var errorDescription: String? {

@@ -27,6 +27,9 @@ struct SignInPage: View {
     @Environment(\.webAuthenticationSession) private var webAuthenticationSession
     @Environment(\.errorReporter) private var errorReporter
     @State private var matrixID = MatrixID()
+    @State private var matrixIDText = ""
+    @State private var matrixIDError: String?
+    @FocusState private var matrixIDFieldFocused: Bool
     @State private var password = ""
     #if DEBUG
     @State private var customHomeserver = ""
@@ -40,8 +43,11 @@ struct SignInPage: View {
                 SignInHeader()
 
                 VStack(spacing: 12) {
-                    TextField("@user:home.server", value: $matrixID, format: MatrixIDFormat())
-                        .textFieldStyle(.roundedBorder)
+                    MatrixIDField(
+                        text: $matrixIDText,
+                        error: matrixIDError,
+                        isFocused: $matrixIDFieldFocused
+                    )
                     SecureField("Password", text: $password)
                         .textFieldStyle(.roundedBorder)
                         .onSubmit(signIn)
@@ -51,6 +57,16 @@ struct SignInPage: View {
                         .textContentType(.URL)
                         .autocorrectionDisabled()
                     #endif
+                }
+                .onChange(of: matrixIDFieldFocused) { _, focused in
+                    if !focused {
+                        validateMatrixID()
+                    }
+                }
+                .onChange(of: matrixIDText) {
+                    if matrixIDError != nil {
+                        matrixIDError = nil
+                    }
                 }
 
                 VStack(spacing: 10) {
@@ -81,6 +97,20 @@ struct SignInPage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .safeAreaInset(edge: .top) {
             BackBar(label: "Welcome") { step = .welcome }
+        }
+    }
+
+    // MARK: - Validation
+
+    private func validateMatrixID() {
+        let strategy = MatrixIDParseStrategy()
+        do {
+            matrixID = try strategy.parse(matrixIDText)
+            matrixIDText = MatrixIDFormat().format(matrixID)
+            matrixIDError = nil
+        } catch {
+            matrixID = MatrixID()
+            matrixIDError = error.localizedDescription
         }
     }
 
@@ -160,6 +190,39 @@ private struct SignInHeader: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
+    }
+}
+
+// MARK: - Matrix ID Field
+
+/// A text field for entering a Matrix ID with inline validation error display.
+private struct MatrixIDField: View {
+    @Binding var text: String
+    var error: String?
+    var isFocused: FocusState<Bool>.Binding
+    @State private var showingError = false
+
+    var body: some View {
+        TextField("@user:home.server", text: $text)
+            .textFieldStyle(.roundedBorder)
+            .focused(isFocused)
+            .autocorrectionDisabled()
+            .overlay(alignment: .trailing) {
+                if let error {
+                    Button("Matrix ID Error", systemImage: "exclamationmark.circle.fill") {
+                        showingError.toggle()
+                    }
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(.red)
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showingError, arrowEdge: .trailing) {
+                        Text(error)
+                            .font(.callout)
+                            .padding()
+                    }
+                    .padding(.trailing, 6)
+                }
+            }
     }
 }
 
