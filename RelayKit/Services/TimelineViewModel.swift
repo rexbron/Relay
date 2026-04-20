@@ -533,11 +533,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
 
     // MARK: - Private
 
-    /// How long to accumulate diffs before applying them. This prevents
-    /// `rebuildMessages()` from running on every individual SDK callback
-    /// during rapid bursts (initial load, back-pagination, reset diffs).
-    /// Matches the 500ms throttle used by Mactrix.
-    private static let diffThrottleInterval: Duration = .milliseconds(500)
+    /// How long to wait for additional diffs before rebuilding again after
+    /// a burst. Only applies when more diffs arrive while a rebuild is
+    /// already in progress — the first diff always triggers an immediate
+    /// rebuild with no delay.
+    private static let diffCoalesceInterval: Duration = .milliseconds(200)
 
     // swiftlint:disable:next identifier_name
     private func observeTimeline(_ tl: Timeline) {
@@ -551,12 +551,17 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
 
             self.timelineHandle = await tl.addListener(listener: listener)
 
-            // Throttled diff processing: diffs are applied to `timelineItems`
-            // immediately (cheap array mutations), but `rebuildMessages()` is
-            // called at most once per throttle interval to avoid mapping all
-            // items to TimelineMessage on every SDK callback.
+            // Adaptive diff processing: diffs are applied to `timelineItems`
+            // immediately (cheap array mutations). The first diff triggers an
+            // immediate `rebuildMessages()` call with no delay. If more diffs
+            // arrive while a rebuild is running on the background thread, they
+            // are batched and a short coalesce timer groups them into a single
+            // follow-up rebuild. This gives instant response for isolated
+            // events (incoming message, reaction) while still batching rapid
+            // bursts (initial load, back-pagination).
             var needsRebuild = false
-            var throttleTask: Task<Void, Never>?
+            var isRebuilding = false
+            var coalesceTask: Task<Void, Never>?
             var hasSignaledInitialDiffs = false
 
             for await diffs in stream {
@@ -573,33 +578,34 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
 
                 needsRebuild = true
 
-                // If no throttle timer is running, start one. When it fires,
-                // it flushes accumulated diffs into a single rebuild.
-                if throttleTask == nil {
-                    let throttleState = PerformanceSignposts.timeline.beginInterval(
-                        PerformanceSignposts.TimelineName.throttleDelay
-                    )
-                    throttleTask = Task { [weak self] in
-                        try? await Task.sleep(for: Self.diffThrottleInterval)
-                        guard !Task.isCancelled, let self else { return }
-                        PerformanceSignposts.timeline.endInterval(
-                            PerformanceSignposts.TimelineName.throttleDelay,
-                            throttleState
-                        )
-                        // Loop: after each rebuild, check if more diffs
-                        // arrived during the background mapping pass. If
-                        // so, rebuild again immediately rather than waiting
-                        // for the next SDK callback to start a new throttle.
-                        while needsRebuild {
-                            needsRebuild = false
-                            await self.rebuildMessages()
+                // If no rebuild is in progress and no coalesce timer is
+                // pending, rebuild immediately.
+                if !isRebuilding && coalesceTask == nil {
+                    isRebuilding = true
+                    needsRebuild = false
+                    await self.rebuildMessages()
+                    isRebuilding = false
+
+                    // After the rebuild, if more diffs arrived during the
+                    // background mapping pass, start a short coalesce timer
+                    // to batch any further rapid-fire diffs before the next
+                    // rebuild.
+                    if needsRebuild && coalesceTask == nil {
+                        coalesceTask = Task { [weak self] in
+                            try? await Task.sleep(for: Self.diffCoalesceInterval)
+                            guard !Task.isCancelled, let self else { return }
+                            while needsRebuild {
+                                needsRebuild = false
+                                await self.rebuildMessages()
+                            }
+                            coalesceTask = nil
                         }
-                        throttleTask = nil
                     }
                 }
             }
 
             // Flush any remaining diffs when the stream ends.
+            coalesceTask?.cancel()
             if needsRebuild {
                 await self.rebuildMessages()
             }
