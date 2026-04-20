@@ -31,6 +31,7 @@ struct RelayApp: App {
     @State private var gifSearchService = GiphyService(apiKey: Secrets.giphyAPIKey ?? "")
     @State private var notificationDelegate = NotificationDelegate()
     @State private var appActions = AppActions()
+    @State private var showClearCacheConfirmation = false
 
     @Environment(\.openWindow) private var openWindow
 
@@ -65,12 +66,24 @@ struct RelayApp: App {
                         }
                     }
                 }
+                .alert("Clear Cache", isPresented: $showClearCacheConfirmation) {
+                    Button("Cancel", role: .cancel) {}
+                    Button("Clear Cache", role: .destructive) {
+                        Task { await matrixService.clearLocalData() }
+                    }
+                } message: {
+                    Text("This will delete all locally cached data and resync from the server. You will remain logged in.")
+                }
         }
         .defaultSize(width: 880, height: 560)
         .commands {
             FileMenuCommands(appActions: appActions)
             SidebarCommands()
-
+            CommandGroup(before: .appTermination) {
+                Button("Clear Cache…") {
+                    showClearCacheConfirmation = true
+                }
+            }
             CommandGroup(after: .windowArrangement) {
                 Button("Relay") {
                     NSApp.activate()
