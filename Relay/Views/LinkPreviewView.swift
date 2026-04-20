@@ -21,14 +21,6 @@ import SwiftUI
 // main-actor-isolated views.
 extension LPLinkMetadata: @retroactive @unchecked Sendable {}
 
-extension Notification.Name {
-    /// Posted when a ``LinkPreviewView`` finishes loading metadata and its
-    /// intrinsic height changes. The `userInfo` dictionary contains a
-    /// `"messageID"` string identifying the timeline row that needs
-    /// re-measurement.
-    static let linkPreviewDidLoad = Notification.Name("relay.linkPreviewDidLoad")
-}
-
 // MARK: - Metadata Cache
 
 /// A global, thread-safe cache for fetched link metadata, preventing redundant
@@ -71,76 +63,121 @@ actor LinkMetadataCache {
 
 // MARK: - LinkPreviewView
 
-/// Displays a rich link preview card for a URL using the system `LPLinkView`.
+/// The fixed side length of the link preview card in points.
+private let previewSize: CGFloat = 260
+
+/// Displays a fixed-size link preview card for a URL.
 ///
-/// Metadata is fetched asynchronously via `LPMetadataProvider` and cached globally
-/// so that scrolling through the timeline doesn't re-fetch.
+/// The card has a constant size (`260×260` pt) so that loading metadata never
+/// changes the row height. This eliminates the height-cache invalidation and
+/// re-measurement that previously caused visible jumps during scrolling.
+///
+/// Metadata is fetched asynchronously via `LPMetadataProvider` and cached
+/// globally so that scrolling through the timeline doesn't re-fetch.
 struct LinkPreviewView: View {
     let url: URL
     let isOutgoing: Bool
 
-    /// The timeline message ID that contains this preview. Used to notify the
-    /// table view controller that the row height needs re-measurement after
-    /// metadata loads asynchronously.
+    /// The timeline message ID that contains this preview.
     let messageID: String
 
-    @State private var metadata: LPLinkMetadata?
+    @State private var title: String?
+    @State private var image: NSImage?
+    @State private var didLoad = false
     @State private var didFail = false
 
     var body: some View {
-        Group {
-            if let metadata {
-                LinkPreviewRepresentable(metadata: metadata)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if !didFail {
-                // Subtle loading placeholder while metadata is in flight.
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text(url.host ?? url.absoluteString)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 6)
+        cardContent
+            .frame(width: previewSize, height: previewSize)
+            .clipShape(.rect(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(.quaternary, lineWidth: 0.5)
+            )
+            .contentShape(.rect(cornerRadius: 12))
+            .onTapGesture {
+                NSWorkspace.shared.open(url)
             }
-        }
-        .task(id: url) {
-            if let fetched = await LinkMetadataCache.shared.metadata(for: url) {
-                metadata = fetched
-                // The row was initially measured while the preview was in its
-                // loading state (small spinner). Now that the full LPLinkView
-                // will render, post a notification so the table view controller
-                // can invalidate the cached height and re-measure the row.
-                NotificationCenter.default.post(
-                    name: .linkPreviewDidLoad,
-                    object: nil,
-                    userInfo: ["messageID": messageID]
-                )
-            } else {
-                didFail = true
+            .task(id: url) {
+                await loadMetadata()
             }
-        }
-    }
-}
-
-// MARK: - NSViewRepresentable
-
-/// Wraps `LPLinkView` for use in SwiftUI on macOS.
-private struct LinkPreviewRepresentable: NSViewRepresentable {
-    let metadata: LPLinkMetadata
-
-    func makeNSView(context: Context) -> LPLinkView {
-        let view = LPLinkView(metadata: metadata)
-        // Prevent the link view from expanding unboundedly.
-        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        view.setContentHuggingPriority(.required, for: .vertical)
-        return view
     }
 
-    func updateNSView(_ nsView: LPLinkView, context: Context) {
-        nsView.metadata = metadata
+    @ViewBuilder
+    private var cardContent: some View {
+        if didFail {
+            EmptyView()
+        } else {
+            VStack(spacing: 0) {
+                // Image area — fills the top portion.
+                imageArea
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+
+                // Text area — fixed at the bottom.
+                textArea
+            }
+            .background(.fill.tertiary)
+        }
+    }
+
+    @ViewBuilder
+    private var imageArea: some View {
+        if let image {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+        } else if !didLoad {
+            ProgressView()
+                .controlSize(.small)
+        } else {
+            Image(systemName: "globe")
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var textArea: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title ?? url.host() ?? url.absoluteString)
+                .font(.callout)
+                .bold()
+                .lineLimit(2)
+                .truncationMode(.tail)
+
+            Text(url.host() ?? url.absoluteString)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+
+    private func loadMetadata() async {
+        guard let metadata = await LinkMetadataCache.shared.metadata(for: url) else {
+            didFail = true
+            return
+        }
+
+        title = metadata.title
+
+        // Extract the preview image from the metadata provider.
+        if let imageProvider = metadata.imageProvider ?? metadata.iconProvider {
+            image = await loadImage(from: imageProvider)
+        }
+
+        didLoad = true
+    }
+
+    private func loadImage(from provider: NSItemProvider) async -> NSImage? {
+        await withCheckedContinuation { continuation in
+            provider.loadObject(ofClass: NSImage.self) { object, _ in
+                continuation.resume(returning: object as? NSImage)
+            }
+        }
     }
 }
 
@@ -153,20 +190,12 @@ private struct LinkPreviewRepresentable: NSViewRepresentable {
             isOutgoing: false,
             messageID: "preview-1"
         )
-        .frame(width: 300)
-        .padding()
-        .background(Color(.systemGray).opacity(0.2))
-        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
 
         LinkPreviewView(
             url: URL(string: "https://matrix.org")!,
             isOutgoing: true,
             messageID: "preview-2"
         )
-        .frame(width: 300)
-        .padding()
-        .background(Color.accentColor)
-        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
     }
     .padding()
 }

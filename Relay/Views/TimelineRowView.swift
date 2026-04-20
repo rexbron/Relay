@@ -167,12 +167,6 @@ struct TimelineRowView: View, Equatable {
             if showURLPreviews, message.kind == .text,
                let url = TimelineView.firstPreviewURL(in: message.body) {
                 LinkPreviewView(url: url, isOutgoing: message.isOutgoing, messageID: message.id)
-                    .frame(maxWidth: 260)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color(.systemGray).opacity(0.1))
-                    )
                     .padding(.leading, message.isOutgoing ? 0 : 34)
                     .frame(maxWidth: .infinity, alignment: message.isOutgoing ? .trailing : .leading)
             }
