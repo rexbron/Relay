@@ -550,6 +550,9 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
     ///
     /// - Parameters:
     ///   - items: The full timeline items array.
+    ///   - itemIDs: Pre-extracted event/transaction IDs parallel to `items`,
+    ///     maintained by `TimelineViewModel.applyDiffs` to avoid FFI calls
+    ///     during cache lookups. `nil` entries represent non-event items.
     ///   - changedIndices: Indices that were modified by the latest diff batch.
     ///     Pass `nil` to remap all items (equivalent to a reset).
     ///   - existingMessages: Previously mapped messages keyed by event/transaction ID,
@@ -558,6 +561,7 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
     @concurrent
     func mapItemsIncrementally(
         _ items: [TimelineItem],
+        itemIDs: [String?],
         changedIndices: IndexSet?,
         existingMessages: [String: TimelineMessage]
     ) async -> MappingResult {
@@ -577,26 +581,20 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
             let item = items[index]
 
             // If we have a known set of changed indices and this index isn't
-            // in it, try to reuse the cached message. We still need the item's
-            // event ID to look it up, so extract it cheaply.
+            // in it, reuse the cached message via the pre-extracted ID — no
+            // FFI call needed.
             if let changedIndices, !changedIndices.contains(index) {
-                ffiLookups += 1
-                if let event = item.asEvent() {
-                    let eventId: String
-                    switch event.eventOrTransactionId {
-                    case .eventId(let id): eventId = id
-                    case .transactionId(let id): eventId = id
-                    }
-                    if let cached = existingMessages[eventId] {
-                        cacheHits += 1
-                        result.append(cached)
-                        continue
-                    }
+                if let itemID = itemIDs[index],
+                   let cached = existingMessages[itemID] {
+                    cacheHits += 1
+                    result.append(cached)
+                    continue
                 }
                 cacheMisses += 1
             }
 
-            // Map the item from scratch.
+            // Map the item from scratch (involves FFI calls).
+            ffiLookups += 1
             if let mapped = mapItem(item) {
                 if mapped.hasUnresolvedReply {
                     pendingReplyFetchIds.insert(mapped.message.id)

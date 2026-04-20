@@ -49,6 +49,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
     /// The SDK timeline, exposed for use by ``MatrixService/pinnedMessages(roomId:)``.
     private(set) var sdkTimeline: Timeline?
     private var timelineItems: [TimelineItem] = []
+    /// Pre-extracted event/transaction IDs for each item in ``timelineItems``,
+    /// maintained in parallel during ``applyDiffs``. Used to avoid FFI calls
+    /// during incremental cache lookups in the mapper.  `nil` entries
+    /// represent non-event items (e.g. date dividers) that have no ID.
+    private var timelineItemIDs: [String?] = []
     private var observationTask: Task<Void, Never>?
     private var paginationTask: Task<Void, Never>?
     private var typingTask: Task<Void, Never>?
@@ -678,6 +683,18 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         }
     }
 
+    /// Extracts the event or transaction ID from a timeline item without
+    /// crossing the FFI bridge during incremental mapping. This is called
+    /// once per item during `applyDiffs` (when we already have the item)
+    /// so the mapper can reuse cached messages by index lookup alone.
+    private static func extractItemID(_ item: TimelineItem) -> String? {
+        guard let event = item.asEvent() else { return nil }
+        switch event.eventOrTransactionId {
+        case .eventId(let id): return id
+        case .transactionId(let id): return id
+        }
+    }
+
     // swiftlint:disable:next cyclomatic_complexity
     private func applyDiffs(_ diffs: [TimelineDiff]) {
         let itemCountBefore = timelineItems.count
@@ -688,23 +705,27 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         for diff in diffs {
             switch diff {
             case .reset(let values):
+                timelineItemIDs = values.map(Self.extractItemID)
                 timelineItems = values
                 // Full remap required — discard incremental tracking.
                 pendingChangedIndices = nil
 
             case .append(let values):
                 let start = timelineItems.count
+                timelineItemIDs.append(contentsOf: values.map(Self.extractItemID))
                 timelineItems.append(contentsOf: values)
                 markIndicesChanged(start ..< timelineItems.count)
 
             case .pushBack(let value):
                 let idx = timelineItems.count
+                timelineItemIDs.append(Self.extractItemID(value))
                 timelineItems.append(value)
                 markIndexChanged(idx)
 
             case .pushFront(let value):
                 // Inserting at 0 shifts every existing index up by 1.
                 shiftPendingIndices(by: 1, from: 0)
+                timelineItemIDs.insert(Self.extractItemID(value), at: 0)
                 timelineItems.insert(value, at: 0)
                 markIndexChanged(0)
 
@@ -713,6 +734,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 let i = Int(index)
                 if i <= timelineItems.count {
                     shiftPendingIndices(by: 1, from: i)
+                    timelineItemIDs.insert(Self.extractItemID(value), at: i)
                     timelineItems.insert(value, at: i)
                     markIndexChanged(i)
                 }
@@ -720,6 +742,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             case .set(let index, let value):
                 let i = Int(index)
                 if i < timelineItems.count {
+                    timelineItemIDs[i] = Self.extractItemID(value)
                     timelineItems[i] = value
                     markIndexChanged(i)
                 }
@@ -727,6 +750,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             case .remove(let index):
                 let i = Int(index)
                 if i < timelineItems.count {
+                    timelineItemIDs.remove(at: i)
                     timelineItems.remove(at: i)
                     // Remove this index and shift everything above it down.
                     pendingChangedIndices?.remove(i)
@@ -740,11 +764,13 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             // swiftlint:enable identifier_name
 
             case .clear:
+                timelineItemIDs.removeAll()
                 timelineItems.removeAll()
                 pendingChangedIndices = nil
 
             case .popBack:
                 if !timelineItems.isEmpty {
+                    timelineItemIDs.removeLast()
                     timelineItems.removeLast()
                     // No index to mark — the item is gone. Cache will be
                     // pruned naturally when it's absent from the next rebuild.
@@ -752,6 +778,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
 
             case .popFront:
                 if !timelineItems.isEmpty {
+                    timelineItemIDs.removeFirst()
                     timelineItems.removeFirst()
                     pendingChangedIndices?.remove(0)
                     shiftPendingIndices(by: -1, from: 1)
@@ -761,10 +788,12 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 }
 
             case .truncate(let length):
-                timelineItems = Array(timelineItems.prefix(Int(length)))
+                let len = Int(length)
+                timelineItemIDs = Array(timelineItemIDs.prefix(len))
+                timelineItems = Array(timelineItems.prefix(len))
                 // Discard any tracked indices beyond the new length.
                 if var indices = pendingChangedIndices {
-                    indices = indices.filteredIndexSet { $0 < Int(length) }
+                    indices = indices.filteredIndexSet { $0 < len }
                     pendingChangedIndices = indices
                 }
             }
@@ -824,6 +853,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
 
         // Capture the current state for the background mapping pass.
         let items = timelineItems
+        let itemIDs = timelineItemIDs
         let changedIndices = pendingChangedIndices
         let cache = messageCache
         let mapper = messageMapper
@@ -839,6 +869,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
 
         let mapping = await mapper.mapItemsIncrementally(
             items,
+            itemIDs: itemIDs,
             changedIndices: changedIndices,
             existingMessages: cache
         )
