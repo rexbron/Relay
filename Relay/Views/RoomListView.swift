@@ -36,10 +36,18 @@ struct RoomListView: View {
     @State private var showDeclineConfirmation = false
 
     var body: some View {
+        // Compute filtered results once per body evaluation to avoid
+        // redundant filter + O(n log n) sort passes. Previously each
+        // access to pinnedRooms / unpinnedRooms recomputed filteredRooms.
+        let invites = pendingInvites
+        let filtered = filteredRooms
+        let pinned = filtered.filter(\.isFavourite)
+        let unpinned = filtered.filter { !$0.isFavourite }
+
         List(selection: $selectedRoomId) {
-            if !pendingInvites.isEmpty {
+            if !invites.isEmpty {
                 Section {
-                    ForEach(pendingInvites) { invite in
+                    ForEach(invites) { invite in
                         InviteListRow(
                             room: invite,
                             onAccept: { acceptInvite(invite) },
@@ -57,9 +65,9 @@ struct RoomListView: View {
                 }
             }
 
-            if !pinnedRooms.isEmpty {
+            if !pinned.isEmpty {
                 Section {
-                    ForEach(pinnedRooms) { room in
+                    ForEach(pinned) { room in
                         roomRow(room)
                     }
                 } header: {
@@ -68,18 +76,18 @@ struct RoomListView: View {
             }
 
             Section {
-                ForEach(unpinnedRooms) { room in
+                ForEach(unpinned) { room in
                     roomRow(room)
                 }
             } header: {
-                if !pendingInvites.isEmpty || !pinnedRooms.isEmpty {
+                if !invites.isEmpty || !pinned.isEmpty {
                     Text("Rooms")
                 }
             }
         }
-        .animation(.default, value: pinnedRooms.map(\.id))
-        .animation(.default, value: unpinnedRooms.map(\.id))
-        .animation(.default, value: pendingInvites.map(\.id))
+        .animation(.default, value: pinned.map(\.id))
+        .animation(.default, value: unpinned.map(\.id))
+        .animation(.default, value: invites.map(\.id))
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search rooms")
         .toolbar {
             ToolbarItemGroup(placement: .automatic) {
@@ -319,15 +327,7 @@ extension RoomListView {
         return rooms
     }
 
-    /// Favourite rooms that appear in the "Pinned" section at the top of the sidebar.
-    fileprivate var pinnedRooms: [RoomSummary] {
-        filteredRooms.filter(\.isFavourite)
-    }
 
-    /// Non-favourite rooms shown in the main "Rooms" section below pinned rooms.
-    fileprivate var unpinnedRooms: [RoomSummary] {
-        filteredRooms.filter { !$0.isFavourite }
-    }
 
     /// A reusable comparator for sorting rooms by the current sort settings.
     private var roomComparator: (RoomSummary, RoomSummary) -> Bool {
