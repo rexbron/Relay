@@ -31,9 +31,8 @@ struct SignInPage: View {
     @State private var matrixIDError: String?
     @FocusState private var matrixIDFieldFocused: Bool
     @State private var password = ""
-    #if DEBUG
     @State private var customHomeserver = ""
-    #endif
+    @State private var advancedExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,12 +50,23 @@ struct SignInPage: View {
                     SecureField("Password", text: $password)
                         .textFieldStyle(.roundedBorder)
                         .onSubmit(signIn)
-                    #if DEBUG
-                    TextField("Homeserver URL (optional)", text: $customHomeserver)
-                        .textFieldStyle(.roundedBorder)
-                        .textContentType(.URL)
-                        .autocorrectionDisabled()
-                    #endif
+
+                    DisclosureGroup(isExpanded: $advancedExpanded) {
+                        TextField("Homeserver URL (optional)", text: $customHomeserver)
+                            .textFieldStyle(.roundedBorder)
+                            .textContentType(.URL)
+                            .autocorrectionDisabled()
+                            .padding(.top, 8)
+                    } label: {
+                        Button("Advanced") {
+                            withAnimation {
+                                advancedExpanded.toggle()
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                    }
                 }
                 .onChange(of: matrixIDFieldFocused) { _, focused in
                     if !focused {
@@ -117,12 +127,8 @@ struct SignInPage: View {
     // MARK: - Actions
 
     private var effectiveHomeserver: String {
-        #if DEBUG
         let trimmed = customHomeserver.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? matrixID.homeserver : trimmed
-        #else
-        return matrixID.homeserver
-        #endif
     }
 
     private func signIn() {
