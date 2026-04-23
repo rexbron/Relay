@@ -378,7 +378,7 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
     private var htmlBody: NSAttributedString? {
         guard let html = message.formattedBody else { return nil }
         return Self.htmlCache.value(forKey: html) {
-            MatrixHTMLParser.parse(html)
+            NSAttributedString(matrixHTML: html)
         }
     }
 
@@ -401,7 +401,7 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
         guard let html = message.formattedBody else { return nil }
         let cacheKey = "\(message.displayName)\0\(html)"
         return Self.emoteHtmlCache.value(forKey: cacheKey) {
-            guard let parsed = MatrixHTMLParser.parse(html) else { return nil }
+            guard let parsed = NSAttributedString(matrixHTML: html) else { return nil }
             // Prepend italic display name.
             let result = NSMutableAttributedString()
             let nameFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
@@ -483,6 +483,18 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
         )
         MessageView(
             message: TimelineMessage(
+                id: "1c",
+                senderID: "@alice:matrix.org",
+                senderDisplayName: "Alice",
+                body: "",
+                formattedBody: "<blockquote>Per your email:\n<blockquote>When is the schedule release date?</blockquote>\n</blockquote>\nTuesday",
+                timestamp: .now.addingTimeInterval(-100),
+                isOutgoing: false,
+                reactions: [],
+            ),
+        )
+        MessageView(
+            message: TimelineMessage(
                 id: "2",
                 senderID: "@me:matrix.org",
                 body: "Nice — I'll take a look.",
@@ -542,6 +554,19 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                 isOutgoing: true,
                 reactions: [],
                 replyDetail: nil,
+            ),
+            currentUserID: "@me:matrix.org"
+        )
+        MessageView(
+            message: TimelineMessage(
+                id: "5",
+                senderID: "@alice:matrix.org",
+                body: "> Sure. It's up on GitHub.\nWhich project?",
+                formattedBody: "<blockquote>Sure. It's up on GitHub.</blockquote>\nWhich project?",
+                timestamp: .now.addingTimeInterval(-10),
+                isOutgoing: false,
+                reactions: [],
+                replyDetail: nil
             ),
             currentUserID: "@me:matrix.org"
         )

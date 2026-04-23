@@ -71,7 +71,7 @@ extension MessageView {
         // Prefer HTML path: parse the formatted body and extract the plain-text string.
         if let html = reply.formattedBody {
             return replyTextCache.value(forKey: html) {
-                MatrixHTMLParser.parse(html)?.string ?? reply.body
+                NSAttributedString(matrixHTML: html)?.string ?? reply.body
             }
         }
         // Markdown fallback: parse inline markdown and extract the plain-text characters.

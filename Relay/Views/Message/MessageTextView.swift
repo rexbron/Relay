@@ -344,7 +344,7 @@ private struct HTMLBubblePreview: View {
 
     var body: some View {
         Group {
-            if let resolved = MatrixHTMLParser.parse(html) {
+            if let resolved = NSAttributedString(matrixHTML: html) {
                 MessageTextView(resolved: resolved, isOutgoing: isOutgoing)
             } else {
                 Text("Parse error")
@@ -480,6 +480,10 @@ private struct HTMLBubblePreview: View {
                 isOutgoing: false
             )
             HTMLBubblePreview(
+                html: "<blockquote><blockquote>This is a nested blockquote that should wrap to multiple lines to test trailing edge alignment</blockquote></blockquote>",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
                 html: "<blockquote>Outgoing blockquote text here</blockquote><p>My reply</p>",
                 isOutgoing: true
             )
@@ -516,6 +520,96 @@ private struct HTMLBubblePreview: View {
                 // swiftlint:disable:next line_length
                 html: "<ul><li>Outer item<ul><li>Nested item 1</li><li>Nested item 2</li></ul></li><li>Back to outer</li></ul>",
                 isOutgoing: false
+            )
+        }
+        .padding()
+        .frame(width: 500)
+    }
+}
+
+#Preview("HTML Nested Blockquotes") {
+    ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+            HTMLBubblePreview(
+                html: """
+                <blockquote><blockquote><p>Original message</p></blockquote>\
+                <p>First reply</p></blockquote>\
+                <p>Second reply</p>
+                """,
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: """
+                <blockquote><blockquote><blockquote>\
+                <p>Deep nested quote</p></blockquote>\
+                <p>Middle reply</p></blockquote>\
+                <p>Outer reply</p></blockquote>\
+                <p>My response</p>
+                """,
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: """
+                <blockquote><blockquote><p>They said this</p></blockquote>\
+                <p>And I replied with <b>emphasis</b></p></blockquote>\
+                <p>Outgoing nested quote</p>
+                """,
+                isOutgoing: true
+            )
+            HTMLBubblePreview(
+                // swiftlint:disable:next line_length
+                html: "<p>Some context before the quote:</p><blockquote><p>This is the quoted text that spans multiple lines and should wrap nicely within the blockquote bar</p></blockquote><p>And here is the follow-up paragraph after the quote.</p>",
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: """
+                <blockquote><blockquote>\
+                <p>Alice: Has anyone tried the new SDK release?</p>\
+                <p>It has some breaking changes.</p>\
+                </blockquote>\
+                <p>Bob: Yes, I migrated yesterday. The new async API is much cleaner.</p>\
+                </blockquote>\
+                <p>Carol: Thanks for the heads up, I'll update today.</p>
+                """,
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: """
+                <blockquote><blockquote><blockquote>\
+                <p>How do I install it?</p>\
+                </blockquote>\
+                <p>Check the <a href="https://example.com">docs</a>, \
+                it's under <code>Getting Started</code>.</p>\
+                </blockquote>\
+                <p>That worked, thanks! I also had to run:</p>\
+                <pre><code>swift package update</code></pre>\
+                </blockquote>\
+                <p>Glad you got it sorted.</p>
+                """,
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: """
+                <blockquote><blockquote>\
+                <p>Are we still meeting at 3pm?</p>\
+                </blockquote>\
+                <p>Moved to 4pm, check the calendar.</p>\
+                </blockquote>\
+                <p>Got it, see you then!</p>
+                """,
+                isOutgoing: true
+            )
+            HTMLBubblePreview(
+                html: """
+                Per your email:
+                <blockquote>
+                <blockquote>
+                On Tuesday, we are planning on releasing our newest product. We are planning a live stream announcement to talk about it.
+                </blockquote>
+                Which product is that?
+                </blockquote>
+                """,
+                isOutgoing: true
             )
         }
         .padding()

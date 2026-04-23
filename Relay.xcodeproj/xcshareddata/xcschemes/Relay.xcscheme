@@ -35,20 +35,9 @@
             parallelizable = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "3B4AFD972F638A36001F0EA1"
+               BlueprintIdentifier = "3B11E0872F9A3F600051F7B3"
                BuildableName = "RelayTests.xctest"
                BlueprintName = "RelayTests"
-               ReferencedContainer = "container:Relay.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "3B4AFDA12F638A36001F0EA1"
-               BuildableName = "RelayUITests.xctest"
-               BlueprintName = "RelayUITests"
                ReferencedContainer = "container:Relay.xcodeproj">
             </BuildableReference>
          </TestableReference>

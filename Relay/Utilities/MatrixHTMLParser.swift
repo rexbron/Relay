@@ -14,57 +14,73 @@
 // limitations under the License.
 
 import AppKit
-import SwiftSoup
+
+// MARK: - Matrix Attributed String Keys
+
+extension NSAttributedString.Key {
+    /// Marker attribute for spoiler text (`<span data-mx-spoiler>`).
+    /// Value: `Bool`. When `true`, ``MessageTextView`` can implement
+    /// tap-to-reveal behavior.
+    static let matrixSpoiler = NSAttributedString.Key("matrixSpoiler")
+
+    /// Blockquote nesting depth. Value: `Int` (1 for outermost, 2 for nested, etc.).
+    /// Used by ``MessageTextView/applyColorOverrides(_:foreground:linkColor:)``
+    /// to mute text color inside blockquotes.
+    static let blockquoteDepth = NSAttributedString.Key("matrixBlockquoteDepth")
+
+    /// Marks the bar character(s) at the start of a blockquote. Value: `Bool`.
+    /// Used by ``MessageTextView/applyColorOverrides(_:foreground:linkColor:)``
+    /// to apply a subtle foreground color to the vertical bar.
+    static let blockquoteBar = NSAttributedString.Key("matrixBlockquoteBar")
+}
+
+// MARK: - NSAttributedString + Matrix HTML
+
+extension NSAttributedString {
+
+    /// Creates an attributed string by parsing a Matrix `org.matrix.custom.html`
+    /// formatted message body.
+    ///
+    /// Supports the subset of HTML tags recommended by the
+    /// [Matrix Client-Server API specification](https://spec.matrix.org/latest/client-server-api/#mroommessage-msgtypes):
+    ///
+    /// **Inline:** `b`, `strong`, `i`, `em`, `u`, `s`, `del`, `code`, `a`, `span`,
+    ///             `sub`, `sup`, `br`, `font` (deprecated)
+    ///
+    /// **Block:** `p`, `div`, `blockquote`, `pre`, `h1`-`h6`, `hr`, `ul`, `ol`, `li`
+    ///
+    /// Tags outside this set are stripped (their text content is preserved).
+    /// The `<mx-reply>` block is removed per the spec.
+    ///
+    /// - Parameter matrixHTML: The raw HTML string from a `formatted_body` field.
+    convenience init?(matrixHTML html: String) {
+        let parser = MatrixHTMLParser(html)
+        guard let result = parser.parse() else { return nil }
+        self.init(attributedString: result)
+    }
+}
 
 // MARK: - MatrixHTMLParser
 
-/// Parses Matrix `org.matrix.custom.html` formatted message bodies into
-/// `NSAttributedString` values suitable for rendering in ``MessageTextView``.
+/// Internal parser that converts Matrix HTML into `NSAttributedString`.
 ///
-/// Supports the subset of HTML tags recommended by the
-/// [Matrix Client-Server API specification](https://spec.matrix.org/latest/client-server-api/#mroommessage-msgtypes):
-///
-/// **Inline:** `b`, `strong`, `i`, `em`, `u`, `s`, `del`, `code`, `a`, `span`,
-///             `sub`, `sup`, `br`, `font` (deprecated)
-///
-/// **Block:** `p`, `div`, `blockquote`, `pre`, `h1`–`h6`, `hr`, `ul`, `ol`, `li`
-///
-/// Tags outside this set are stripped (their text content is preserved).
-/// Attributes are sanitized per the spec's allow-list.
-enum MatrixHTMLParser { // swiftlint:disable:this type_body_length
+/// Uses a lightweight scanner to tokenize HTML into tags and text segments,
+/// then maps the limited Matrix tag set directly to AppKit attributes. No
+/// external dependencies — just Swift string processing and AppKit types.
+private struct MatrixHTMLParser { // swiftlint:disable:this type_body_length
 
-    // MARK: - Public API
+    private let html: String
 
-    /// Parses a Matrix HTML string into an `NSAttributedString`.
-    ///
-    /// - Parameter html: The raw HTML string from a `formatted_body` field.
-    /// - Returns: An `NSAttributedString` with resolved AppKit attributes, or `nil`
-    ///   if parsing fails entirely.
-    static func parse(_ html: String) -> NSAttributedString? {
-        guard let document = try? SwiftSoup.parseBodyFragment(html) else { return nil }
-        guard let body = document.body() else { return nil }
-
-        // Strip <mx-reply> blocks per spec (Changed in v1.13).
-        _ = try? body.select("mx-reply").remove()
-
-        let result = NSMutableAttributedString()
-        let context = RenderContext()
-        renderChildren(of: body, into: result, context: context)
-
-        // Trim trailing newlines that block elements leave behind.
-        trimTrailingNewlines(result)
-
-        return result
+    init(_ html: String) {
+        self.html = html
     }
 
     // MARK: - Allowed Tags
 
-    /// The set of tags we actively render. Everything else is stripped (text preserved).
+    /// Tags we actively render. Everything else is stripped (text preserved).
     private static let allowedTags: Set<String> = [
-        // Inline
-        "b", "strong", "i", "em", "u", "s", "del", "code", "a", "span", "sub", "sup", "br",
-        "font", // deprecated but still supported for reading
-        // Block
+        "b", "strong", "i", "em", "u", "s", "del", "code", "a", "span",
+        "sub", "sup", "br", "font",
         "p", "div", "blockquote", "pre", "h1", "h2", "h3", "h4", "h5", "h6",
         "hr", "ul", "ol", "li"
     ]
@@ -75,300 +91,453 @@ enum MatrixHTMLParser { // swiftlint:disable:this type_body_length
         "hr", "ul", "ol", "li"
     ]
 
+    /// Void (self-closing) tags that have no closing counterpart.
+    private static let voidTags: Set<String> = ["br", "hr"]
+
+    /// Tags whose content (including text children) should be suppressed entirely.
+    private static let opaqueContentTags: Set<String> = [
+        "script", "style", "title", "head"
+    ]
+
     /// Allowed URL schemes for `<a href>` links (per spec).
     private static let allowedLinkSchemes: Set<String> = [
         "https", "http", "ftp", "mailto", "magnet"
     ]
 
-    // MARK: - Render Context
+    // MARK: - Render State
 
-    /// Mutable state carried through the recursive tree walk.
-    private final class RenderContext {
-        /// Current font traits inherited from ancestor elements.
+    /// Per-element formatting state, pushed/popped as tags open/close.
+    private struct Style {
         var bold = false
         var italic = false
         var isCode = false
         var isPreformatted = false
-
-        /// Decorations
         var underline = false
         var strikethrough = false
-
-        /// Superscript / subscript nesting depth (positive = super, negative = sub).
         var baselineShift: Int = 0
-
-        /// Current foreground color override (from `data-mx-color` or `color` attr).
         var foregroundColor: NSColor?
-
-        /// Current background color override (from `data-mx-bg-color`).
         var backgroundColor: NSColor?
-
-        /// Link URL to apply (when inside an `<a>` tag).
         var linkURL: URL?
-
-        /// Blockquote nesting depth.
-        var blockquoteDepth: Int = 0
-
-        /// List context stack: each entry is (ordered: Bool, counter: Int, startValue: Int).
-        var listStack: [(ordered: Bool, counter: Int, start: Int)] = [] // swiftlint:disable:this large_tuple
-
-        /// Whether a spoiler is active (data-mx-spoiler).
         var isSpoiler = false
+    }
 
-        /// When `true`, the next call to `ensureBlockBreak` is skipped (and the
-        /// flag is reset). Used after the blockquote bar so the first child
-        /// `<p>` doesn't inject a newline between the bar and its text.
+    // MARK: - Token Types
+
+    /// A simple HTML token produced by the scanner.
+    private enum Token {
+        case text(String)
+        case openTag(name: String, attributes: [String: String])
+        case closeTag(name: String)
+    }
+
+    // MARK: - Parse Entry Point
+
+    func parse() -> NSAttributedString? {
+        // Strip <mx-reply>...</mx-reply> blocks per spec.
+        let cleaned = removeMxReply(html)
+
+        let tokens = tokenize(cleaned)
+        let result = NSMutableAttributedString()
+        var styleStack: [Style] = [Style()]
+        var blockquoteDepth = 0
+        var listStack: [(ordered: Bool, counter: Int)] = []
         var suppressNextBlockBreak = false
+        /// Nesting depth inside tags whose content should be suppressed (e.g. `<script>`).
+        var opaqueDepth = 0
 
-        /// Creates a snapshot of the current context for push/pop.
-        ///
-        /// Note: `listStack` and `blockquoteDepth` are intentionally excluded from
-        /// snapshot/restore because they are managed structurally by the `<ul>`/`<ol>`
-        /// and `<blockquote>` handlers, and list item counters must persist across
-        /// sibling `<li>` elements.
-        func snapshot() -> Snapshot {
-            Snapshot(
-                bold: bold, italic: italic, isCode: isCode, isPreformatted: isPreformatted,
-                underline: underline, strikethrough: strikethrough,
-                baselineShift: baselineShift,
-                foregroundColor: foregroundColor, backgroundColor: backgroundColor,
-                linkURL: linkURL, isSpoiler: isSpoiler
-            )
+        // Deferred block-element post-processing (headings, blockquotes, pre, list items).
+        struct DeferredBlock {
+            let tag: String
+            let startIndex: Int
+            var attributes: [String: String] = [:]
         }
+        var deferredStack: [DeferredBlock] = []
 
-        // swiftlint:disable:next identifier_name
-        func restore(_ s: Snapshot) {
-            bold = s.bold; italic = s.italic; isCode = s.isCode; isPreformatted = s.isPreformatted
-            underline = s.underline; strikethrough = s.strikethrough
-            baselineShift = s.baselineShift
-            foregroundColor = s.foregroundColor; backgroundColor = s.backgroundColor
-            linkURL = s.linkURL; isSpoiler = s.isSpoiler
-        }
+        for token in tokens {
+            switch token {
+            case .text(let text):
+                // Suppress text inside opaque-content tags like <script>.
+                guard opaqueDepth == 0 else { continue }
 
-        // swiftlint:disable:next nesting
-        struct Snapshot {
-            let bold: Bool, italic: Bool, isCode: Bool, isPreformatted: Bool
-            let underline: Bool, strikethrough: Bool
-            let baselineShift: Int
-            let foregroundColor: NSColor?, backgroundColor: NSColor?
-            let linkURL: URL?
-            let isSpoiler: Bool
-        }
-    }
+                let current = styleStack.last!
+                let processed: String
+                if current.isPreformatted {
+                    processed = text
+                } else {
+                    // Collapse whitespace in non-preformatted context.
+                    let collapsed = collapseWhitespace(text)
+                    // Suppress whitespace-only text between block elements.
+                    if collapsed.allSatisfy(\.isWhitespace) && result.length > 0 {
+                        let lastChar = result.attributedSubstring(
+                            from: NSRange(location: result.length - 1, length: 1)
+                        ).string
+                        if lastChar == "\n" { continue }
+                    }
+                    processed = collapsed
+                }
+                guard !processed.isEmpty else { continue }
+                let attrs = buildAttributes(from: current)
+                result.append(NSAttributedString(string: processed, attributes: attrs))
 
-    // MARK: - Tree Walk
+            case .openTag(let name, let attributes):
+                let tag = name.lowercased()
 
-    private static func renderChildren(
-        of element: Element, into result: NSMutableAttributedString, context: RenderContext
-    ) {
-        for node in element.getChildNodes() {
-            if let textNode = node as? TextNode {
-                renderText(textNode, into: result, context: context)
-            } else if let child = node as? Element {
-                renderElement(child, into: result, context: context)
+                // Track nesting into opaque-content tags.
+                if Self.opaqueContentTags.contains(tag) {
+                    opaqueDepth += 1
+                    continue
+                }
+                guard opaqueDepth == 0 else { continue }
+
+                guard Self.allowedTags.contains(tag) else { continue }
+
+                // Pre-element block break.
+                if Self.blockTags.contains(tag) {
+                    if suppressNextBlockBreak {
+                        suppressNextBlockBreak = false
+                    } else {
+                        ensureBlockBreak(in: result)
+                    }
+                }
+
+                // Push a copy of the current style.
+                var style = styleStack.last!
+
+                switch tag {
+                case "b", "strong":
+                    style.bold = true
+                case "i", "em":
+                    style.italic = true
+                case "u":
+                    style.underline = true
+                case "s", "del":
+                    style.strikethrough = true
+                case "code":
+                    style.isCode = true
+                case "sub":
+                    style.baselineShift -= 1
+                case "sup":
+                    style.baselineShift += 1
+                case "br":
+                    let attrs = buildAttributes(from: style)
+                    result.append(NSAttributedString(string: "\n", attributes: attrs))
+                case "a":
+                    if let href = attributes["href"], !href.isEmpty,
+                       let url = URL(string: href),
+                       let scheme = url.scheme?.lowercased(),
+                       Self.allowedLinkSchemes.contains(scheme) {
+                        style.linkURL = url
+                    }
+                case "span":
+                    if let colorHex = attributes["data-mx-color"], !colorHex.isEmpty {
+                        style.foregroundColor = NSColor(matrixHex: colorHex)
+                    }
+                    if let bgHex = attributes["data-mx-bg-color"], !bgHex.isEmpty {
+                        style.backgroundColor = NSColor(matrixHex: bgHex)
+                    }
+                    if attributes.keys.contains("data-mx-spoiler") {
+                        style.isSpoiler = true
+                    }
+                case "font":
+                    if let colorHex = attributes["data-mx-color"], !colorHex.isEmpty {
+                        style.foregroundColor = NSColor(matrixHex: colorHex)
+                    } else if let colorHex = attributes["color"], !colorHex.isEmpty {
+                        style.foregroundColor = NSColor(matrixHex: colorHex)
+                    }
+                    if let bgHex = attributes["data-mx-bg-color"], !bgHex.isEmpty {
+                        style.backgroundColor = NSColor(matrixHex: bgHex)
+                    }
+
+                case "blockquote":
+                    blockquoteDepth += 1
+                    let baseFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+                    let barString = "\u{2502} "
+                    let barWidth = (barString as NSString)
+                        .size(withAttributes: [.font: baseFont]).width
+                    let paraStyle = NSMutableParagraphStyle()
+                    paraStyle.firstLineHeadIndent = 0
+                    paraStyle.headIndent = barWidth
+                    paraStyle.tailIndent = -barWidth
+                    let barAttrs: [NSAttributedString.Key: Any] = [
+                        .font: baseFont,
+                        .blockquoteBar: true,
+                        .paragraphStyle: paraStyle
+                    ]
+                    result.append(NSAttributedString(string: barString, attributes: barAttrs))
+                    suppressNextBlockBreak = true
+                    deferredStack.append(DeferredBlock(
+                        tag: tag, startIndex: result.length
+                    ))
+
+                case "pre":
+                    style.isPreformatted = true
+                    style.isCode = true
+                    deferredStack.append(DeferredBlock(tag: tag, startIndex: result.length))
+
+                case "h1", "h2", "h3", "h4", "h5", "h6":
+                    style.bold = true
+                    deferredStack.append(DeferredBlock(tag: tag, startIndex: result.length))
+
+                case "hr":
+                    let separator = NSAttributedString(
+                        string: "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}",
+                        attributes: [
+                            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                            .foregroundColor: NSColor.separatorColor
+                        ]
+                    )
+                    result.append(separator)
+
+                case "ul":
+                    listStack.append((ordered: false, counter: 0))
+                case "ol":
+                    let startValue = attributes["start"].flatMap(Int.init) ?? 1
+                    listStack.append((ordered: true, counter: startValue - 1))
+
+                case "li":
+                    if !listStack.isEmpty {
+                        let depth = listStack.count
+                        let lastIndex = listStack.count - 1
+                        let marker: String
+                        if listStack[lastIndex].ordered {
+                            listStack[lastIndex].counter += 1
+                            marker = "\(listStack[lastIndex].counter). "
+                        } else {
+                            let bullets = ["\u{2022}", "\u{25E6}", "\u{2023}"]
+                            marker = "\(bullets[min(depth - 1, bullets.count - 1)]) "
+                        }
+                        ensureNewline(in: result)
+                        let baseFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+                        let markerWidth = (marker as NSString)
+                            .size(withAttributes: [.font: baseFont]).width
+                        let basePad: CGFloat = 6.0
+                        let leadingPad: CGFloat = basePad + CGFloat(depth - 1) * 12.0
+                        let contentIndent = leadingPad + markerWidth
+                        let paraStyle = NSMutableParagraphStyle()
+                        paraStyle.firstLineHeadIndent = leadingPad
+                        paraStyle.headIndent = contentIndent
+                        let markerAttrs: [NSAttributedString.Key: Any] = [
+                            .font: baseFont,
+                            .paragraphStyle: paraStyle
+                        ]
+                        result.append(NSAttributedString(string: marker, attributes: markerAttrs))
+                        deferredStack.append(DeferredBlock(tag: tag, startIndex: result.length))
+                    }
+                default:
+                    break
+                }
+
+                // Push style for non-void tags.
+                if !Self.voidTags.contains(tag) {
+                    styleStack.append(style)
+                }
+
+            case .closeTag(let name):
+                let tag = name.lowercased()
+
+                // Track leaving opaque-content tags.
+                if Self.opaqueContentTags.contains(tag) {
+                    opaqueDepth = max(0, opaqueDepth - 1)
+                    continue
+                }
+                guard opaqueDepth == 0 else { continue }
+
+                guard Self.allowedTags.contains(tag), !Self.voidTags.contains(tag) else {
+                    continue
+                }
+
+                switch tag {
+                case "p", "div":
+                    ensureBlockBreak(in: result)
+
+                case "blockquote":
+                    if let deferred = deferredStack.last, deferred.tag == "blockquote" {
+                        deferredStack.removeLast()
+                        let contentRange = NSRange(
+                            location: deferred.startIndex,
+                            length: result.length - deferred.startIndex
+                        )
+                        if contentRange.length > 0 {
+                            // Apply depth only where a nested blockquote hasn't
+                            // already set a higher value.
+                            result.enumerateAttribute(
+                                .blockquoteDepth, in: contentRange, options: []
+                            ) { value, range, _ in
+                                let existing = value as? Int ?? 0
+                                if blockquoteDepth > existing {
+                                    result.addAttribute(
+                                        .blockquoteDepth,
+                                        value: blockquoteDepth,
+                                        range: range
+                                    )
+                                }
+                            }
+                            // Apply paragraph style for blockquote wrapping.
+                            let baseFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+                            let barWidth = ("\u{2502} " as NSString)
+                                .size(withAttributes: [.font: baseFont]).width
+                            let style = NSMutableParagraphStyle()
+                            style.firstLineHeadIndent = 0
+                            style.headIndent = barWidth
+                            style.tailIndent = -barWidth
+                            result.addAttribute(
+                                .paragraphStyle, value: style, range: contentRange
+                            )
+                        }
+                    }
+                    blockquoteDepth -= 1
+                    ensureBlockBreak(in: result)
+
+                case "pre":
+                    if let deferred = deferredStack.last, deferred.tag == "pre" {
+                        deferredStack.removeLast()
+                        let range = NSRange(
+                            location: deferred.startIndex,
+                            length: result.length - deferred.startIndex
+                        )
+                        if range.length > 0 {
+                            result.addAttribute(
+                                .backgroundColor,
+                                value: NSColor.gray.withAlphaComponent(0.12),
+                                range: range
+                            )
+                            let style = NSMutableParagraphStyle()
+                            style.paragraphSpacingBefore = 4
+                            style.paragraphSpacing = 4
+                            result.addAttribute(.paragraphStyle, value: style, range: range)
+                        }
+                    }
+                    ensureBlockBreak(in: result)
+
+                case "h1", "h2", "h3", "h4", "h5", "h6":
+                    if let deferred = deferredStack.last, deferred.tag == tag {
+                        deferredStack.removeLast()
+                        let range = NSRange(
+                            location: deferred.startIndex,
+                            length: result.length - deferred.startIndex
+                        )
+                        if range.length > 0 {
+                            let level = Int(String(tag.last!))!
+                            let scales: [CGFloat] = [1.5, 1.35, 1.2, 1.1, 1.05, 1.0]
+                            let scale = scales[min(level - 1, scales.count - 1)]
+                            let headingSize = NSFont.systemFontSize * scale
+                            let headingFont = NSFont.boldSystemFont(ofSize: headingSize)
+                            result.addAttribute(.font, value: headingFont, range: range)
+                            let style = NSMutableParagraphStyle()
+                            style.paragraphSpacingBefore = 4
+                            style.paragraphSpacing = 2
+                            result.addAttribute(.paragraphStyle, value: style, range: range)
+                        }
+                    }
+                    ensureBlockBreak(in: result)
+
+                case "ul", "ol":
+                    if !listStack.isEmpty {
+                        listStack.removeLast()
+                    }
+                    ensureBlockBreak(in: result)
+
+                case "li":
+                    if let deferred = deferredStack.last, deferred.tag == "li" {
+                        deferredStack.removeLast()
+                        let contentRange = NSRange(
+                            location: deferred.startIndex,
+                            length: result.length - deferred.startIndex
+                        )
+                        if contentRange.length > 0 {
+                            // Re-derive the paragraph style for this list depth.
+                            let depth = listStack.count
+                            if depth > 0 {
+                                let baseFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+                                // Use a placeholder marker to measure width consistently.
+                                let sampleMarker = listStack[depth - 1].ordered ? "0. " : "\u{2022} "
+                                let markerWidth = (sampleMarker as NSString)
+                                    .size(withAttributes: [.font: baseFont]).width
+                                let basePad: CGFloat = 6.0
+                                let leadingPad = basePad + CGFloat(depth - 1) * 12.0
+                                let contentIndent = leadingPad + markerWidth
+                                let style = NSMutableParagraphStyle()
+                                style.firstLineHeadIndent = leadingPad
+                                style.headIndent = contentIndent
+                                result.addAttribute(
+                                    .paragraphStyle, value: style, range: contentRange
+                                )
+                            }
+                        }
+                    }
+
+                default:
+                    break
+                }
+
+                // Pop style.
+                if styleStack.count > 1 {
+                    styleStack.removeLast()
+                }
             }
         }
-    }
 
-    private static func renderText(
-        _ textNode: TextNode, into result: NSMutableAttributedString, context: RenderContext
-    ) {
-        let raw: String
-        if context.isPreformatted {
-            raw = textNode.getWholeText()
-        } else {
-            // SwiftSoup's .text() normalizes whitespace within inline flow, but
-            // whitespace-only text nodes between block elements (e.g. "\n" between
-            // <blockquote> and <p>) should be suppressed to avoid stray spaces.
-            let whole = textNode.getWholeText()
-            if whole.allSatisfy(\.isWhitespace),
-               let parent = textNode.parent() as? Element,
-               isBlockContainer(parent.tagNameNormal()) {
-                return
-            }
-            raw = textNode.text()
-        }
-        guard !raw.isEmpty else { return }
-        let attrs = currentAttributes(context)
-        result.append(NSAttributedString(string: raw, attributes: attrs))
-    }
-
-    /// Whether a tag typically contains block-level children, meaning whitespace-only
-    /// text nodes between those children are insignificant.
-    private static func isBlockContainer(_ tag: String) -> Bool {
-        blockTags.contains(tag) || tag == "body"
-    }
-
-    // swiftlint:disable:next cyclomatic_complexity function_body_length
-    private static func renderElement(
-        _ element: Element, into result: NSMutableAttributedString, context: RenderContext
-    ) {
-        let tag = element.tagNameNormal()
-
-        // For disallowed tags, just render children (strip the tag, keep text).
-        guard allowedTags.contains(tag) else {
-            renderChildren(of: element, into: result, context: context)
-            return
-        }
-
-        let snap = context.snapshot()
-        defer { context.restore(snap) }
-
-        // Pre-element block break.
-        if blockTags.contains(tag) {
-            if context.suppressNextBlockBreak {
-                context.suppressNextBlockBreak = false
+        // Trim trailing newlines.
+        while result.length > 0 {
+            let last = result.attributedSubstring(
+                from: NSRange(location: result.length - 1, length: 1)
+            ).string
+            if last == "\n" {
+                result.deleteCharacters(in: NSRange(location: result.length - 1, length: 1))
             } else {
-                ensureBlockBreak(in: result)
+                break
             }
         }
 
-        switch tag {
-        // -- Inline formatting --
-        case "b", "strong":
-            context.bold = true
-            renderChildren(of: element, into: result, context: context)
-
-        case "i", "em":
-            context.italic = true
-            renderChildren(of: element, into: result, context: context)
-
-        case "u":
-            context.underline = true
-            renderChildren(of: element, into: result, context: context)
-
-        case "s", "del":
-            context.strikethrough = true
-            renderChildren(of: element, into: result, context: context)
-
-        case "code":
-            context.isCode = true
-            renderChildren(of: element, into: result, context: context)
-
-        case "sub":
-            context.baselineShift -= 1
-            renderChildren(of: element, into: result, context: context)
-
-        case "sup":
-            context.baselineShift += 1
-            renderChildren(of: element, into: result, context: context)
-
-        case "br":
-            result.append(NSAttributedString(string: "\n", attributes: currentAttributes(context)))
-
-        case "a":
-            if let href = try? element.attr("href"), !href.isEmpty,
-               let url = URL(string: href),
-               let scheme = url.scheme?.lowercased(),
-               allowedLinkSchemes.contains(scheme) {
-                context.linkURL = url
-            }
-            renderChildren(of: element, into: result, context: context)
-
-        case "span":
-            applySpanAttributes(element, context: context)
-            renderChildren(of: element, into: result, context: context)
-
-        case "font":
-            // Deprecated tag -- support reading for backward compat.
-            applyFontAttributes(element, context: context)
-            renderChildren(of: element, into: result, context: context)
-
-        // -- Block elements --
-        case "p", "div":
-            renderChildren(of: element, into: result, context: context)
-            ensureBlockBreak(in: result)
-
-        case "blockquote":
-            context.blockquoteDepth += 1
-            renderBlockquote(element, into: result, context: context)
-
-        case "pre":
-            context.isPreformatted = true
-            context.isCode = true
-            renderPreBlock(element, into: result, context: context)
-
-        case "h1": renderHeading(element, level: 1, into: result, context: context)
-        case "h2": renderHeading(element, level: 2, into: result, context: context)
-        case "h3": renderHeading(element, level: 3, into: result, context: context)
-        case "h4": renderHeading(element, level: 4, into: result, context: context)
-        case "h5": renderHeading(element, level: 5, into: result, context: context)
-        case "h6": renderHeading(element, level: 6, into: result, context: context)
-
-        case "hr":
-            let separator = NSAttributedString(
-                string: "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}",
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
-                    .foregroundColor: NSColor.separatorColor
-                ]
-            )
-            result.append(separator)
-
-        case "ul":
-            context.listStack.append((ordered: false, counter: 0, start: 1))
-            renderChildren(of: element, into: result, context: context)
-            context.listStack.removeLast()
-
-        case "ol":
-            let startValue = (try? element.attr("start")).flatMap(Int.init) ?? 1
-            context.listStack.append((ordered: true, counter: startValue - 1, start: startValue))
-            renderChildren(of: element, into: result, context: context)
-            context.listStack.removeLast()
-
-        case "li":
-            renderListItem(element, into: result, context: context)
-
-        default:
-            renderChildren(of: element, into: result, context: context)
-        }
-
-        // Post-element block break for tags that need it (p, div already handled above).
-        if tag == "blockquote" || tag == "pre" || tag.hasPrefix("h") || tag == "ul" || tag == "ol" {
-            ensureBlockBreak(in: result)
-        }
+        if result.length == 0 { return nil }
+        return result
     }
 
-    // MARK: - Attribute Builders
+    // MARK: - Attribute Builder
 
     // swiftlint:disable:next cyclomatic_complexity function_body_length
-    private static func currentAttributes(_ context: RenderContext) -> [NSAttributedString.Key: Any] {
+    private func buildAttributes(from style: Style) -> [NSAttributedString.Key: Any] {
         let baseSize = NSFont.systemFontSize
         var attrs: [NSAttributedString.Key: Any] = [:]
 
         // Font
         let font: NSFont
-        if context.isCode || context.isPreformatted {
-            let weight: NSFont.Weight = context.bold ? .bold : .regular
+        if style.isCode || style.isPreformatted {
+            let weight: NSFont.Weight = style.bold ? .bold : .regular
             font = NSFont.monospacedSystemFont(ofSize: baseSize, weight: weight)
         } else {
             var traits: NSFontDescriptor.SymbolicTraits = []
-            if context.bold { traits.insert(.bold) }
-            if context.italic { traits.insert(.italic) }
+            if style.bold { traits.insert(.bold) }
+            if style.italic { traits.insert(.italic) }
             if traits.isEmpty {
                 font = NSFont.systemFont(ofSize: baseSize)
             } else {
-                let desc = NSFont.systemFont(ofSize: baseSize).fontDescriptor.withSymbolicTraits(traits)
-                font = NSFont(descriptor: desc, size: baseSize) ?? NSFont.systemFont(ofSize: baseSize)
+                let desc = NSFont.systemFont(ofSize: baseSize)
+                    .fontDescriptor.withSymbolicTraits(traits)
+                font = NSFont(descriptor: desc, size: baseSize)
+                    ?? NSFont.systemFont(ofSize: baseSize)
             }
         }
 
         // Apply size scaling for sub/sup.
-        if context.baselineShift != 0 {
+        if style.baselineShift != 0 {
             let scaledSize = baseSize * 0.75
             let scaledFont: NSFont
-            if context.isCode {
-                scaledFont = NSFont.monospacedSystemFont(ofSize: scaledSize, weight: context.bold ? .bold : .regular)
+            if style.isCode {
+                scaledFont = NSFont.monospacedSystemFont(
+                    ofSize: scaledSize, weight: style.bold ? .bold : .regular
+                )
             } else {
                 var traits: NSFontDescriptor.SymbolicTraits = []
-                if context.bold { traits.insert(.bold) }
-                if context.italic { traits.insert(.italic) }
-                let desc = NSFont.systemFont(ofSize: scaledSize).fontDescriptor.withSymbolicTraits(traits)
-                scaledFont = NSFont(descriptor: desc, size: scaledSize) ?? NSFont.systemFont(ofSize: scaledSize)
+                if style.bold { traits.insert(.bold) }
+                if style.italic { traits.insert(.italic) }
+                let desc = NSFont.systemFont(ofSize: scaledSize)
+                    .fontDescriptor.withSymbolicTraits(traits)
+                scaledFont = NSFont(descriptor: desc, size: scaledSize)
+                    ?? NSFont.systemFont(ofSize: scaledSize)
             }
             attrs[.font] = scaledFont
-
-            let offset = context.baselineShift > 0
+            let offset = style.baselineShift > 0
                 ? baseSize * 0.35
                 : -(baseSize * 0.15)
             attrs[.baselineOffset] = offset
@@ -377,266 +546,313 @@ enum MatrixHTMLParser { // swiftlint:disable:this type_body_length
         }
 
         // Decorations
-        if context.underline {
+        if style.underline {
             attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
         }
-        if context.strikethrough {
+        if style.strikethrough {
             attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
         }
 
         // Colors
-        // swiftlint:disable:next identifier_name
-        if let fg = context.foregroundColor {
+        if let fg = style.foregroundColor {
             attrs[.foregroundColor] = fg
         }
-        if context.isCode && !context.isPreformatted {
-            // Inline code background.
+        if style.isCode && !style.isPreformatted {
             attrs[.backgroundColor] = NSColor.gray.withAlphaComponent(0.12)
         }
-        // swiftlint:disable:next identifier_name
-        if let bg = context.backgroundColor {
+        if let bg = style.backgroundColor {
             attrs[.backgroundColor] = bg
         }
 
-        // Spoiler: obscure text by setting foreground == background.
-        if context.isSpoiler {
-            let spoilerColor = NSColor.labelColor.withAlphaComponent(0.0)
-            attrs[.foregroundColor] = spoilerColor
+        // Spoiler
+        if style.isSpoiler {
+            attrs[.foregroundColor] = NSColor.labelColor.withAlphaComponent(0.0)
             attrs[.backgroundColor] = NSColor.labelColor.withAlphaComponent(0.8)
-            // Store a marker so resolve() knows this is a spoiler.
             attrs[.matrixSpoiler] = true
         }
 
         // Link
-        if let url = context.linkURL {
+        if let url = style.linkURL {
             attrs[.link] = url
         }
 
         return attrs
     }
 
-    // MARK: - Span / Font Attribute Helpers
+    // MARK: - HTML Tokenizer
 
-    private static func applySpanAttributes(_ element: Element, context: RenderContext) {
-        if let colorHex = try? element.attr("data-mx-color"), !colorHex.isEmpty {
-            context.foregroundColor = NSColor(matrixHex: colorHex)
+    /// Tokenizes HTML into a sequence of text, open-tag, and close-tag tokens.
+    /// Handles entity decoding, attribute parsing, and self-closing tags.
+    private func tokenize(_ html: String) -> [Token] {
+        var tokens: [Token] = []
+        var index = html.startIndex
+
+        while index < html.endIndex {
+            if html[index] == "<" {
+                // Try to parse a tag.
+                if let tagEnd = html[index...].firstIndex(of: ">") {
+                    let tagContent = html[html.index(after: index)..<tagEnd]
+                    let tagString = String(tagContent).trimmingCharacters(in: .whitespaces)
+
+                    if tagString.hasPrefix("!--") {
+                        // HTML comment — skip entirely.
+                        if let commentEnd = html[index...].range(of: "-->") {
+                            index = commentEnd.upperBound
+                        } else {
+                            index = html.endIndex
+                        }
+                        continue
+                    } else if tagString.hasPrefix("!") || tagString.hasPrefix("?") {
+                        // Doctype or processing instruction — skip.
+                        index = html.index(after: tagEnd)
+                        continue
+                    } else if tagString.hasPrefix("/") {
+                        // Close tag.
+                        let name = String(tagString.dropFirst())
+                            .trimmingCharacters(in: .whitespaces)
+                            .lowercased()
+                            .split(separator: " ").first
+                            .map(String.init) ?? ""
+                        if !name.isEmpty {
+                            tokens.append(.closeTag(name: name))
+                        }
+                    } else {
+                        // Open tag (possibly self-closing).
+                        let (name, attributes) = parseTagContent(tagString)
+                        let lowerName = name.lowercased()
+                        tokens.append(.openTag(name: lowerName, attributes: attributes))
+                        // If self-closing or a void element, auto-close.
+                        if tagString.hasSuffix("/") || Self.voidTags.contains(lowerName) {
+                            // Void tags don't get a close token — handled by not pushing style.
+                        }
+                    }
+                    index = html.index(after: tagEnd)
+                } else {
+                    // Malformed: < without matching >. Treat as text.
+                    tokens.append(.text(String(html[index])))
+                    index = html.index(after: index)
+                }
+            } else {
+                // Accumulate text until the next tag.
+                var textEnd = index
+                while textEnd < html.endIndex && html[textEnd] != "<" {
+                    textEnd = html.index(after: textEnd)
+                }
+                let rawText = String(html[index..<textEnd])
+                let decoded = decodeHTMLEntities(rawText)
+                tokens.append(.text(decoded))
+                index = textEnd
+            }
         }
-        if let bgHex = try? element.attr("data-mx-bg-color"), !bgHex.isEmpty {
-            context.backgroundColor = NSColor(matrixHex: bgHex)
-        }
-        if element.hasAttr("data-mx-spoiler") {
-            context.isSpoiler = true
-        }
+
+        return tokens
     }
 
-    private static func applyFontAttributes(_ element: Element, context: RenderContext) {
-        // Deprecated <font> tag, read data-mx-color, data-mx-bg-color, and legacy color attr.
-        if let colorHex = try? element.attr("data-mx-color"), !colorHex.isEmpty {
-            context.foregroundColor = NSColor(matrixHex: colorHex)
-        } else if let colorHex = try? element.attr("color"), !colorHex.isEmpty {
-            context.foregroundColor = NSColor(matrixHex: colorHex)
+    /// Parses the content inside `< ... >` into a tag name and attribute dictionary.
+    private func parseTagContent(_ content: String) -> (name: String, attributes: [String: String]) {
+        // Remove trailing / for self-closing tags.
+        var cleaned = content
+        if cleaned.hasSuffix("/") {
+            cleaned = String(cleaned.dropLast()).trimmingCharacters(in: .whitespaces)
         }
-        if let bgHex = try? element.attr("data-mx-bg-color"), !bgHex.isEmpty {
-            context.backgroundColor = NSColor(matrixHex: bgHex)
+
+        // Split into parts: first is the tag name, rest are attributes.
+        var index = cleaned.startIndex
+        // Find end of tag name.
+        while index < cleaned.endIndex && !cleaned[index].isWhitespace {
+            index = cleaned.index(after: index)
         }
+        let name = String(cleaned[cleaned.startIndex..<index])
+
+        // Parse attributes.
+        var attributes: [String: String] = [:]
+        var remaining = cleaned[index...].trimmingCharacters(in: .whitespaces)
+
+        while !remaining.isEmpty {
+            // Find attribute name.
+            guard let eqIndex = remaining.firstIndex(of: "=") else {
+                // Bare attribute (e.g. `data-mx-spoiler` without a value).
+                let attrName = remaining.trimmingCharacters(in: .whitespaces).lowercased()
+                if !attrName.isEmpty {
+                    attributes[attrName] = ""
+                }
+                break
+            }
+
+            let attrName = remaining[remaining.startIndex..<eqIndex]
+                .trimmingCharacters(in: .whitespaces).lowercased()
+            var afterEq = remaining[remaining.index(after: eqIndex)...]
+                .trimmingCharacters(in: .whitespaces)
+
+            let value: String
+            if afterEq.hasPrefix("\"") {
+                afterEq = String(afterEq.dropFirst())
+                if let closeQuote = afterEq.firstIndex(of: "\"") {
+                    value = String(afterEq[afterEq.startIndex..<closeQuote])
+                    remaining = String(
+                        afterEq[afterEq.index(after: closeQuote)...]
+                    ).trimmingCharacters(in: .whitespaces)
+                } else {
+                    value = afterEq
+                    remaining = ""
+                }
+            } else if afterEq.hasPrefix("'") {
+                afterEq = String(afterEq.dropFirst())
+                if let closeQuote = afterEq.firstIndex(of: "'") {
+                    value = String(afterEq[afterEq.startIndex..<closeQuote])
+                    remaining = String(
+                        afterEq[afterEq.index(after: closeQuote)...]
+                    ).trimmingCharacters(in: .whitespaces)
+                } else {
+                    value = afterEq
+                    remaining = ""
+                }
+            } else {
+                // Unquoted value — read until whitespace.
+                if let spaceIndex = afterEq.firstIndex(where: \.isWhitespace) {
+                    value = String(afterEq[afterEq.startIndex..<spaceIndex])
+                    remaining = String(
+                        afterEq[spaceIndex...]
+                    ).trimmingCharacters(in: .whitespaces)
+                } else {
+                    value = afterEq
+                    remaining = ""
+                }
+            }
+
+            if !attrName.isEmpty {
+                attributes[attrName] = decodeHTMLEntities(value)
+            }
+        }
+
+        return (name, attributes)
     }
 
-    // MARK: - Block Rendering
+    // MARK: - Preprocessing
 
-    private static func renderHeading(
-        _ element: Element, level: Int,
-        into result: NSMutableAttributedString, context: RenderContext
-    ) {
-        context.bold = true
+    /// Removes `<mx-reply>...</mx-reply>` blocks from the HTML string.
+    private func removeMxReply(_ html: String) -> String {
+        guard let openRange = html.range(
+            of: "<mx-reply>", options: .caseInsensitive
+        ) else { return html }
 
-        let scales: [CGFloat] = [1.5, 1.35, 1.2, 1.1, 1.05, 1.0]
-        let scale = scales[min(level - 1, scales.count - 1)]
-        let headingSize = NSFont.systemFontSize * scale
-
-        let startIndex = result.length
-        renderChildren(of: element, into: result, context: context)
-        let range = NSRange(location: startIndex, length: result.length - startIndex)
-        guard range.length > 0 else { return }
-
-        // Override the font to the heading size (bold) across the entire heading range.
-        let headingFont = NSFont.boldSystemFont(ofSize: headingSize)
-        result.addAttribute(.font, value: headingFont, range: range)
-
-        let style = NSMutableParagraphStyle()
-        style.paragraphSpacingBefore = 4
-        style.paragraphSpacing = 2
-        result.addAttribute(.paragraphStyle, value: style, range: range)
+        if let closeRange = html.range(
+            of: "</mx-reply>", options: .caseInsensitive,
+            range: openRange.upperBound..<html.endIndex
+        ) {
+            var result = html
+            result.removeSubrange(openRange.lowerBound..<closeRange.upperBound)
+            return result
+        }
+        // Unclosed mx-reply — remove from open tag to end.
+        var result = html
+        result.removeSubrange(openRange.lowerBound..<html.endIndex)
+        return result
     }
 
-    private static func renderBlockquote(
-        _ element: Element, into result: NSMutableAttributedString, context: RenderContext
-    ) {
-        let baseFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+    // MARK: - HTML Entity Decoding
 
-        // Measure the width of "│ " to use as the hanging indent.
-        let barString = "\u{2502} " // "│ " (box-drawing light vertical + space)
-        let barWidth = (barString as NSString).size(withAttributes: [.font: baseFont]).width
+    /// Decodes common HTML entities and numeric character references.
+    private func decodeHTMLEntities(_ text: String) -> String {
+        guard text.contains("&") else { return text }
 
-        // Build a paragraph style with a hanging indent: the first line starts
-        // at 0 (showing the bar), and continuation lines indent past the bar.
-        // A negative tailIndent insets the trailing edge by the same amount as the
-        // bar width so the text content is visually balanced within the bubble.
-        let style = NSMutableParagraphStyle()
-        style.firstLineHeadIndent = 0
-        style.headIndent = barWidth
-        style.tailIndent = -barWidth
+        var result = text
+        // Named entities (common subset).
+        result = result.replacing("&amp;", with: "&")
+        result = result.replacing("&lt;", with: "<")
+        result = result.replacing("&gt;", with: ">")
+        result = result.replacing("&quot;", with: "\"")
+        result = result.replacing("&apos;", with: "'")
+        result = result.replacing("&nbsp;", with: "\u{00A0}")
 
-        // Insert the bar character.
-        let barAttrs: [NSAttributedString.Key: Any] = [
-            .font: baseFont,
-            .blockquoteBar: true,
-            .paragraphStyle: style
-        ]
-        result.append(NSAttributedString(string: barString, attributes: barAttrs))
+        // Numeric character references: &#123; or &#x1F4A9;
+        result = decodeNumericEntities(result)
 
-        // Suppress the block break that the first child element (typically <p>)
-        // would insert, so the text flows on the same line as the bar.
-        context.suppressNextBlockBreak = true
-
-        let contentStart = result.length
-        renderChildren(of: element, into: result, context: context)
-
-        let contentRange = NSRange(location: contentStart, length: result.length - contentStart)
-        guard contentRange.length > 0 else { return }
-
-        // Mark the content with blockquote depth so applyColorOverrides can mute it,
-        // and apply the same paragraph style for consistent wrapping.
-        result.addAttribute(.blockquoteDepth, value: context.blockquoteDepth, range: contentRange)
-        result.addAttribute(.paragraphStyle, value: style, range: contentRange)
+        return result
     }
 
-    private static func renderPreBlock(
-        _ element: Element, into result: NSMutableAttributedString, context: RenderContext
-    ) {
-        let startIndex = result.length
+    /// Decodes `&#NNN;` and `&#xHHH;` numeric character references.
+    private func decodeNumericEntities(_ text: String) -> String {
+        guard text.contains("&#") else { return text }
+        var result = ""
+        var index = text.startIndex
 
-        // If <pre> contains a <code>, render the <code>'s children directly
-        // to avoid double-nesting the code style.
-        if let codeChild = try? element.select("code").first() {
-            renderChildren(of: codeChild, into: result, context: context)
-        } else {
-            renderChildren(of: element, into: result, context: context)
+        while index < text.endIndex {
+            if text[index] == "&",
+               text.index(after: index) < text.endIndex,
+               text[text.index(after: index)] == "#" {
+                // Try to parse numeric entity.
+                let entityStart = index
+                index = text.index(index, offsetBy: 2)
+                let isHex = index < text.endIndex && (text[index] == "x" || text[index] == "X")
+                if isHex { index = text.index(after: index) }
+
+                var digits = ""
+                while index < text.endIndex && text[index] != ";" {
+                    digits.append(text[index])
+                    index = text.index(after: index)
+                }
+                if index < text.endIndex && text[index] == ";" {
+                    index = text.index(after: index) // skip ;
+                    let codePoint = isHex
+                        ? UInt32(digits, radix: 16)
+                        : UInt32(digits, radix: 10)
+                    if let cp = codePoint, let scalar = Unicode.Scalar(cp) {
+                        result.append(Character(scalar))
+                        continue
+                    }
+                }
+                // Failed to parse — output as-is.
+                result.append(contentsOf: text[entityStart..<index])
+            } else {
+                result.append(text[index])
+                index = text.index(after: index)
+            }
         }
-
-        let range = NSRange(location: startIndex, length: result.length - startIndex)
-        guard range.length > 0 else { return }
-
-        // Code block background.
-        result.addAttribute(.backgroundColor, value: NSColor.gray.withAlphaComponent(0.12), range: range)
-
-        let style = NSMutableParagraphStyle()
-        style.paragraphSpacingBefore = 4
-        style.paragraphSpacing = 4
-        result.addAttribute(.paragraphStyle, value: style, range: range)
+        return result
     }
 
-    private static func renderListItem(
-        _ element: Element, into result: NSMutableAttributedString, context: RenderContext
-    ) {
-        guard !context.listStack.isEmpty else {
-            // <li> outside a list -- just render children.
-            renderChildren(of: element, into: result, context: context)
-            return
+    // MARK: - Whitespace Helpers
+
+    /// Collapses runs of whitespace into single spaces (HTML whitespace normalization).
+    private func collapseWhitespace(_ text: String) -> String {
+        var result = ""
+        var lastWasSpace = false
+        for char in text {
+            if char.isWhitespace || char.isNewline {
+                if !lastWasSpace {
+                    result.append(" ")
+                    lastWasSpace = true
+                }
+            } else {
+                result.append(char)
+                lastWasSpace = false
+            }
         }
-
-        let depth = context.listStack.count
-
-        // Determine bullet or number.
-        let lastIndex = context.listStack.count - 1
-        let marker: String
-        if context.listStack[lastIndex].ordered {
-            context.listStack[lastIndex].counter += 1
-            let number = context.listStack[lastIndex].counter
-            marker = "\(number). "
-        } else {
-            let bullets = ["\u{2022}", "\u{25E6}", "\u{2023}"] // •, ◦, ‣
-            marker = "\(bullets[min(depth - 1, bullets.count - 1)]) "
-        }
-
-        // Ensure we're on a new line.
-        ensureNewline(in: result)
-
-        // Prefix the marker directly (no tab indirection). The paragraph style
-        // provides a hanging indent so wrapped continuation lines align with the
-        // text after the marker, not the marker itself.
-        let baseFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
-        let markerWidth = (marker as NSString).size(withAttributes: [.font: baseFont]).width
-        let basePad: CGFloat = 6.0  // Small leading indent from the bubble edge.
-        let leadingPad: CGFloat = basePad + CGFloat(depth - 1) * 12.0
-        let contentIndent = leadingPad + markerWidth
-
-        let style = NSMutableParagraphStyle()
-        style.firstLineHeadIndent = leadingPad
-        style.headIndent = contentIndent
-
-        // Append marker.
-        let markerAttrs: [NSAttributedString.Key: Any] = [
-            .font: baseFont,
-            .paragraphStyle: style
-        ]
-        result.append(NSAttributedString(string: marker, attributes: markerAttrs))
-
-        // Render children.
-        let contentStart = result.length
-        renderChildren(of: element, into: result, context: context)
-
-        // Apply paragraph style to the entire list item content.
-        let contentRange = NSRange(location: contentStart, length: result.length - contentStart)
-        if contentRange.length > 0 {
-            result.addAttribute(.paragraphStyle, value: style, range: contentRange)
-        }
+        return result
     }
-
-    // MARK: - Block Break Helpers
 
     /// Ensures the result ends with a newline before a new block element.
-    private static func ensureBlockBreak(in result: NSMutableAttributedString) {
+    private func ensureBlockBreak(in result: NSMutableAttributedString) {
         guard result.length > 0 else { return }
-        let lastChar = result.attributedSubstring(from: NSRange(location: result.length - 1, length: 1)).string
+        let lastChar = result.attributedSubstring(
+            from: NSRange(location: result.length - 1, length: 1)
+        ).string
         if lastChar != "\n" {
             result.append(NSAttributedString(string: "\n"))
         }
     }
 
     /// Ensures the result ends with a newline (single).
-    private static func ensureNewline(in result: NSMutableAttributedString) {
+    private func ensureNewline(in result: NSMutableAttributedString) {
         guard result.length > 0 else { return }
-        let lastChar = result.attributedSubstring(from: NSRange(location: result.length - 1, length: 1)).string
+        let lastChar = result.attributedSubstring(
+            from: NSRange(location: result.length - 1, length: 1)
+        ).string
         if lastChar != "\n" {
             result.append(NSAttributedString(string: "\n"))
         }
     }
-
-    /// Remove trailing newlines from the final result.
-    private static func trimTrailingNewlines(_ result: NSMutableAttributedString) {
-        while result.length > 0 {
-            let lastChar = result.attributedSubstring(from: NSRange(location: result.length - 1, length: 1)).string
-            if lastChar == "\n" {
-                result.deleteCharacters(in: NSRange(location: result.length - 1, length: 1))
-            } else {
-                break
-            }
-        }
-    }
-}
-
-// MARK: - Custom Attributed String Keys
-
-extension NSAttributedString.Key {
-    /// Marker attribute for spoiler text. When present, ``MessageTextView`` can
-    /// implement tap-to-reveal behavior.
-    static let matrixSpoiler = NSAttributedString.Key("matrixSpoiler")
-
-    /// Tracks blockquote depth for muted text coloring. The value is an `Int`.
-    static let blockquoteDepth = NSAttributedString.Key("matrixBlockquoteDepth")
-
-    /// Marks the "| " bar character at the start of a blockquote. The value is `true`.
-    static let blockquoteBar = NSAttributedString.Key("matrixBlockquoteBar")
 }
 
 // MARK: - NSColor Hex Initializer
@@ -652,11 +868,8 @@ extension NSColor {
               let value = UInt64(cleaned, radix: 16)
         else { return nil }
 
-        // swiftlint:disable:next identifier_name
         let r = CGFloat((value >> 16) & 0xFF) / 255.0
-        // swiftlint:disable:next identifier_name
         let g = CGFloat((value >> 8) & 0xFF) / 255.0
-        // swiftlint:disable:next identifier_name
         let b = CGFloat(value & 0xFF) / 255.0
         self.init(srgbRed: r, green: g, blue: b, alpha: 1.0)
     }
