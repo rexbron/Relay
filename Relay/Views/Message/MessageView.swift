@@ -153,7 +153,9 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
         outgoing: Bool
     ) -> some View {
         let replyUsesWhiteText = outgoing || coloredBubbles
-        let replyBackground: Color = if outgoing {
+        let replyBackground: Color = if outgoing && coloredBubbles {
+            StableNameColor.color(for: reply.senderID)
+        } else if outgoing {
             .accentColor
         } else if coloredBubbles {
             StableNameColor.color(for: reply.senderID)
@@ -424,6 +426,9 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
 
     private var bubbleColor: Color {
         if message.isOutgoing {
+            if coloredBubbles {
+                return StableNameColor.color(for: message.senderID)
+            }
             return .accentColor
         }
         if coloredBubbles {

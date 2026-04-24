@@ -120,7 +120,10 @@ private struct ColoredBubblePreview: View {
             Color(.windowBackgroundColor)
 
             VStack(alignment: .leading, spacing: 3) {
-                MiniOutgoingBubble(text: "How's it going?")
+                MiniOutgoingBubble(
+                    text: "How's it going?",
+                    color: StableNameColor.color(for: "@me:matrix.org")
+                )
                 MiniIncomingBubble(
                     text: "Pretty good!",
                     color: StableNameColor.color(for: "@alice:matrix.org")
@@ -129,7 +132,10 @@ private struct ColoredBubblePreview: View {
                     text: "You?",
                     color: StableNameColor.color(for: "@bob:matrix.org")
                 )
-                MiniOutgoingBubble(text: "Great!")
+                MiniOutgoingBubble(
+                    text: "Great!",
+                    color: StableNameColor.color(for: "@me:matrix.org")
+                )
             }
             .padding(8)
         }
@@ -139,6 +145,7 @@ private struct ColoredBubblePreview: View {
 /// A tiny outgoing (right-aligned, accent-colored) bubble for the settings preview.
 private struct MiniOutgoingBubble: View {
     let text: String
+    var color: Color = .accentColor
 
     var body: some View {
         HStack {
@@ -148,7 +155,7 @@ private struct MiniOutgoingBubble: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(Color.accentColor, in: Capsule())
+                .background(color, in: Capsule())
         }
     }
 }
