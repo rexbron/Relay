@@ -18,7 +18,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Renders an image attachment with thumbnail loading, tap-to-reveal for hidden media,
-/// double-click QuickLook preview, and a download/save button on hover.
+/// click-to-zoom QuickLook preview, and a download/save button on hover.
 struct ImageMessageView: View {
     @Environment(\.matrixService) private var matrixService
     @Environment(\.mediaAutoReveal) private var autoReveal
@@ -125,6 +125,16 @@ struct ImageMessageView: View {
                     .onTapGesture { isRevealed = true }
             }
         }
+        .overlay {
+            if shouldShow, image != nil {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 48, weight: .semibold))
+                    .foregroundStyle(.ultraThinMaterial)
+                    .shadow(radius: 2)
+                    .opacity(isHovering ? 0.8 : 0)
+                    .scaleEffect(isHovering ? 1.25 : 0.85)
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             if shouldShow, image != nil {
                 downloadButton
@@ -143,7 +153,7 @@ struct ImageMessageView: View {
                     .padding(8)
             }
         }
-        .onTapGesture(count: 2) {
+        .onTapGesture {
             if shouldShow {
                 Task { await openQuickLook() }
             }

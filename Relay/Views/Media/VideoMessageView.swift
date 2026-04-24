@@ -72,10 +72,6 @@ struct VideoMessageView: View {
                         .overlay {
                             if isLoading {
                                 ProgressView()
-                            } else {
-                                Image(systemName: "play.rectangle")
-                                    .font(.title2)
-                                    .foregroundStyle(.secondary)
                             }
                         }
                 }
@@ -98,11 +94,13 @@ struct VideoMessageView: View {
         }
         .overlay {
             if shouldShow, !isLoadingMedia, thumbnail != nil {
-                Image(systemName: "play.circle.fill")
-                    .font(.system(size: 44))
+                Image(systemName: "play.fill")
+                    .font(.system(size: 48, weight: .semibold))
                     .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, .black.opacity(0.4))
-                    .shadow(radius: 4)
+                    .foregroundStyle(.ultraThinMaterial)
+                    .shadow(radius: 2)
+                    .opacity(isHovering ? 0.8 : 0)
+                    .scaleEffect(isHovering ? 1.25 : 0.85)
                     .allowsHitTesting(false)
             }
         }
@@ -137,7 +135,7 @@ struct VideoMessageView: View {
                     .padding(8)
             }
         }
-        .onTapGesture(count: 2) {
+        .onTapGesture {
             if shouldShow {
                 Task { await openQuickLook() }
             }
