@@ -47,6 +47,12 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
     /// of replied-to messages (outgoing vs incoming).
     var currentUserID: String?
 
+    /// When non-nil, right-click on rich text merges timeline actions into the AppKit text menu.
+    var onMessageContextAction: ((TimelineRowContextAction) -> Void)?
+
+    /// Parent-driven reaction picker (e.g. SwiftUI row context menu). Ignored when `false`.
+    var triggerReactionPickerFromParent: Binding<Bool> = .constant(false)
+
     @AppStorage("appearance.coloredBubbles") private var coloredBubbles = false
     @Environment(\.swipeOffset) private var swipeOffset
     @State private var showEmojiPicker = false
@@ -130,6 +136,11 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                 )
                 .padding(.leading, message.isOutgoing ? 0 : 34)
             }
+        }
+        .onChange(of: triggerReactionPickerFromParent.wrappedValue) {
+            guard triggerReactionPickerFromParent.wrappedValue else { return }
+            showEmojiPicker = true
+            triggerReactionPickerFromParent.wrappedValue = false
         }
 
     }
@@ -225,7 +236,12 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                     attributedString: parsedBody,
                     isOutgoing: usesWhiteText,
                     onUserTap: onUserTap,
-                    onRoomTap: onRoomTap
+                    onRoomTap: onRoomTap,
+                    contextMessage: onMessageContextAction != nil ? message : nil,
+                    onMessageContextAction: onMessageContextAction,
+                    onPresentReactionPicker: onMessageContextAction != nil
+                        ? { showEmojiPicker = true }
+                        : nil
                 )
             }
             .padding(.horizontal, 12)
@@ -276,7 +292,12 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
             attributedString: emoteParsedBody,
             isOutgoing: false,
             onUserTap: onUserTap,
-            onRoomTap: onRoomTap
+            onRoomTap: onRoomTap,
+            contextMessage: onMessageContextAction != nil ? message : nil,
+            onMessageContextAction: onMessageContextAction,
+            onPresentReactionPicker: onMessageContextAction != nil
+                ? { showEmojiPicker = true }
+                : nil
         )
         .padding(.horizontal, 12)
         .padding(.vertical, 7)

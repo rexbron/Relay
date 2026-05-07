@@ -75,6 +75,9 @@ struct TimelineRowView: View, Equatable {
     /// `false` for new messages and is set to `true` on appear.
     @State private var didAppear = false
 
+    /// Opens the reaction popover on ``MessageView`` when chosen from the row context menu.
+    @State private var triggerReactionPicker = false
+
     nonisolated static func == (lhs: TimelineRowView, rhs: TimelineRowView) -> Bool {
         lhs.row.message == rhs.row.message
             && lhs.row.info == rhs.row.info
@@ -199,7 +202,9 @@ struct TimelineRowView: View, Equatable {
                         onUserTap(userId)
                     },
                     onRoomTap: onRoomTap,
-                    currentUserID: currentUserID
+                    currentUserID: currentUserID,
+                    onMessageContextAction: onContextAction,
+                    triggerReactionPickerFromParent: $triggerReactionPicker
                 )
             }
             .id(message.id)
@@ -225,38 +230,47 @@ struct TimelineRowView: View, Equatable {
 
     @ViewBuilder
     private var contextMenu: some View {
-        Button {
-            onContextAction(.reply(message))
-        } label: {
-            Label("Reply", systemImage: "arrowshape.turn.up.left")
+        ForEach(TimelineMessageContextMenu.entries(for: message).enumerated(), id: \.offset) { _, entry in
+            contextMenuEntry(entry)
         }
+    }
 
-        Button {
-            onContextAction(.copy(message.body))
-        } label: {
-            Label("Copy", systemImage: "doc.on.doc")
-        }
-
-        if message.eventID.hasPrefix("$") {
+    @ViewBuilder
+    private func contextMenuEntry(_ entry: TimelineMessageContextMenuEntry) -> some View {
+        switch entry {
+        case .reply:
+            Button {
+                onContextAction(.reply(message))
+            } label: {
+                Label("Reply", systemImage: "arrowshape.turn.up.left")
+            }
+        case .copyMessage:
+            Button {
+                onContextAction(.copy(message.body))
+            } label: {
+                Label("Copy Message", systemImage: "doc.on.doc")
+            }
+        case .addReaction:
+            Button {
+                triggerReactionPicker = true
+            } label: {
+                Label("Add Reaction…", systemImage: "face.smiling")
+            }
+        case .togglePin:
             Button {
                 onContextAction(.togglePin(message.eventID))
             } label: {
-                // The actual pinned state is resolved by the parent
                 Label("Pin/Unpin", systemImage: "pin")
             }
-        }
-
-        if message.isOutgoing && message.kind == .text {
+        case .edit:
             Button {
                 onContextAction(.edit(message))
             } label: {
                 Label("Edit Message", systemImage: "pencil")
             }
-        }
-
-        if message.isOutgoing && message.kind != .redacted {
+        case .separatorBeforeDelete:
             Divider()
-
+        case .delete:
             Button(role: .destructive) {
                 onContextAction(.delete(message))
             } label: {
@@ -300,15 +314,6 @@ struct TimelineRowView: View, Equatable {
     }
 }
 
-/// Actions that a ``TimelineRowView`` can request from its parent via the
-/// `onContextAction` callback. Keeps the row view free of parent state references.
-enum TimelineRowContextAction {
-    case reply(TimelineMessage)
-    case copy(String)
-    case togglePin(String)
-    case edit(TimelineMessage)
-    case delete(TimelineMessage)
-}
 // MARK: - Previews
 
 private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .default) -> TimelineRowView {

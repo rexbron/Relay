@@ -35,6 +35,13 @@ struct MessageTextView: NSViewRepresentable {
     /// Called when the user clicks a `matrix.to` room link, with the room ID or alias.
     var onRoomTap: ((String) -> Void)?
 
+    /// When set with ``contextMessage`` and ``onMessageContextAction``, right-click merges Relay actions into the text menu.
+    var contextMessage: TimelineMessage?
+
+    var onMessageContextAction: ((TimelineRowContextAction) -> Void)?
+
+    var onPresentReactionPicker: (() -> Void)?
+
     private var foregroundColor: NSColor {
         isOutgoing ? .white : .labelColor
     }
@@ -90,6 +97,9 @@ struct MessageTextView: NSViewRepresentable {
         view.setContentHuggingPriority(.required, for: .vertical)
         view.onUserTap = onUserTap
         view.onRoomTap = onRoomTap
+        view.contextMessage = contextMessage
+        view.onMessageContextAction = onMessageContextAction
+        view.onPresentReactionPicker = onPresentReactionPicker
 
         // Populate text immediately so sizeThatFits (which SwiftUI may
         // call before updateNSView) has content to measure. Without this,
@@ -116,6 +126,9 @@ struct MessageTextView: NSViewRepresentable {
         view.resetHoverState()
         view.onUserTap = onUserTap
         view.onRoomTap = onRoomTap
+        view.contextMessage = contextMessage
+        view.onMessageContextAction = onMessageContextAction
+        view.onPresentReactionPicker = onPresentReactionPicker
 
         let coordinator = context.coordinator
 

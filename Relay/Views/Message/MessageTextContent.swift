@@ -35,6 +35,15 @@ final class MessageTextContent: NSTextView {
     /// Called when the user clicks a `matrix.to` room link, with the room ID or alias.
     var onRoomTap: ((String) -> Void)?
 
+    /// Timeline message for contextual actions (reply, pin, …). Set by ``MessageTextView``.
+    var contextMessage: TimelineMessage?
+
+    /// Delivers the same actions as the SwiftUI row context menu.
+    var onMessageContextAction: ((TimelineRowContextAction) -> Void)?
+
+    /// Opens the emoji reaction picker (popover host lives in ``MessageView``).
+    var onPresentReactionPicker: (() -> Void)?
+
     // MARK: - Link Click Interception
 
     override func clicked(onLink link: Any, at charIndex: Int) {
@@ -117,5 +126,110 @@ final class MessageTextContent: NSTextView {
         guard textStorage.attribute(.link, at: charIndex, effectiveRange: &effectiveRange) != nil
         else { return nil }
         return effectiveRange
+    }
+
+    // MARK: - Context Menu (merge Relay actions + system text menu)
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let baseMenu = super.menu(for: event)?.copy() as? NSMenu else {
+            return super.menu(for: event)
+        }
+
+        guard let message = contextMessage, onMessageContextAction != nil else {
+            return baseMenu
+        }
+
+        let entries = TimelineMessageContextMenu.entries(for: message)
+        var insertIndex = 0
+        for entry in entries {
+            switch entry {
+            case .reply:
+                baseMenu.insertItem(
+                    menuItem(title: "Reply", symbol: "arrowshape.turn.up.left", action: #selector(contextReply)),
+                    at: insertIndex
+                )
+                insertIndex += 1
+            case .copyMessage:
+                baseMenu.insertItem(
+                    menuItem(title: "Copy Message", symbol: "doc.on.doc", action: #selector(contextCopyMessage)),
+                    at: insertIndex
+                )
+                insertIndex += 1
+            case .addReaction:
+                guard onPresentReactionPicker != nil else { continue }
+                baseMenu.insertItem(
+                    menuItem(title: "Add Reaction…", symbol: "face.smiling", action: #selector(contextAddReaction)),
+                    at: insertIndex
+                )
+                insertIndex += 1
+            case .togglePin:
+                baseMenu.insertItem(
+                    menuItem(title: "Pin/Unpin", symbol: "pin", action: #selector(contextTogglePin)),
+                    at: insertIndex
+                )
+                insertIndex += 1
+            case .edit:
+                baseMenu.insertItem(
+                    menuItem(title: "Edit Message", symbol: "pencil", action: #selector(contextEdit)),
+                    at: insertIndex
+                )
+                insertIndex += 1
+            case .separatorBeforeDelete:
+                baseMenu.insertItem(.separator(), at: insertIndex)
+                insertIndex += 1
+            case .delete:
+                let item = menuItem(title: "Delete Message", symbol: "trash", action: #selector(contextDelete))
+                item.attributedTitle = NSAttributedString(
+                    string: "Delete Message",
+                    attributes: [.foregroundColor: NSColor.systemRed]
+                )
+                baseMenu.insertItem(item, at: insertIndex)
+                insertIndex += 1
+            }
+        }
+
+        if insertIndex > 0 {
+            baseMenu.insertItem(.separator(), at: insertIndex)
+        }
+
+        return baseMenu
+    }
+
+    private func menuItem(title: String, symbol: String, action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        if let img = NSImage(systemSymbolName: symbol, accessibilityDescription: title) {
+            item.image = img
+        }
+        return item
+    }
+
+    @objc private func contextReply() {
+        guard let message = contextMessage else { return }
+        onMessageContextAction?(.reply(message))
+    }
+
+    @objc private func contextCopyMessage() {
+        guard let message = contextMessage else { return }
+        onMessageContextAction?(.copy(message.body))
+    }
+
+    @objc private func contextAddReaction() {
+        onPresentReactionPicker?()
+    }
+
+    @objc private func contextTogglePin() {
+        guard let message = contextMessage else { return }
+        onMessageContextAction?(.togglePin(message.eventID))
+    }
+
+    @objc private func contextEdit() {
+        guard let message = contextMessage else { return }
+        onMessageContextAction?(.edit(message))
+    }
+
+    @objc private func contextDelete() {
+        guard let message = contextMessage else { return }
+        onMessageContextAction?(.delete(message))
     }
 }
