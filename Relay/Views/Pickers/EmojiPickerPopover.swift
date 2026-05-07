@@ -23,6 +23,19 @@ struct EmojiPickerPopover: View {
     /// Called with the selected emoji string when the user taps an emoji.
     let onSelect: (String) -> Void
 
+    /// Optional trailing action button — used by long-pressed messages to
+    /// expose extra non-reaction affordances such as on-device translation.
+    /// Renders after the character-palette button when non-nil.
+    var trailingAction: TrailingAction?
+
+    /// Description of an extra action to render at the trailing edge of
+    /// the popover (e.g. translate / show original).
+    struct TrailingAction {
+        let label: String
+        let systemImage: String
+        let perform: () -> Void
+    }
+
     @State private var openCharacterPalette = false
 
     private static let emoji: [String] = [
@@ -50,6 +63,24 @@ struct EmojiPickerPopover: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
+
+            if let action = trailingAction {
+                Divider()
+                    .frame(height: 20)
+                    .padding(.horizontal, 2)
+
+                Button {
+                    action.perform()
+                } label: {
+                    Image(systemName: action.systemImage)
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help(action.label)
+            }
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 2)

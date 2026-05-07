@@ -45,6 +45,13 @@ struct MessageRow: Identifiable, Equatable {
     let message: TimelineMessage
     let info: MessageGroupInfo
     let isPaginationTrigger: Bool
+    /// Per-message translation state baked into the row so that the
+    /// table-view diff (`MessageRow == MessageRow`) catches translation
+    /// changes and reloads just the affected row. Without this, a
+    /// translation completing wouldn't differ in the row's payload and
+    /// `NSTableView`'s `reloadData(forRowIndexes:)` short-circuit would
+    /// skip the visible row.
+    let translation: MessageTranslationState
 
     var id: String { message.id }
 
@@ -52,6 +59,7 @@ struct MessageRow: Identifiable, Equatable {
         lhs.message == rhs.message
             && lhs.info == rhs.info
             && lhs.isPaginationTrigger == rhs.isPaginationTrigger
+            && lhs.translation == rhs.translation
     }
 }
 
@@ -63,7 +71,8 @@ extension TimelineView {
     /// representable so each cell receives its own lightweight `MessageRow`.
     static func buildRows(
         for messages: [TimelineMessage],
-        hasReachedStart: Bool
+        hasReachedStart: Bool,
+        translationState: (String) -> MessageTranslationState = { _ in .idle }
     ) -> [MessageRow] {
         guard !messages.isEmpty else { return [] }
         let calendar = Calendar.current
@@ -129,7 +138,8 @@ extension TimelineView {
             result.append(MessageRow(
                 message: message,
                 info: info,
-                isPaginationTrigger: false
+                isPaginationTrigger: false,
+                translation: translationState(message.id)
             ))
         }
         return result

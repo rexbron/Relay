@@ -15,6 +15,7 @@
 import OSLog
 import RelayInterface
 import SwiftUI
+import Translation
 import UniformTypeIdentifiers
 
 private let logger = Logger(subsystem: "Relay", category: "Timeline")
@@ -72,6 +73,13 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     @State private var memberRefreshTask: Task<Void, Never>?
     @State private var cachedMessageRows: [MessageRow] = []
     @State private var isTimelineDropTargeted = false
+    /// Number of parallel translation slots. Each slot owns its own
+    /// `TranslationSession` via `.translationTask`, so up to this many
+    /// translations can run at once. 3 is a reasonable balance — the
+    /// Translation framework will happily run several sessions
+    /// concurrently, but we don't want to spam the system if the user
+    /// triggers Translate-all someday.
+    private static let translationSlotCount = 3
 
     /// Number of membership events observed in the timeline, used to trigger
     /// a member list refresh when new joins/leaves arrive.
@@ -179,6 +187,25 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                     .transition(.opacity)
                 }
             }
+        // MARK: Translation driver pool
+        //
+        // `.translationTask` is the only public entry point that handles
+        // model downloads, but it accepts only one `Configuration` per
+        // modifier. To run translations in parallel we render a fixed
+        // pool of `TranslationSlot` subviews, each carrying its own
+        // configuration state and its own `.translationTask`. Each slot
+        // pulls the next pending request from the view model when idle,
+        // so user-triggered translations never queue behind one another.
+        .background {
+            ZStack {
+                ForEach(0..<Self.translationSlotCount, id: \.self) { _ in
+                    TranslationSlot(viewModel: viewModel)
+                }
+            }
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
         .task {
             // Cache isDirect once — avoids O(n) room scan on every body evaluation.
             isDirectRoom = matrixService.rooms.first(where: { $0.id == roomId })?.isDirect ?? false
@@ -297,7 +324,10 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     private func rebuildCachedRows() {
         cachedMessageRows = Self.buildRows(
             for: filteredMessages,
-            hasReachedStart: viewModel.hasReachedStart
+            hasReachedStart: viewModel.hasReachedStart,
+            translationState: { messageId in
+                viewModel.translationState(for: messageId)
+            }
         )
     }
 
@@ -309,6 +339,9 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .top) { loadingMoreOverlay }
             .onChange(of: viewModel.messagesVersion) {
+                rebuildCachedRows()
+            }
+            .onChange(of: viewModel.translationsVersion) {
                 rebuildCachedRows()
             }
             .onChange(of: viewModel.hasReachedStart) {
@@ -404,6 +437,13 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             onPaginateForward: {
                 Task { await viewModel.loadMoreFuture() }
             },
+            translationStateProvider: { messageId in
+                viewModel.translationState(for: messageId)
+            },
+            canTranslateProvider: { messageId in
+                viewModel.canTranslateMessage(messageId)
+            },
+            translationsVersion: viewModel.translationsVersion,
             scrollProxy: tableProxy
         )
     }
@@ -617,6 +657,10 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             compose.text = message.body
         case .delete(let message):
             messageToDelete = message
+        case .translate(let message):
+            Task { await viewModel.translateMessage(message.id) }
+        case .showOriginal(let message):
+            viewModel.clearTranslation(message.id)
         }
     }
 
@@ -682,6 +726,60 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
         }
     }
 
+}
+
+/// A single slot in the timeline's parallel translation pool. Each slot
+/// owns one `TranslationSession.Configuration` (cached in `@State` so
+/// its identity is stable across body re-evaluations) and one
+/// `.translationTask`. While idle, the slot watches the view model's
+/// queue version; whenever it bumps the slot tries to claim the next
+/// pending request and start translating it. Multiple slots running in
+/// parallel can each be in different stages (downloading model, mid-
+/// translation, idle) without interfering.
+private struct TranslationSlot: View {
+    let viewModel: any TimelineViewModelProtocol
+
+    @State private var configuration: TranslationSession.Configuration?
+    @State private var currentRequest: PendingTranslationRequest?
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .translationTask(configuration) { session in
+                guard let request = currentRequest else { return }
+                // `TranslationSession` isn't `Sendable`. We only call it
+                // from this MainActor-isolated context.
+                nonisolated(unsafe) let activeSession = session
+                await viewModel.runTranslation(for: request) { body in
+                    let response = try await activeSession.translate(body)
+                    return response.targetText
+                }
+                // Done. Clear local state and try to pick up the next
+                // queued request immediately.
+                currentRequest = nil
+                configuration = nil
+                tryClaimNext()
+            }
+            .onAppear {
+                tryClaimNext()
+            }
+            .onChange(of: viewModel.pendingTranslationQueueVersion) { _, _ in
+                tryClaimNext()
+            }
+    }
+
+    /// If this slot is idle, pulls the next queued request and assigns
+    /// the translation Configuration so SwiftUI's `.translationTask`
+    /// fires for it. No-op if already busy or queue is empty.
+    @MainActor private func tryClaimNext() {
+        guard currentRequest == nil else { return }
+        guard let request = viewModel.claimNextTranslation() else { return }
+        currentRequest = request
+        configuration = TranslationSession.Configuration(
+            source: Locale.Language(identifier: request.sourceLanguageTag),
+            target: Locale.Language(identifier: request.targetLanguageTag)
+        )
+    }
 }
 
 

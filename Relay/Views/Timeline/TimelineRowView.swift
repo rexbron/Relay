@@ -64,6 +64,18 @@ struct TimelineRowView: View, Equatable {
     var onAppear: (MessageRow) -> Void
     var onContextAction: (TimelineRowContextAction) -> Void
     var onHighlightDismissed: () -> Void
+    /// Returns the current per-message translation state. Closure-typed so
+    /// the row doesn't need a reference to the whole timeline view model.
+    var translationStateProvider: (String) -> MessageTranslationState = { _ in .idle }
+    /// Returns whether the Translate item should appear in the context
+    /// menu for this message — false for non-text kinds, very short
+    /// bodies, or text whose detected language is in the user's
+    /// readable set.
+    var canTranslateProvider: (String) -> Bool = { _ in false }
+    /// Bumped by the view model whenever any translation state changes;
+    /// reading it in `body` participates in observation so the row
+    /// re-renders on state transitions.
+    var translationsVersion: UInt = 0
 
     /// Observable swipe state from the table view controller. When the user
     /// swipes this row, the offset and reply arrow are rendered here.
@@ -82,6 +94,8 @@ struct TimelineRowView: View, Equatable {
         lhs.row.message == rhs.row.message
             && lhs.row.info == rhs.row.info
             && lhs.row.isPaginationTrigger == rhs.row.isPaginationTrigger
+            && lhs.row.translation == rhs.row.translation
+            && lhs.translationsVersion == rhs.translationsVersion
             && lhs.isNewlyAppended == rhs.isNewlyAppended
             && lhs.showUnreadMarker == rhs.showUnreadMarker
             && lhs.firstUnreadMessageId == rhs.firstUnreadMessageId
@@ -185,6 +199,15 @@ struct TimelineRowView: View, Equatable {
                                 y: message.isOutgoing ? 0 : 8)
                 }
 
+                // Translation state is baked into `row.translation` by
+                // `TimelineView.rebuildCachedRows`. Reading it directly
+                // (rather than via the view-model closure) means the row
+                // re-renders correctly when the table reloads it after a
+                // translation lands — the new MessageRow value is the
+                // single source of truth, so observation indirection
+                // can't go stale.
+                let translation = row.translation
+
                 MessageView(
                     message: message,
                     isLastInGroup: info.isLastInGroup,
@@ -204,11 +227,24 @@ struct TimelineRowView: View, Equatable {
                     onRoomTap: onRoomTap,
                     currentUserID: currentUserID,
                     onMessageContextAction: onContextAction,
-                    triggerReactionPickerFromParent: $triggerReactionPicker
+                    triggerReactionPickerFromParent: $triggerReactionPicker,
+                    translation: translation,
+                    canTranslate: canTranslateProvider(message.id),
+                    onTranslationAction: {
+                        // Single callback toggles based on current state:
+                        // .translated → revert; otherwise → translate.
+                        if case .translated = row.translation {
+                            onContextAction(.showOriginal(message))
+                        } else {
+                            onContextAction(.translate(message))
+                        }
+                    }
                 )
             }
             .id(message.id)
-            .help(message.formattedTime)
+            // When translated, hover tooltip surfaces the original body
+            // (more useful than the timestamp on a translated row).
+            .help(row.translation.hoverHelpText(originalBody: message.body, fallback: message.formattedTime))
             .onAppear { onAppear(row) }
             .contextMenu {
                 contextMenu
@@ -232,6 +268,40 @@ struct TimelineRowView: View, Equatable {
     private var contextMenu: some View {
         ForEach(TimelineMessageContextMenu.entries(for: message).enumerated(), id: \.offset) { _, entry in
             contextMenuEntry(entry)
+        }
+        translationMenuEntry
+    }
+
+    /// Translation toggle, appended once at the end of the row's context
+    /// menu. Hidden for non-translatable messages (already-readable
+    /// language, non-text kinds, very short text). The state determines
+    /// the label: idle/failed → "Translate", loading → disabled
+    /// "Translating…", translated → "Show Original".
+    @ViewBuilder
+    private var translationMenuEntry: some View {
+        switch row.translation {
+        case .idle, .failed:
+            if canTranslateProvider(message.id) {
+                Divider()
+                Button {
+                    onContextAction(.translate(message))
+                } label: {
+                    Label("Translate", systemImage: "translate")
+                }
+            }
+        case .loading:
+            Divider()
+            Button { } label: {
+                Label("Translating…", systemImage: "translate")
+            }
+            .disabled(true)
+        case .translated:
+            Divider()
+            Button {
+                onContextAction(.showOriginal(message))
+            } label: {
+                Label("Show Original", systemImage: "translate")
+            }
         }
     }
 
@@ -314,11 +384,23 @@ struct TimelineRowView: View, Equatable {
     }
 }
 
+extension MessageTranslationState {
+    /// Hover tooltip text. When translated we show the original body so
+    /// users can compare; otherwise we fall back to the message's
+    /// formatted timestamp like normal.
+    func hoverHelpText(originalBody: String, fallback: String) -> String {
+        if case .translated = self {
+            return originalBody
+        }
+        return fallback
+    }
+}
+
 // MARK: - Previews
 
 private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .default) -> TimelineRowView {
     TimelineRowView(
-        row: .init(message: message, info: info, isPaginationTrigger: false),
+        row: .init(message: message, info: info, isPaginationTrigger: false, translation: .idle),
         isNewlyAppended: false,
         showUnreadMarker: false,
         firstUnreadMessageId: nil,

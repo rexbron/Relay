@@ -44,6 +44,9 @@ struct TimelineTableViewRepresentable: NSViewControllerRepresentable {
     var onNearBottomChanged: (Bool) -> Void
     var onPaginateBackward: () -> Void
     var onPaginateForward: () -> Void
+    var translationStateProvider: (String) -> MessageTranslationState = { _ in .idle }
+    var canTranslateProvider: (String) -> Bool = { _ in false }
+    var translationsVersion: UInt = 0
 
     /// Proxy that the parent uses to trigger scroll actions on the table.
     var scrollProxy: TimelineTableProxy
@@ -95,6 +98,9 @@ struct TimelineTableViewRepresentable: NSViewControllerRepresentable {
                     onAppear: onAppear,
                     onContextAction: onContextAction,
                     onHighlightDismissed: onHighlightDismissed,
+                    translationStateProvider: translationStateProvider,
+                    canTranslateProvider: canTranslateProvider,
+                    translationsVersion: translationsVersion,
                     swipeState: swipeState
                 )
             }

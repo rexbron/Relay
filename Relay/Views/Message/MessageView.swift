@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import OSLog
 import RelayInterface
 import SwiftUI
+
+private let logger = Logger(subsystem: "Relay", category: "MessageView.Translate")
 
 /// Renders a single chat bubble for a timeline message, with support for text, images,
 /// emotes, special types (encrypted, redacted, etc.), reactions, and inline reply context.
@@ -52,6 +55,24 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
 
     /// Parent-driven reaction picker (e.g. SwiftUI row context menu). Ignored when `false`.
     var triggerReactionPickerFromParent: Binding<Bool> = .constant(false)
+
+    /// Per-message translation state. When `.translated`, the rendered
+    /// body and parsed Markdown/HTML come from the translation; in all
+    /// other states the original message body is used. The view also
+    /// shows a translate-glyph badge when `.translated` or `.loading`.
+    var translation: MessageTranslationState = .idle
+
+    /// Whether this message is in a state where Translate is meaningful
+    /// (the language is detectable, isn't already in the user's
+    /// readable set, etc.). When `false` and the message isn't
+    /// already translated, we hide the long-press action.
+    var canTranslate: Bool = false
+
+    /// Toggle action invoked from the long-press popover. Wired by the
+    /// caller to either translate the message (when `.idle`/`.failed`)
+    /// or revert to the original (when `.translated`); the popover's
+    /// label switches automatically based on ``translation``.
+    var onTranslationAction: (() -> Void)?
 
     @AppStorage("appearance.coloredBubbles") private var coloredBubbles = false
     @Environment(\.swipeOffset) private var swipeOffset
@@ -99,9 +120,13 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                             if message.isHighlighted {
                                 highlightBadge
                                     .offset(x: 4, y: -4)
+                            } else if showsTranslationBadge {
+                                translationBadge
+                                    .padding(4)
+                                    .offset(x: 8, y: -8)
                             }
                         }
-                        .padding(.top, message.isHighlighted && !showSenderName ? 4 : 0)
+                        .padding(.top, (message.isHighlighted && !showSenderName) ? 4 : (showsTranslationBadge && !showSenderName ? 10 : 0))
                             .padding(message.replyDetail != nil ? 2 : 0)
                             .background {
                                 if message.replyDetail != nil {
@@ -117,10 +142,13 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                                 attachmentAnchor: .point(message.isOutgoing ? .topLeading : .topTrailing),
                                 arrowEdge: .top
                             ) {
-                                EmojiPickerPopover { emoji in
-                                    onToggleReaction?(emoji)
-                                    showEmojiPicker = false
-                                }
+                                EmojiPickerPopover(
+                                    onSelect: { emoji in
+                                        onToggleReaction?(emoji)
+                                        showEmojiPicker = false
+                                    },
+                                    trailingAction: translationTrailingAction
+                                )
                             }
                     }
                 }
@@ -361,7 +389,17 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
 
     /// The parsed message body as an `NSAttributedString`. Prefers `formatted_body`
     /// (HTML) when available, falling back to inline Markdown parsing of `body`.
+    /// When the message has been translated, renders the translated plain
+    /// text instead — the source HTML is intentionally discarded since
+    /// Apple's Translation framework returns plain `String` (the
+    /// `attributedSourceText` variants are macOS 26.4 only and add layout
+    /// complexity we're skipping in v1).
     private var parsedBody: NSAttributedString {
+        if case .translated(let text, _) = translation {
+            return Self.markdownCache.value(forKey: text) {
+                NSAttributedString(matrixMarkdown: text)
+            } ?? NSAttributedString(string: text)
+        }
         if let html = message.formattedBody {
             let cached = Self.htmlCache.value(forKey: html) {
                 NSAttributedString(matrixHTML: html)
@@ -416,6 +454,64 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
             .foregroundStyle(.white)
             .frame(width: 16, height: 16)
             .background(.red, in: Circle())
+    }
+
+    /// Builds the long-press popover's translate action. Returns `nil`
+    /// when there's nothing the user can do — non-translatable text,
+    /// already-readable language, etc. — so the divider+button only
+    /// appears when meaningful.
+    private var translationTrailingAction: EmojiPickerPopover.TrailingAction? {
+        guard let perform = onTranslationAction else { return nil }
+        switch translation {
+        case .translated:
+            return EmojiPickerPopover.TrailingAction(
+                label: "Show Original",
+                systemImage: "translate",
+                perform: { perform(); showEmojiPicker = false }
+            )
+        case .loading:
+            // No actionable button while a translation is in flight;
+            // the corner badge shows progress.
+            return nil
+        case .idle, .failed:
+            guard canTranslate else { return nil }
+            return EmojiPickerPopover.TrailingAction(
+                label: "Translate",
+                systemImage: "translate",
+                perform: { perform(); showEmojiPicker = false }
+            )
+        }
+    }
+
+    /// Whether the corner badge should be shown for translation state.
+    /// Only `.translated` and `.loading` get a badge; `.idle` and
+    /// `.failed` are visually invisible (failures surface as a toast).
+    private var showsTranslationBadge: Bool {
+        switch translation {
+        case .translated, .loading: true
+        case .idle, .failed: false
+        }
+    }
+
+    /// Translation badge — small `translate` glyph over a tinted disc.
+    /// Mirrors the geometry of ``highlightBadge`` so they read as a
+    /// matching set. Loading state swaps the glyph for a spinner so
+    /// the user sees progress.
+    @ViewBuilder
+    private var translationBadge: some View {
+        switch translation {
+        case .loading:
+            ProgressView()
+                .controlSize(.mini)
+                .frame(width: 16, height: 16)
+                .background(.tint, in: Circle())
+        default:
+            Image(systemName: "translate")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 16, height: 16)
+                .background(.tint, in: Circle())
+        }
     }
 
     // MARK: - Bubble Color
