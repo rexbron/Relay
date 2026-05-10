@@ -149,8 +149,16 @@ struct TimelineLazyVStackView: View {
         }
         .onChange(of: rows.last?.id) { oldLastID, newLastID in
             guard isLive, oldLastID != nil, let newLastID else { return }
-            newlyAppendedIDs.insert(newLastID)
+            // Defer the state mutation to the next run loop turn so it
+            // doesn't land in the same layout pass that triggered this
+            // onChange.  Mutating @State during a layout/constraint pass
+            // causes every visible MessageTextView (NSViewRepresentable)
+            // to re-measure and invalidate constraints, which AppKit
+            // counts as a new "Update Constraints in Window" pass.  With
+            // enough visible rows the pass count exceeds the view count
+            // and AppKit throws.
             Task { @MainActor in
+                newlyAppendedIDs.insert(newLastID)
                 try? await Task.sleep(for: .milliseconds(300))
                 newlyAppendedIDs.remove(newLastID)
             }
