@@ -834,6 +834,35 @@ public final class MatrixService: MatrixServiceProtocol {
         default: nil
         }
 
+        // Build permissions and power level settings from the SDK's power levels.
+        var permissions: RoomPermissions?
+        var powerLevelSettings: RoomPowerLevelSettings?
+        if let pl = info?.powerLevels {
+            permissions = RoomPermissions(
+                canEditName: pl.canOwnUserSendState(stateEvent: .roomName),
+                canEditTopic: pl.canOwnUserSendState(stateEvent: .roomTopic),
+                canEditAvatar: pl.canOwnUserSendState(stateEvent: .roomAvatar),
+                canInvite: pl.canOwnUserInvite(),
+                canKick: pl.canOwnUserKick(),
+                canBan: pl.canOwnUserBan(),
+                canRedactOther: pl.canOwnUserRedactOther(),
+                canChangePermissions: pl.canOwnUserSendState(stateEvent: .roomPowerLevels)
+            )
+            let values = pl.values()
+            powerLevelSettings = RoomPowerLevelSettings(
+                ban: values.ban,
+                kick: values.kick,
+                invite: values.invite,
+                redact: values.redact,
+                eventsDefault: values.eventsDefault,
+                stateDefault: values.stateDefault,
+                usersDefault: values.usersDefault,
+                roomName: values.roomName,
+                roomTopic: values.roomTopic,
+                roomAvatar: values.roomAvatar
+            )
+        }
+
         return RoomDetails(
             id: room.id(),
             name: name,
@@ -847,7 +876,9 @@ public final class MatrixService: MatrixServiceProtocol {
             members: memberDetails,
             pinnedEventIds: pinnedEventIds,
             joinRule: joinRuleString,
-            historyVisibility: histVisString
+            historyVisibility: histVisString,
+            permissions: permissions,
+            powerLevelSettings: powerLevelSettings
         )
     }
 
@@ -1242,6 +1273,23 @@ public final class MatrixService: MatrixServiceProtocol {
         guard let sdkRoom = room(id: roomId) else { return }
         let update = UserPowerLevelUpdate(userId: userId, powerLevel: powerLevel)
         try await sdkRoom.updatePowerLevelsForUsers(updates: [update])
+    }
+
+    public func updatePowerLevelSettings(roomId: String, settings: RoomPowerLevelSettings) async throws {
+        guard let sdkRoom = room(id: roomId) else { return }
+        let changes = RoomPowerLevelChanges(
+            ban: settings.ban,
+            invite: settings.invite,
+            kick: settings.kick,
+            redact: settings.redact,
+            eventsDefault: settings.eventsDefault,
+            stateDefault: settings.stateDefault,
+            usersDefault: settings.usersDefault,
+            roomName: settings.roomName,
+            roomAvatar: settings.roomAvatar,
+            roomTopic: settings.roomTopic
+        )
+        try await sdkRoom.applyPowerLevelChanges(changes: changes)
     }
 
     // MARK: - Room Access Settings

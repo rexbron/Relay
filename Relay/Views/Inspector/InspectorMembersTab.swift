@@ -78,8 +78,15 @@ struct InspectorMembersTab: View {
     }
 
     private var canEditRoles: Bool {
-        guard let currentUserId = viewModel.currentUserId else { return false }
-        return viewModel.allMembers.first { $0.userId == currentUserId }?.role == .administrator
+        viewModel.permissions?.canChangePermissions ?? false
+    }
+
+    private var canKick: Bool {
+        viewModel.permissions?.canKick ?? false
+    }
+
+    private var canBan: Bool {
+        viewModel.permissions?.canBan ?? false
     }
 
     private func isSelfMember(_ member: RoomMemberDetails) -> Bool {
@@ -93,6 +100,8 @@ struct InspectorMembersTab: View {
                     profile: profile,
                     roomId: viewModel.roomId,
                     canEditRoles: canEditRoles,
+                    canKick: canKick,
+                    canBan: canBan,
                     onRoleChange: { powerLevel in
                         try await viewModel.setMemberPowerLevel(
                             userId: profile.userId,

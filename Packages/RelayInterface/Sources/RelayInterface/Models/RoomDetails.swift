@@ -59,6 +59,16 @@ public struct RoomDetails: Sendable {
     /// Who can read the room's history (e.g. `"joined"`, `"invited"`, `"shared"`, `"world_readable"`).
     public let historyVisibility: String?
 
+    /// The current user's capabilities within this room.
+    ///
+    /// When `nil`, permission checks should fall back to conservative defaults (no editing).
+    public let permissions: RoomPermissions?
+
+    /// The numeric power level thresholds configured for this room.
+    ///
+    /// When `nil`, the power level settings are not available (e.g. the SDK could not fetch them).
+    public let powerLevelSettings: RoomPowerLevelSettings?
+
     /// Creates a new ``RoomDetails`` value.
     ///
     /// - Parameters:
@@ -75,6 +85,8 @@ public struct RoomDetails: Sendable {
     ///   - pinnedEventIds: The event IDs of pinned messages.
     ///   - joinRule: The room's join rule string.
     ///   - historyVisibility: The room's history visibility string.
+    ///   - permissions: The current user's capabilities within this room.
+    ///   - powerLevelSettings: The numeric power level thresholds for this room.
     nonisolated public init(
         id: String,
         name: String,
@@ -88,7 +100,9 @@ public struct RoomDetails: Sendable {
         members: [RoomMemberDetails] = [],
         pinnedEventIds: [String] = [],
         joinRule: String? = nil,
-        historyVisibility: String? = nil
+        historyVisibility: String? = nil,
+        permissions: RoomPermissions? = nil,
+        powerLevelSettings: RoomPowerLevelSettings? = nil
     ) {
         self.id = id
         self.name = name
@@ -103,6 +117,8 @@ public struct RoomDetails: Sendable {
         self.pinnedEventIds = pinnedEventIds
         self.joinRule = joinRule
         self.historyVisibility = historyVisibility
+        self.permissions = permissions
+        self.powerLevelSettings = powerLevelSettings
     }
 }
 

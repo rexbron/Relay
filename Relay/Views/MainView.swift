@@ -181,7 +181,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                     spaceSummary: spaceSummary,
                     selectedRoomId: $selectedRoomId,
                     onOpenSettings: {
-                        inspectorInitialTab = .settings
+                        inspectorInitialTab = .general
                         withAnimation(.easeInOut(duration: 0.25)) {
                             showingInspector = true
                         }

@@ -586,6 +586,13 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     ///   - powerLevel: The new power level value.
     func setMemberPowerLevel(roomId: String, userId: String, powerLevel: Int64) async throws
 
+    /// Updates the power level thresholds for a room.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - settings: The new power level thresholds to apply.
+    func updatePowerLevelSettings(roomId: String, settings: RoomPowerLevelSettings) async throws
+
     // MARK: Room Access Settings
 
     /// Updates the join rule for a room.
@@ -820,6 +827,7 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func setRoomNotificationMode(roomId: String, mode: RoomNotificationMode) async throws {}
     func restoreDefaultRoomNotificationMode(roomId: String) async throws {}
     func setMemberPowerLevel(roomId: String, userId: String, powerLevel: Int64) async throws {}
+    func updatePowerLevelSettings(roomId: String, settings: RoomPowerLevelSettings) async throws {}
     func updateJoinRule(roomId: String, rule: String) async throws {}
     func updateHistoryVisibility(roomId: String, visibility: String) async throws {}
     func updateRoomVisibility(roomId: String, isPublic: Bool) async throws {}

@@ -194,6 +194,7 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func setRoomNotificationMode(roomId: String, mode: RoomNotificationMode) async throws {}
     func restoreDefaultRoomNotificationMode(roomId: String) async throws {}
     func setMemberPowerLevel(roomId: String, userId: String, powerLevel: Int64) async throws {}
+    func updatePowerLevelSettings(roomId: String, settings: RoomPowerLevelSettings) async throws {}
     func updateJoinRule(roomId: String, rule: String) async throws {}
     func updateHistoryVisibility(roomId: String, visibility: String) async throws {}
     func updateRoomVisibility(roomId: String, isPublic: Bool) async throws {}

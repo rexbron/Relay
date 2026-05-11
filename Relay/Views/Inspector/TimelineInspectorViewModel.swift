@@ -175,11 +175,28 @@ final class TimelineInspectorViewModel {
         await reload()
     }
 
+    // MARK: - Permission Actions
+
+    func updatePowerLevelSettings(_ settings: RoomPowerLevelSettings) async throws {
+        guard let matrixService else { return }
+        try await matrixService.updatePowerLevelSettings(roomId: roomId, settings: settings)
+        await reload()
+    }
+
     /// Whether the current user has admin privileges in this room.
     var isCurrentUserAdmin: Bool {
         guard let currentUserId else { return false }
         return allMembers.first { $0.userId == currentUserId }?.role == .administrator
     }
+
+    /// The current user's fine-grained capabilities within this room.
+    var permissions: RoomPermissions? { details?.permissions }
+
+    /// The numeric power level thresholds configured for this room.
+    var powerLevelSettings: RoomPowerLevelSettings? { details?.powerLevelSettings }
+
+    /// Whether the current user can edit any room detail (name, topic, or avatar).
+    var canEditRoomDetails: Bool { permissions?.canEditDetails ?? false }
 
     // MARK: - Helpers
 
@@ -211,6 +228,13 @@ final class TimelineInspectorViewModel {
         vm.matrixService = service
         let previewRole: RoomMemberDetails.Role = asAdmin ? .administrator : .user
         let previewPowerLevel: Int64 = asAdmin ? 100 : 0
+        let previewPermissions: RoomPermissions? = asAdmin ? RoomPermissions(
+            canEditName: true, canEditTopic: true, canEditAvatar: true,
+            canInvite: true, canKick: true, canBan: true,
+            canRedactOther: true, canChangePermissions: true
+        ) : RoomPermissions()
+        let previewPowerLevelSettings: RoomPowerLevelSettings? = asAdmin
+            ? RoomPowerLevelSettings() : nil
         let details = RoomDetails(
             id: roomId,
             name: "Design Team",
@@ -237,7 +261,9 @@ final class TimelineInspectorViewModel {
             ],
             pinnedEventIds: ["$pinned1", "$pinned2"],
             joinRule: "invite",
-            historyVisibility: "shared"
+            historyVisibility: "shared",
+            permissions: previewPermissions,
+            powerLevelSettings: previewPowerLevelSettings
         )
         vm.details = details
         vm.allMembers = details.members

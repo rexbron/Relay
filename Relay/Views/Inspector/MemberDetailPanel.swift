@@ -26,6 +26,12 @@ struct MemberDetailPanel: View {
     /// Whether the current user has permission to change roles.
     var canEditRoles = false
 
+    /// Whether the current user has permission to kick members.
+    var canKick = false
+
+    /// Whether the current user has permission to ban members.
+    var canBan = false
+
     /// Called when the user selects a new power level for this member.
     var onRoleChange: ((Int64) async throws -> Void)?
 
@@ -228,24 +234,28 @@ struct MemberDetailPanel: View {
                     confirmationAction = isIgnored ? .unignore : .ignore
                 }
 
-                Divider().padding(.vertical, 4)
+                if canKick {
+                    Divider().padding(.vertical, 4)
 
-                ModerationButton(
-                    label: "Kick from Room",
-                    icon: "door.left.hand.open",
-                    color: .orange
-                ) {
-                    confirmationAction = .kick
+                    ModerationButton(
+                        label: "Kick from Room",
+                        icon: "door.left.hand.open",
+                        color: .orange
+                    ) {
+                        confirmationAction = .kick
+                    }
                 }
 
-                Divider().padding(.vertical, 4)
+                if canBan {
+                    Divider().padding(.vertical, 4)
 
-                ModerationButton(
-                    label: "Ban from Room",
-                    icon: "xmark.shield",
-                    color: .red
-                ) {
-                    confirmationAction = .ban
+                    ModerationButton(
+                        label: "Ban from Room",
+                        icon: "xmark.shield",
+                        color: .red
+                    ) {
+                        confirmationAction = .ban
+                    }
                 }
             }
             .padding(.vertical, 2)

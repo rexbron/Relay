@@ -30,7 +30,7 @@ enum InspectorTab: String, CaseIterable, Identifiable {
     case behavior
     case notifications
     case security
-    case settings
+    case permissions
 
     var id: String { rawValue }
 
@@ -41,7 +41,7 @@ enum InspectorTab: String, CaseIterable, Identifiable {
         case .behavior: "slider.horizontal.3"
         case .notifications: "bell"
         case .security: "lock.shield"
-        case .settings: "gearshape"
+        case .permissions: "person.badge.shield.checkmark"
         }
     }
 
@@ -52,23 +52,27 @@ enum InspectorTab: String, CaseIterable, Identifiable {
         case .behavior: "Behavior"
         case .notifications: "Notifications"
         case .security: "Security & Privacy"
-        case .settings: "Settings"
+        case .permissions: "Permissions"
         }
     }
 
-    /// Whether this tab is available in the given inspector context.
+    /// Whether this tab is always available in the given inspector context
+    /// (i.e. does not require a dynamic capability check).
     func supports(_ context: InspectorContext) -> Bool {
         switch self {
         case .general, .members, .notifications:
             true
         case .behavior, .security:
             context == .room
-        case .settings:
-            context == .space
+        case .permissions:
+            // Visibility is determined dynamically based on user permissions.
+            false
         }
     }
 
-    /// Returns the tabs available for the given context.
+    /// Returns the statically available tabs for the given context.
+    /// Dynamic tabs (like `.permissions`) must be appended separately
+    /// based on the user's capabilities.
     static func tabs(for context: InspectorContext) -> [InspectorTab] {
         allCases.filter { $0.supports(context) }
     }
@@ -94,8 +98,8 @@ struct TimelineInspectorView: View {
     /// detail panel. The binding is cleared once the profile has been consumed.
     @Binding var selectedProfile: UserProfile?
 
-    /// The initially selected tab. When `.settings`, the inspector opens directly
-    /// to the Settings tab (used when the "Settings" button in ``SpaceDetailView``
+    /// The initially selected tab. Used to open the inspector directly to a
+    /// specific tab (e.g. when the "Settings" button in ``SpaceDetailView``
     /// is tapped). The binding is cleared after being consumed.
     @Binding var initialTab: InspectorTab?
 
@@ -103,7 +107,11 @@ struct TimelineInspectorView: View {
     @State private var selectedTab: InspectorTab = .general
 
     private var availableTabs: [InspectorTab] {
-        InspectorTab.tabs(for: context)
+        var tabs = InspectorTab.tabs(for: context)
+        if viewModel.details?.permissions?.canChangePermissions == true {
+            tabs.append(.permissions)
+        }
+        return tabs
     }
 
     init(
@@ -186,8 +194,8 @@ struct TimelineInspectorView: View {
             InspectorNotificationsTab(viewModel: viewModel)
         case .security:
             InspectorSecurityTab(viewModel: viewModel)
-        case .settings:
-            InspectorSettingsTab(viewModel: viewModel)
+        case .permissions:
+            InspectorPermissionsTab(viewModel: viewModel)
         }
     }
 }
