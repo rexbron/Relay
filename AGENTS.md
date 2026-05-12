@@ -87,10 +87,14 @@ Only `RelayApp.swift` imports `RelayKit` directly.
 
 - **Swift 6** with strict concurrency (`SWIFT_DEFAULT_ACTOR_ISOLATION =
   MainActor`). Respect `Sendable` and actor-isolation rules.
+- Prefer `Task @MainActor` over `DispatchQueue.main.async` for main
+  queue execution.
 - Use `@Observable` and `@Environment` for state management.
 - Bridge SDK callbacks to Swift concurrency with `AsyncStream`.
 - Keep commits focused and atomic. Use imperative mood, sentence-case
   commit messages (e.g. "Add thread support to timeline view").
+- Comments should reflect the current state of the code. Documentation
+  should not discuss previous iterations of the code, only the current one.
 
 ## Commit Conventions
 
