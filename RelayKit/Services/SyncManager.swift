@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import AppKit
 import Foundation
 import RelayInterface
 import os
@@ -36,6 +37,15 @@ private let logger = Logger(subsystem: "RelayKit", category: "Sync")
 ///   position and deliver incremental diffs rather than full state replacements.
 /// - The ``onSyncServiceRestarted`` callback notifies ``MatrixService`` so it can
 ///   re-wire sub-services (e.g. ``RoomListManager``) to the new sync service.
+///
+/// ## Sleep / Wake
+///
+/// On macOS, `NWPathMonitor` often does not report a path change when the
+/// system sleeps and wakes — especially over WiFi, where the interface stays
+/// "satisfied" even though all TCP connections were broken during sleep.
+/// ``SyncManager`` therefore also observes `NSWorkspace.willSleepNotification`
+/// and `NSWorkspace.didWakeNotification` to proactively stop and restart the
+/// sync service across sleep cycles.
 @Observable
 @MainActor
 final class SyncManager {
@@ -66,6 +76,7 @@ final class SyncManager {
     private var stateObservationTask: Task<Void, Never>?
     private var networkObservationTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
+    private var systemLifecycleTask: Task<Void, Never>?
 
     /// Whether the sync service has completed its initial startup.
     /// Used to distinguish the first `startSync` call from network-triggered restarts.
@@ -75,6 +86,12 @@ final class SyncManager {
     /// `startSync`. While true, the network observer treats reconnects as
     /// "retry the deferred restore" rather than "rebuild the sync service".
     private var isPendingOnlineRestore = false
+
+    /// True while ``handleOnline()`` or ``handleWake()`` is actively
+    /// rebuilding the sync service. Suppresses ``scheduleReconnect()``
+    /// calls from the SDK state observer to prevent concurrent rebuild
+    /// attempts and UI flicker.
+    private var isRebuilding = false
 
     // MARK: - Reconnect backoff (truncated binary exponential)
     //
@@ -112,13 +129,14 @@ final class SyncManager {
         try Task.checkCancellation()
 
         // Wait for the first .running state (up to 15 seconds)
-        await waitForFirstSync()
+        _ = await waitForFirstSync()
         hasCompletedInitialSync = true
         isPendingOnlineRestore = false
         reconnectAttempt = 0
 
-        // Begin observing network changes for offline/online transitions
+        // Begin observing network and system lifecycle changes
         startNetworkObservation()
+        startSystemLifecycleObservation()
     }
 
     /// Marks the sync layer as "logged in but not yet able to talk to the
@@ -135,6 +153,7 @@ final class SyncManager {
         // running.
         networkMonitor.start()
         startNetworkObservation()
+        startSystemLifecycleObservation()
     }
 
     /// Stops the sync service, network monitoring, and resets all state.
@@ -147,6 +166,8 @@ final class SyncManager {
         stateObservationTask = nil
         reconnectTask?.cancel()
         reconnectTask = nil
+        systemLifecycleTask?.cancel()
+        systemLifecycleTask = nil
         syncStateHandle = nil
 
         if let syncService {
@@ -156,6 +177,7 @@ final class SyncManager {
         client = nil
         hasCompletedInitialSync = false
         isPendingOnlineRestore = false
+        isRebuilding = false
         reconnectAttempt = 0
         onSyncServiceRestarted = nil
         onPendingOnlineRestore = nil
@@ -210,8 +232,12 @@ final class SyncManager {
                     break
                 case .offline:
                     // The SDK itself detected an offline condition. Treat this
-                    // the same as a network monitor offline transition.
-                    self.syncState = .offline
+                    // the same as a network monitor offline transition —
+                    // unless a rebuild is in progress, in which case the
+                    // active handler will decide the final state.
+                    if !self.isRebuilding {
+                        self.syncState = .offline
+                    }
                 case .terminated:
                     self.syncState = .error("The sync service was terminated.")
                 case .error:
@@ -221,8 +247,14 @@ final class SyncManager {
                     // backoff retry. If it really is a terminal error,
                     // every retry will hit the same wall but the user
                     // sees a banner instead of a hard-stuck sync.
-                    self.syncState = .offline
-                    self.scheduleReconnect()
+                    //
+                    // Skip the state change and reconnect if a rebuild is
+                    // already in progress — the active handler will deal
+                    // with failure.
+                    if !self.isRebuilding {
+                        self.syncState = .offline
+                        self.scheduleReconnect()
+                    }
                 }
             }
         }
@@ -259,6 +291,145 @@ final class SyncManager {
                 } else if self.syncState == .offline {
                     await self.handleOnline()
                 }
+            }
+        }
+    }
+
+    /// Observes macOS sleep/wake notifications to proactively stop and restart
+    /// the sync service.
+    ///
+    /// `NWPathMonitor` often does not report a path change across a sleep/wake
+    /// cycle when WiFi stays associated. By listening to
+    /// `NSWorkspace.willSleepNotification` and `didWakeNotification` we can
+    /// tear down the (now-broken) sync connection before sleep and rebuild it
+    /// after wake without relying on the network path to change.
+    ///
+    /// Unlike ``handleOffline()``, the sleep handler tears down sync internals
+    /// **without** setting ``syncState`` to `.offline`. This avoids a visible
+    /// flash of the "Server Unreachable" banner during routine sleep/wake
+    /// cycles. If the rebuild after wake fails, the state falls through to
+    /// `.offline` via the normal error-handling path.
+    private func startSystemLifecycleObservation() {
+        systemLifecycleTask?.cancel()
+
+        let workspace = NSWorkspace.shared.notificationCenter
+        let sleepName = NSWorkspace.willSleepNotification
+        let wakeName = NSWorkspace.didWakeNotification
+
+        systemLifecycleTask = Task { [weak self] in
+            // Merge sleep and wake notification streams into a single
+            // AsyncStream so we can handle them sequentially.
+            let notifications = AsyncStream<Notification.Name> { continuation in
+                nonisolated(unsafe) let sleepObserver = workspace.addObserver(
+                    forName: sleepName, object: nil, queue: .main
+                ) { _ in continuation.yield(sleepName) }
+
+                nonisolated(unsafe) let wakeObserver = workspace.addObserver(
+                    forName: wakeName, object: nil, queue: .main
+                ) { _ in continuation.yield(wakeName) }
+
+                continuation.onTermination = { _ in
+                    workspace.removeObserver(sleepObserver)
+                    workspace.removeObserver(wakeObserver)
+                }
+            }
+
+            for await name in notifications {
+                guard let self, !Task.isCancelled else { return }
+
+                if name == sleepName {
+                    await self.handleSleep()
+                } else {
+                    await self.handleWake()
+                }
+            }
+        }
+    }
+
+    /// Tears down the sync service before the system sleeps.
+    ///
+    /// Unlike ``handleOffline()``, this does **not** transition ``syncState``
+    /// to `.offline`, so the UI won't flash an offline banner during a
+    /// routine sleep/wake cycle. Send queues are left enabled since the
+    /// system is about to suspend the process anyway.
+    private func handleSleep() async {
+        guard syncState == .running || syncState == .syncing else { return }
+
+        logger.info("System will sleep — tearing down sync service")
+
+        reconnectTask?.cancel()
+        reconnectTask = nil
+
+        stateObservationTask?.cancel()
+        stateObservationTask = nil
+        syncStateHandle = nil
+
+        if let syncService {
+            await syncService.stop()
+        }
+        syncService = nil
+    }
+
+    /// Rebuilds the sync service after the system wakes from sleep.
+    ///
+    /// Waits briefly for the network stack to settle, then rebuilds the
+    /// sync service with offline mode. If the network is unavailable after
+    /// wake, falls through to the normal offline/reconnect path.
+    private func handleWake() async {
+        guard let client else { return }
+
+        // If we're already offline (e.g. network was lost before sleep),
+        // or in a pending-online-restore state, don't interfere — the
+        // network observer will handle reconnection when the path changes.
+        if syncState == .offline || isPendingOnlineRestore { return }
+
+        logger.info("System did wake — rebuilding sync service")
+        reconnectAttempt = 0
+
+        // Give the network stack a moment to re-establish after wake.
+        // NWPathMonitor may briefly report unsatisfied during this window;
+        // the short delay avoids racing with that transient state.
+        try? await Task.sleep(for: .seconds(2))
+        guard !Task.isCancelled else { return }
+
+        // If the network observer already drove us offline during the
+        // settling delay, let it handle the reconnect.
+        guard syncState != .offline else { return }
+
+        isRebuilding = true
+        syncState = .syncing
+        defer { isRebuilding = false }
+
+        do {
+            try await buildAndStartSyncService(client: client, offlineMode: true)
+            try Task.checkCancellation()
+
+            let reached = await waitForFirstSync()
+            guard reached else {
+                // The sync service started but never reached .running.
+                // The SDK reported an error or offline state during the
+                // wait. Transition to offline and let backoff retry.
+                logger.info("Post-wake sync did not reach running state")
+                syncState = .offline
+                scheduleReconnect()
+                return
+            }
+
+            await client.enableAllSendQueues(enable: true)
+
+            if let syncService {
+                try await onSyncServiceRestarted?(syncService)
+            }
+        } catch is CancellationError {
+            // Shutdown in progress
+        } catch {
+            if NetworkErrorClassifier.isOfflineShaped(error) {
+                logger.info("Post-wake sync rebuild failed (server unreachable): \(error.localizedDescription)")
+                syncState = .offline
+                scheduleReconnect()
+            } else {
+                logger.error("Post-wake sync rebuild failed: \(error)")
+                syncState = .error("Failed to restart sync: \(error.localizedDescription)")
             }
         }
     }
@@ -301,18 +472,32 @@ final class SyncManager {
     ///
     /// Re-enables send queues after the sync service reaches `.running`, which
     /// flushes any messages that were queued while offline.
+    ///
+    /// Note: ``syncState`` stays at `.offline` during the rebuild attempt.
+    /// The SDK state observer will transition to `.running` on success.
+    /// This prevents the offline banner from flickering on repeated retries.
     private func handleOnline() async {
         guard let client, syncState == .offline else { return }
 
         logger.info("Network restored — restarting sync service")
-        syncState = .syncing
+        isRebuilding = true
+        defer { isRebuilding = false }
 
         do {
             try await buildAndStartSyncService(client: client, offlineMode: true)
             try Task.checkCancellation()
 
-            // Wait for the sync to reach .running before notifying sub-services
-            await waitForFirstSync()
+            // Wait for the sync to reach .running before notifying sub-services.
+            // syncState stays at .offline during this wait so the banner
+            // remains visible. The state observer will set .running on success.
+            let reached = await waitForFirstSync()
+            guard reached else {
+                // The sync service started but never reached .running.
+                logger.info("Reconnect sync did not reach running state")
+                // Already .offline — just schedule retry
+                scheduleReconnect()
+                return
+            }
 
             // Re-enable send queues so any messages queued while offline are
             // flushed to the server now that we have connectivity.
@@ -356,10 +541,26 @@ final class SyncManager {
         }
     }
 
-    private func waitForFirstSync() async {
+    /// Polls until ``syncState`` reaches `.running`, returning `true` on
+    /// success. Returns `false` if an `.error` state is observed or the
+    /// 15-second timeout elapses.
+    ///
+    /// Note: `.offline` is NOT treated as a terminal failure here because
+    /// during a rebuild (``isRebuilding`` is true) the state observer
+    /// suppresses `.offline` transitions, so the pre-existing `.offline`
+    /// value may still be present while the new sync service starts up.
+    private func waitForFirstSync() async -> Bool {
         for _ in 0..<30 {
-            if syncState == .running { return }
+            switch syncState {
+            case .running:
+                return true
+            case .error:
+                return false
+            case .idle, .syncing, .offline:
+                break
+            }
             try? await Task.sleep(for: .milliseconds(500))
         }
+        return syncState == .running
     }
 }
