@@ -293,6 +293,13 @@ final class TimelineTableViewController: NSViewController {
 
     // MARK: - Lifecycle
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+        MainActor.assumeIsolated {
+            paginateTask?.cancel()
+        }
+    }
+
     override func loadView() {
         let column = NSTableColumn(identifier: .init("timeline"))
         column.resizingMask = .autoresizingMask

@@ -740,7 +740,7 @@ public final class MatrixService: MatrixServiceProtocol {
 
     public func fullyReadEventId(roomId: String) async -> String? {
         guard let client else { return nil }
-        // Use a nonisolated(unsafe) var to hold the handle alive until the callback fires.
+        // Use a nonisolated(unsafe) var so the handle stays alive until the callback fires.
         nonisolated(unsafe) var handle: TaskHandle?
         let result: String? = await withCheckedContinuation { continuation in
             let listener = RoomAccountDataListenerAdapter { event, _ in
@@ -761,7 +761,7 @@ public final class MatrixService: MatrixServiceProtocol {
                 continuation.resume(returning: nil)
             }
         }
-        _ = handle // Keep handle alive until continuation resolves
+        handle?.cancel()
         return result
     }
 

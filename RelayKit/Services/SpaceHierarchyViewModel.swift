@@ -46,6 +46,7 @@ public final class SpaceHierarchyViewModel: SpaceHierarchyViewModelProtocol {
     private var entriesHandle: TaskHandle?
     private var paginationHandle: TaskHandle?
     private var entriesTask: Task<Void, Never>?
+    private var paginationTask: Task<Void, Never>?
 
     /// Creates a space hierarchy view model.
     ///
@@ -69,6 +70,8 @@ public final class SpaceHierarchyViewModel: SpaceHierarchyViewModelProtocol {
     deinit {
         MainActor.assumeIsolated {
             entriesTask?.cancel()
+            paginationTask?.cancel()
+            paginationHandle?.cancel()
         }
     }
 
@@ -116,8 +119,8 @@ public final class SpaceHierarchyViewModel: SpaceHierarchyViewModelProtocol {
                 }
             }
 
-            // Observe pagination state in a detached task
-            Task { [weak self] in
+            // Observe pagination state
+            paginationTask = Task { [weak self] in
                 for await state in paginationStream {
                     guard let self, !Task.isCancelled else { break }
                     switch state {
