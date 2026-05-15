@@ -28,6 +28,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     @Environment(\.matrixService) private var matrixService
     @Environment(\.errorReporter) private var errorReporter
     @Environment(\.gifSearchService) private var gifSearchService
+    @Environment(\.composeDraftStore) private var composeDraftStore
 
     /// The Matrix room identifier for the displayed room.
     let roomId: String
@@ -56,6 +57,9 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     /// read receipts, and drag-and-drop are all disabled.
     var readOnly: Bool = false
 
+    /// The compose view model for this room, retrieved from the draft store
+    /// so unsent drafts survive room switches. Initialized as a temporary
+    /// placeholder; the actual draft is loaded from the store in `.task`.
     @State private var compose = ComposeViewModel()
     @State private var messageToDelete: TimelineMessage?
 
@@ -183,6 +187,13 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 }
             }
         .task {
+            // Restore the compose view model from the draft store so unsent
+            // text, reply/edit context, and staged attachments survive room
+            // switches.
+            if !readOnly {
+                compose = composeDraftStore.draft(for: roomId)
+            }
+
             // Cache isDirect once — avoids O(n) room scan on every body evaluation.
             isDirectRoom = matrixService.rooms.first(where: { $0.id == roomId })?.isDirect ?? false
 

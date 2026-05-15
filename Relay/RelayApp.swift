@@ -31,6 +31,7 @@ struct RelayApp: App {
     @State private var gifSearchService = GiphyService(apiKey: Secrets.giphyAPIKey ?? "")
     @State private var notificationDelegate = NotificationDelegate()
     @State private var appActions = AppActions()
+    @State private var composeDraftStore = ComposeDraftStore()
     @State private var showClearCacheConfirmation = false
 
     @Environment(\.openWindow) private var openWindow
@@ -43,6 +44,7 @@ struct RelayApp: App {
                 .environment(\.matrixService, matrixService)
                 .environment(\.gifSearchService, gifSearchService)
                 .environment(\.errorReporter, matrixService.errorReporter)
+                .environment(\.composeDraftStore, composeDraftStore)
                 .environment(appActions)
                 .onChange(of: dockBadgeCount) { _, newCount in
                     NSApp.dockTile.badgeLabel = newCount > 0 ? "\(newCount)" : nil
