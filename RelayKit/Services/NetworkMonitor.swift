@@ -56,16 +56,13 @@ final class NetworkMonitor {
         pathMonitor.pathUpdateHandler = { [weak self] path in
             let satisfied = path.status == .satisfied
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                let previous = self.isConnected
+                guard let self, self.isConnected != satisfied else { return }
                 self.isConnected = satisfied
 
-                if previous != satisfied {
-                    if satisfied {
-                        logger.info("Network connectivity restored")
-                    } else {
-                        logger.info("Network connectivity lost")
-                    }
+                if satisfied {
+                    logger.info("Network connectivity restored")
+                } else {
+                    logger.info("Network connectivity lost")
                 }
             }
         }

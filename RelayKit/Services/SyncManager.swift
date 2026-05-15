@@ -50,7 +50,25 @@ private let logger = Logger(subsystem: "RelayKit", category: "Sync")
 @MainActor
 final class SyncManager {
     /// The current synchronization state.
-    private(set) var syncState: SyncState = .idle
+    ///
+    /// The setter deduplicates identical assignments so that `@Observable`
+    /// does not fire spurious change notifications — `@Observable` does not
+    /// perform equality checks on its own, so without this guard every SDK
+    /// state emission (even repeated `.running`) would invalidate the entire
+    /// view tree.
+    @ObservationIgnored private var _syncState: SyncState = .idle
+    private(set) var syncState: SyncState {
+        get {
+            access(keyPath: \.syncState)
+            return _syncState
+        }
+        set {
+            guard newValue != _syncState else { return }
+            withMutation(keyPath: \.syncState) {
+                _syncState = newValue
+            }
+        }
+    }
 
     /// The underlying SDK sync service, exposed so that sub-services (e.g. `RoomListManager`)
     /// can obtain their own service handles from it.
