@@ -291,6 +291,16 @@ public final class MatrixService: MatrixServiceProtocol {
             syncManager.onSyncServiceRestarted = { [weak self] syncService in
                 guard let self else { return }
                 try await self.roomListManager.restart(syncService: syncService)
+
+                // Cycle active timelines through suspend/resume so they
+                // rebuild their SDK Timeline objects under the new sync
+                // service. Without this, timelines created before the
+                // reconnect hold stale references and never receive new
+                // events.
+                for (_, vm) in self.timelineViewModels where !vm.isSuspended {
+                    vm.suspend()
+                    await vm.resume()
+                }
             }
 
             try await syncManager.startSync(client: client)
