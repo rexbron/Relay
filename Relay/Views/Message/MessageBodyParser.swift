@@ -16,19 +16,23 @@ import AppKit
 import Foundation
 import RelayInterface
 
-// MARK: - Parse Caches
+// MARK: - Parse Caches (MessageBubbleContent)
 
-extension MessageView {
-    /// LRU cache for parsed HTML bodies. Shared across all `MessageView` instances.
+extension MessageBubbleContent {
+    /// LRU cache for parsed HTML bodies. Shared across all `MessageBubbleContent` instances.
     static let htmlCache = ParseCache<String, NSAttributedString?>(capacity: 128)
 
-    /// LRU cache for parsed Markdown bodies. Shared across all `MessageView` instances.
+    /// LRU cache for parsed Markdown bodies. Shared across all `MessageBubbleContent` instances.
     static let markdownCache = ParseCache<String, NSAttributedString>(capacity: 128)
 
-    /// LRU cache for parsed emote HTML bodies. Shared across all `MessageView` instances.
+    /// LRU cache for parsed emote HTML bodies. Shared across all `MessageBubbleContent` instances.
     static let emoteHtmlCache = ParseCache<String, NSAttributedString?>(capacity: 64)
+}
 
-    /// LRU cache for parsed reply preview text. Shared across all `MessageView` instances.
+// MARK: - Parse Caches (ReplyPreviewBubble)
+
+extension ReplyPreviewBubble {
+    /// LRU cache for parsed reply preview text. Shared across all `ReplyPreviewBubble` instances.
     static let replyTextCache = ParseCache<String, String>(capacity: 128)
 
     /// Extracts clean display text from a reply's body, resolving HTML or Markdown

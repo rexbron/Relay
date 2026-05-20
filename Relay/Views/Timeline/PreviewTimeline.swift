@@ -40,22 +40,14 @@ struct PreviewTimeline: View {
                         firstUnreadMessageId: viewModel.firstUnreadMessageId,
                         highlightedMessageId: nil,
                         showURLPreviews: true,
-                        currentUserID: "@me:matrix.org",
-                        onToggleReaction: { _, _ in },
-                        onTapReply: { _ in },
-                        onReply: { _ in },
-                        onAvatarDoubleTap: { _ in },
-                        onUserTap: { _ in },
-                        onRoomTap: nil,
-                        onAppear: { _ in },
-                        onContextAction: { _ in },
-                        onHighlightDismissed: {}
+                        onAppear: { _ in }
                     )
                 }
             }
             .padding()
         }
         .defaultScrollAnchor(.bottom)
+        .environment(\.timelineActions, TimelineActions(currentUserID: "@me:matrix.org"))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             HStack {
                 TextField("Message", text: .constant(""))

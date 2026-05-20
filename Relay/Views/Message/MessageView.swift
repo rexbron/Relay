@@ -15,9 +15,13 @@
 import RelayInterface
 import SwiftUI
 
-/// Renders a single chat bubble for a timeline message, with support for text, images,
-/// emotes, special types (encrypted, redacted, etc.), reactions, and inline reply context.
-struct MessageView: View { // swiftlint:disable:this type_body_length
+/// Renders a single chat message row with avatar, sender name, bubble content,
+/// reply context, reactions, and emoji picker. This is the full "chrome" wrapper
+/// around ``MessageBubbleContent``.
+///
+/// For contexts that only need the bubble content without interactive chrome
+/// (e.g. pinned messages, search results), use ``MessageBubbleContent`` directly.
+struct MessageView: View {
     /// The timeline message to render.
     let message: TimelineMessage
 
@@ -28,36 +32,13 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
     /// Whether to display the sender's name above the bubble (for the first message in a group).
     var showSenderName: Bool = false
 
-    /// Called when a reaction emoji is tapped to toggle it on the message.
-    var onToggleReaction: ((String) -> Void)?
-
-    /// Called when the inline reply preview is tapped, with the event ID to scroll to.
-    var onTapReply: ((String) -> Void)?
-
-    /// Called when the user double-taps the sender's avatar to open their profile.
-    var onAvatarDoubleTap: (() -> Void)?
-
-    /// Called when the user clicks a user mention link, with the Matrix user ID.
-    var onUserTap: ((String) -> Void)?
-
-    /// Called when the user clicks a room link, with the room ID or alias.
-    var onRoomTap: ((String) -> Void)?
-
-    /// The Matrix user ID of the signed-in user. Used to determine the bubble color
-    /// of replied-to messages (outgoing vs incoming).
-    var currentUserID: String?
-
-    /// When non-nil, right-click on rich text merges timeline actions into the AppKit text menu.
-    var onMessageContextAction: ((TimelineRowContextAction) -> Void)?
-
     /// Parent-driven reaction picker (e.g. SwiftUI row context menu). Ignored when `false`.
     var triggerReactionPickerFromParent: Binding<Bool> = .constant(false)
 
     @AppStorage("appearance.coloredBubbles") private var coloredBubbles = false
+    @Environment(\.timelineActions) private var actions
     @Environment(\.swipeOffset) private var swipeOffset
     @State private var showEmojiPicker = false
-
-
 
     var body: some View {
         VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 2) {
@@ -69,7 +50,7 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                             mxcURL: message.senderAvatarURL,
                             size: 28
                         )
-                        .onTapGesture(count: 2) { onAvatarDoubleTap?() }
+                        .onTapGesture(count: 2) { actions.avatarDoubleTap(message) }
                     } else {
                         Spacer()
                             .frame(width: 28)
@@ -82,19 +63,26 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                             .font(.caption)
                             .fontWeight(.medium)
                             .foregroundStyle(.secondary)
-                            .padding(.leading, 12)
+                            .padding(.leading, BubbleStyle.horizontalPadding)
                             .padding(.bottom, 2)
                     }
 
                     VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: -8) {
                         if let reply = message.replyDetail {
-                            let replyIsOutgoing = currentUserID != nil
-                                && reply.senderID == currentUserID
-                            repliedMessageBubble(reply, outgoing: replyIsOutgoing)
-                                .padding(message.isOutgoing ? .trailing : .leading, 20)
+                            let replyIsOutgoing = actions.currentUserID != nil
+                                && reply.senderID == actions.currentUserID
+                            ReplyPreviewBubble(
+                                reply: reply,
+                                outgoing: replyIsOutgoing,
+                                coloredBubbles: coloredBubbles
+                            )
+                            .padding(message.isOutgoing ? .trailing : .leading, 20)
                         }
 
-                    messageContent
+                        MessageBubbleContent(
+                            message: message,
+                            onPresentReactionPicker: { showEmojiPicker = true }
+                        )
                         .overlay(alignment: .topTrailing) {
                             if message.isHighlighted {
                                 highlightBadge
@@ -105,7 +93,7 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                             .padding(message.replyDetail != nil ? 2 : 0)
                             .background {
                                 if message.replyDetail != nil {
-                                    RoundedRectangle(cornerRadius: 19, style: .continuous)
+                                    BubbleStyle.replyWrapperShape
                                         .fill(Color(nsColor: .windowBackgroundColor))
                                 }
                             }
@@ -118,7 +106,7 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                                 arrowEdge: .top
                             ) {
                                 EmojiPickerPopover { emoji in
-                                    onToggleReaction?(emoji)
+                                    actions.toggleReaction(message.eventID, emoji)
                                     showEmojiPicker = false
                                 }
                             }
@@ -132,7 +120,7 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
             if !message.reactions.isEmpty {
                 ReactionsView(
                     reactions: message.reactions,
-                    onToggle: { key in onToggleReaction?(key) }
+                    onToggle: { key in actions.toggleReaction(message.eventID, key) }
                 )
                 .padding(.leading, message.isOutgoing ? 0 : 34)
             }
@@ -145,268 +133,6 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
 
     }
 
-    // MARK: - Replied-To Message Bubble
-
-    /// A muted message bubble rendered behind (and above) the main message, partially
-    /// covered by it. Styled to look nearly identical to the original message, just faded.
-    @ViewBuilder
-    private func repliedMessageBubble(
-        _ reply: TimelineMessage.ReplyDetail,
-        outgoing: Bool
-    ) -> some View {
-        let replyUsesWhiteText = outgoing || coloredBubbles
-        let replyBackground: Color = if outgoing && coloredBubbles {
-            StableNameColor.color(for: reply.senderID)
-        } else if outgoing {
-            .accentColor
-        } else if coloredBubbles {
-            StableNameColor.color(for: reply.senderID)
-        } else {
-            Color(.systemGray).opacity(0.2)
-        }
-
-        Button {
-            onTapReply?(reply.eventID)
-        } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(Self.replyPreviewText(reply))
-                    .font(.body)
-                    .foregroundStyle(replyUsesWhiteText ? .white : .primary)
-                    .lineLimit(2)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(replyBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-            }
-            .opacity(0.6)
-        }
-        .buttonStyle(.plain)
-    }
-
-
-
-    // MARK: - Message Content (dispatches to the correct content variant)
-
-    @ViewBuilder
-    private var messageContent: some View {
-        if message.kind == .image, message.mediaInfo != nil {
-            imageContent
-        } else if message.kind == .video, message.mediaInfo != nil {
-            videoContent
-        } else if message.kind == .audio, message.mediaInfo != nil {
-            audioContent
-        } else if message.kind == .emote {
-            emoteContent
-        } else if message.isSpecialType {
-            specialContent
-        } else if isEmojiOnly {
-            emojiOnlyContent
-        } else {
-            textContent
-        }
-    }
-
-    // MARK: - Image Content
-
-    private var imageContent: some View {
-        ImageMessageView(message: message)
-            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-    }
-
-    // MARK: - Video Content
-
-    private var videoContent: some View {
-        VideoMessageView(message: message)
-            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-    }
-
-    // MARK: - Audio Content
-
-    private var audioContent: some View {
-        AudioMessageView(message: message)
-            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-    }
-
-    // MARK: - Text Content (with markdown + links)
-
-    private var textContent: some View {
-        VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 2) {
-            VStack(alignment: .leading, spacing: 4) {
-                MessageTextView(
-                    attributedString: parsedBody,
-                    isOutgoing: usesWhiteText,
-                    onUserTap: onUserTap,
-                    onRoomTap: onRoomTap,
-                    contextMessage: onMessageContextAction != nil ? message : nil,
-                    onMessageContextAction: onMessageContextAction,
-                    onPresentReactionPicker: onMessageContextAction != nil
-                        ? { showEmojiPicker = true }
-                        : nil
-                )
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(bubbleColor)
-            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-
-            if case .sendingFailed(let reason) = message.sendState {
-                sendFailedLabel(reason)
-            } else if message.isEdited {
-                Text("edited")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 12)
-            }
-        }
-    }
-
-    private func sendFailedLabel(_ reason: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: "exclamationmark.circle")
-            Text(reason)
-        }
-        .font(.caption2)
-        .foregroundStyle(.red)
-        .padding(.horizontal, 12)
-    }
-
-    // MARK: - Emoji-Only Content
-
-    /// Whether this text message contains only emoji (up to a reasonable count for large display).
-    private var isEmojiOnly: Bool {
-        message.kind == .text
-            && message.formattedBody == nil
-            && message.body.isEmojiOnly
-            && message.body.emojiCount <= 8
-    }
-
-    private var emojiOnlyContent: some View {
-        Text(message.body)
-            .font(.system(size: message.body.emojiCount <= 3 ? 72 : 48))
-    }
-
-    // MARK: - Emote Content
-
-    private var emoteContent: some View {
-        MessageTextView(
-            attributedString: emoteParsedBody,
-            isOutgoing: false,
-            onUserTap: onUserTap,
-            onRoomTap: onRoomTap,
-            contextMessage: onMessageContextAction != nil ? message : nil,
-            onMessageContextAction: onMessageContextAction,
-            onPresentReactionPicker: onMessageContextAction != nil
-                ? { showEmojiPicker = true }
-                : nil
-        )
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(Color.purple.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-    }
-
-    // MARK: - Special Content (media, redacted, encrypted, etc.)
-
-    private var specialContent: some View {
-        Label {
-            Text(message.body)
-                .font(.callout)
-        } icon: {
-            Image(systemName: iconForKind)
-                .font(.callout)
-        }
-        .foregroundStyle(foregroundForKind.opacity(0.6))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(backgroundForKind)
-        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-    }
-
-    private var iconForKind: String {
-        switch message.kind {
-        case .image: "photo"
-        case .video: "play.rectangle"
-        case .audio: "waveform"
-        case .file: "doc"
-        case .location: "location"
-        case .sticker: "face.smiling"
-        case .poll: "chart.bar"
-        case .redacted: "trash"
-        case .encrypted: "lock.fill"
-        case .other: "questionmark.circle"
-        default: "bubble.left"
-        }
-    }
-
-    private var foregroundForKind: Color {
-        switch message.kind {
-        case .encrypted: .orange
-        default: .primary
-        }
-    }
-
-    @ViewBuilder
-    private var backgroundForKind: some View {
-        switch message.kind {
-        case .redacted:
-            Color(.systemGray).opacity(0.1)
-        case .encrypted:
-            Color.orange.opacity(0.1)
-        default:
-            Color(.systemGray).opacity(0.15)
-        }
-    }
-
-    // MARK: - Body Parsing (HTML → Markdown fallback)
-
-    /// The parsed message body as an `NSAttributedString`. Prefers `formatted_body`
-    /// (HTML) when available, falling back to inline Markdown parsing of `body`.
-    private var parsedBody: NSAttributedString {
-        if let html = message.formattedBody {
-            let cached = Self.htmlCache.value(forKey: html) {
-                NSAttributedString(matrixHTML: html)
-            }
-            if let result = cached { return result }
-        }
-        return Self.markdownCache.value(forKey: message.body) {
-            NSAttributedString(matrixMarkdown: message.body)
-        }
-    }
-
-    /// The parsed emote body as an `NSAttributedString`. Prepends an italic
-    /// display name. Prefers `formatted_body` (HTML) when available.
-    private var emoteParsedBody: NSAttributedString {
-        if let html = message.formattedBody {
-            let cacheKey = "\(message.displayName)\0\(html)"
-            let cached = Self.emoteHtmlCache.value(forKey: cacheKey) {
-                guard let parsed = NSAttributedString(matrixHTML: html) else { return nil }
-                let emoteResult = NSMutableAttributedString()
-                let nameFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
-                let italicDesc = nameFont.fontDescriptor.withSymbolicTraits(.italic)
-                let italicFont = NSFont(descriptor: italicDesc, size: nameFont.pointSize) ?? nameFont
-                emoteResult.append(NSAttributedString(
-                    string: "*\(message.displayName)* ",
-                    attributes: [.font: italicFont]
-                ))
-                emoteResult.append(parsed)
-                return emoteResult
-            }
-            if let result = cached { return result }
-        }
-        // Markdown fallback with italic name prefix.
-        let nameFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
-        let italicDesc = nameFont.fontDescriptor.withSymbolicTraits(.italic)
-        let italicFont = NSFont(descriptor: italicDesc, size: nameFont.pointSize) ?? nameFont
-        let result = NSMutableAttributedString(
-            string: "*\(message.displayName)* ",
-            attributes: [.font: italicFont]
-        )
-        result.append(NSAttributedString(matrixMarkdown: message.body))
-        return result
-    }
-
-
-
     // MARK: - Message Badges
 
     /// A small badge indicating this message mentions the current user.
@@ -416,26 +142,6 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
             .foregroundStyle(.white)
             .frame(width: 16, height: 16)
             .background(.red, in: Circle())
-    }
-
-    // MARK: - Bubble Color
-
-    /// Whether this bubble should render with white text (outgoing, or colored incoming).
-    private var usesWhiteText: Bool {
-        message.isOutgoing || (!message.isOutgoing && coloredBubbles)
-    }
-
-    private var bubbleColor: Color {
-        if message.isOutgoing {
-            if coloredBubbles {
-                return StableNameColor.color(for: message.senderID)
-            }
-            return .accentColor
-        }
-        if coloredBubbles {
-            return StableNameColor.color(for: message.senderID)
-        }
-        return Color(.unemphasizedSelectedContentBackgroundColor)
     }
 }
 
@@ -487,7 +193,7 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
             message: TimelineMessage(
                 id: "2",
                 senderID: "@me:matrix.org",
-                body: "Nice — I'll take a look.",
+                body: "Nice \u{2014} I'll take a look.",
                 timestamp: .now.addingTimeInterval(-60),
                 isOutgoing: true,
                 reactions: [
@@ -513,8 +219,7 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                     senderDisplayName: "Alice",
                     body: "Hey, check out **this link**: https://matrix.org"
                 )
-            ),
-            currentUserID: "@me:matrix.org"
+            )
         )
         MessageView(
             message: TimelineMessage(
@@ -529,11 +234,10 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                     eventID: "2",
                     senderID: "@me:matrix.org",
                     senderDisplayName: "Me",
-                    body: "Nice — I'll take a look."
+                    body: "Nice \u{2014} I'll take a look."
                 )
             ),
-            showSenderName: true,
-            currentUserID: "@me:matrix.org"
+            showSenderName: true
         )
         MessageView(
             message: TimelineMessage(
@@ -544,8 +248,7 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                 isOutgoing: true,
                 reactions: [],
                 replyDetail: nil
-            ),
-            currentUserID: "@me:matrix.org"
+            )
         )
         MessageView(
             message: TimelineMessage(
@@ -557,10 +260,10 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                 isOutgoing: false,
                 reactions: [],
                 replyDetail: nil
-            ),
-            currentUserID: "@me:matrix.org"
+            )
         )
     }
+    .environment(\.timelineActions, TimelineActions(currentUserID: "@me:matrix.org"))
     .padding()
     .frame(width: 500)
 }

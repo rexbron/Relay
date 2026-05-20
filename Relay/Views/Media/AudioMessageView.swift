@@ -27,25 +27,26 @@ struct AudioMessageView: View {
     @State private var quickLookURL: URL?
     @State private var isLoadingMedia = false
     @State private var isHovering = false
+    @AppStorage("appearance.coloredBubbles") private var coloredBubbles = false
 
     private var mediaInfo: TimelineMessage.MediaInfo {
         message.mediaInfo!
     }
 
-    private var bubbleColor: Color {
-        message.isOutgoing ? .accentColor : Color(.systemGray).opacity(0.2)
+    private var style: BubbleStyle {
+        .message(for: message, coloredBubbles: coloredBubbles)
     }
 
     var body: some View {
         HStack(spacing: 10) {
             ZStack {
                 Circle()
-                    .fill(message.isOutgoing ? Color.white.opacity(0.2) : Color.accentColor.opacity(0.15))
+                    .fill(style.usesWhiteText ? Color.white.opacity(0.2) : Color.accentColor.opacity(0.15))
                     .frame(width: 40, height: 40)
                 Image(systemName: "waveform")
                     .font(.body)
                     .fontWeight(.medium)
-                    .foregroundStyle(message.isOutgoing ? .white : .accentColor)
+                    .foregroundStyle(style.usesWhiteText ? .white : .accentColor)
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -69,7 +70,7 @@ struct AudioMessageView: View {
                             .font(.caption)
                     }
                 }
-                .foregroundStyle(message.isOutgoing ? .white.opacity(0.7) : .secondary)
+                .foregroundStyle(style.usesWhiteText ? .white.opacity(0.7) : .secondary)
             }
 
             Spacer(minLength: 0)
@@ -81,14 +82,14 @@ struct AudioMessageView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(minWidth: 200, maxWidth: 300)
-        .background(bubbleColor)
-        .foregroundStyle(message.isOutgoing ? .white : .primary)
+        .background(style.backgroundColor)
+        .foregroundStyle(style.usesWhiteText ? .white : .primary)
         .onTapGesture(count: 2) {
             Task { await openQuickLook() }
         }
         .overlay {
             if isLoadingMedia {
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                BubbleStyle.shape
                     .fill(.ultraThinMaterial)
                     .overlay { ProgressView() }
             }
@@ -106,8 +107,8 @@ struct AudioMessageView: View {
                 .font(.title2)
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(
-                    message.isOutgoing ? .white : .primary,
-                    message.isOutgoing ? .white.opacity(0.25) : Color(.systemGray).opacity(0.2)
+                    style.usesWhiteText ? .white : .primary,
+                    style.usesWhiteText ? .white.opacity(0.25) : Color(.systemGray).opacity(0.2)
                 )
         }
         .buttonStyle(.plain)

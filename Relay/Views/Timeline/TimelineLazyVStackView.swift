@@ -29,17 +29,14 @@ struct TimelineLazyVStackView: View {
     let firstUnreadMessageId: String?
     let highlightedMessageId: String?
     let showURLPreviews: Bool
-    let currentUserID: String?
 
-    var onToggleReaction: (String, String) -> Void
-    var onTapReply: (String) -> Void
-    var onReply: (TimelineMessage) -> Void
-    var onAvatarDoubleTap: (TimelineMessage) -> Void
-    var onUserTap: (String) -> Void
-    var onRoomTap: ((String) -> Void)?
+    /// The consolidated timeline interaction callbacks.
+    let actions: TimelineActions
+
+    /// Called when a row appears on screen (for read receipt advancement).
     var onAppear: (MessageRow) -> Void
-    var onContextAction: (TimelineRowContextAction) -> Void
-    var onHighlightDismissed: () -> Void
+
+    // Renderer-level callbacks (not part of TimelineActions).
     var onNearBottomChanged: (Bool) -> Void
     var onPaginateBackward: () -> Void
     var onPaginateForward: () -> Void = {}
@@ -78,16 +75,7 @@ struct TimelineLazyVStackView: View {
                         firstUnreadMessageId: firstUnreadMessageId,
                         highlightedMessageId: highlightedMessageId,
                         showURLPreviews: showURLPreviews,
-                        currentUserID: currentUserID,
-                        onToggleReaction: onToggleReaction,
-                        onTapReply: onTapReply,
-                        onReply: onReply,
-                        onAvatarDoubleTap: onAvatarDoubleTap,
-                        onUserTap: onUserTap,
-                        onRoomTap: onRoomTap,
                         onAppear: onAppear,
-                        onContextAction: onContextAction,
-                        onHighlightDismissed: onHighlightDismissed,
                         swipeState: swipeState
                     )
                     .id(row.id)
@@ -102,6 +90,7 @@ struct TimelineLazyVStackView: View {
             .scrollTargetLayout()
         }
         .defaultScrollAnchor(.bottom)
+        .environment(\.timelineActions, actions)
         .onTapGesture {
             if swipeState.isLocked { dismissSwipeActionBar() }
         }
@@ -169,7 +158,7 @@ struct TimelineLazyVStackView: View {
 
     private func installSwipeMonitor() {
         swipeHandler.swipeState = swipeState
-        swipeHandler.onReply = onReply
+        swipeHandler.onReply = actions.reply
         swipeHandler.onDismiss = { dismissSwipeActionBar() }
         swipeHandler.startMonitoring()
     }

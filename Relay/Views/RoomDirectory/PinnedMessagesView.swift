@@ -105,7 +105,7 @@ struct PinnedMessagesView: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                Text(message.body)
+                Text(Self.previewText(for: message))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -126,6 +126,21 @@ struct PinnedMessagesView: View {
         } else {
             content
         }
+    }
+
+    // MARK: - Preview Text
+
+    /// Extracts plain display text from a pinned message, resolving HTML or
+    /// Markdown formatting so mention links and other markup render as text.
+    private static func previewText(for message: TimelineMessage) -> String {
+        let detail = TimelineMessage.ReplyDetail(
+            eventID: message.eventID,
+            senderID: message.senderID,
+            senderDisplayName: message.senderDisplayName,
+            body: message.body,
+            formattedBody: message.formattedBody
+        )
+        return ReplyPreviewBubble.replyPreviewText(detail)
     }
 
     // MARK: - Empty State

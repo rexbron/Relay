@@ -41,7 +41,7 @@ final class MessageTextContent: NSTextView {
     /// Delivers the same actions as the SwiftUI row context menu.
     var onMessageContextAction: ((TimelineRowContextAction) -> Void)?
 
-    /// Opens the emoji reaction picker (popover host lives in ``MessageView``).
+    /// Opens the emoji reaction picker (popover host lives in ``MessageView``/``MessageBubbleContent``).
     var onPresentReactionPicker: (() -> Void)?
 
     // MARK: - Link Click Interception

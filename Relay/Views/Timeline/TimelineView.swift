@@ -135,9 +135,9 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                         MessageView(
                             message: reply,
                             isLastInGroup: true,
-                            showSenderName: !reply.isOutgoing,
-                            currentUserID: matrixService.userId()
+                            showSenderName: !reply.isOutgoing
                         )
+                        .environment(\.timelineActions, TimelineActions(currentUserID: matrixService.userId()))
                         .allowsHitTesting(false)
                         .padding(.horizontal, 16)
                     }
@@ -367,6 +367,68 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             .overlay { loadingOrEmptyOverlay }
     }
 
+    /// The shared set of timeline interaction callbacks, built once and
+    /// injected into whichever renderer is active.
+    private var timelineActions: TimelineActions {
+        TimelineActions(
+            toggleReaction: { messageId, key in
+                Task { await viewModel.toggleReaction(messageId: messageId, key: key) }
+            },
+            tapReply: { eventID in
+                if let message = viewModel.messages.first(where: { $0.eventID == eventID }) {
+                    scrollToRow(id: message.id)
+                    highlightedMessageId = eventID
+                } else {
+                    focusedMessageId = eventID
+                }
+            },
+            reply: { message in
+                withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
+                    compose.replyingTo = message
+                }
+            },
+            avatarDoubleTap: { message in
+                onUserTap?(UserProfile(message: message))
+            },
+            userTap: { userId in
+                let member = compose.members.first(where: { $0.userId == userId })
+                let profile = member.map { UserProfile(member: $0) }
+                    ?? UserProfile(userId: userId)
+                onUserTap?(profile)
+            },
+            roomTap: onRoomTap,
+            contextAction: { action in
+                handleContextAction(action)
+            },
+            highlightDismissed: {
+                highlightedMessageId = nil
+            },
+            currentUserID: matrixService.userId()
+        )
+    }
+
+    /// Renderer-level callbacks shared by both timeline renderers.
+    private var rendererOnAppear: (MessageRow) -> Void {
+        { row in advanceFullyReadMarker(to: row.message.eventID) }
+    }
+    private var rendererOnNearBottomChanged: (Bool) -> Void {
+        { nearBottom in
+            isNearBottom = nearBottom
+            if nearBottom, NSApp.isActive {
+                Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
+            }
+        }
+    }
+    private var rendererOnPaginateBackward: () -> Void {
+        {
+            guard !viewModel.isLoadingMore, !viewModel.hasReachedStart else { return }
+            Task { await viewModel.loadMoreHistory() }
+        }
+    }
+    private var rendererOnPaginateForward: () -> Void {
+        { Task { await viewModel.loadMoreFuture() } }
+    }
+
     @ViewBuilder
     private var timelineRenderer: some View {
         if timelineUseLazyVStack {
@@ -376,55 +438,11 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 firstUnreadMessageId: viewModel.firstUnreadMessageId,
                 highlightedMessageId: highlightedMessageId,
                 showURLPreviews: showURLPreviews,
-                currentUserID: matrixService.userId(),
-                onToggleReaction: { messageId, key in
-                    Task { await viewModel.toggleReaction(messageId: messageId, key: key) }
-                },
-                onTapReply: { eventID in
-                    if let message = viewModel.messages.first(where: { $0.eventID == eventID }) {
-                        scrollToRow(id: message.id)
-                        highlightedMessageId = eventID
-                    } else {
-                        focusedMessageId = eventID
-                    }
-                },
-                onReply: { message in
-                    withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
-                        compose.replyingTo = message
-                    }
-                },
-                onAvatarDoubleTap: { message in
-                    onUserTap?(UserProfile(message: message))
-                },
-                onUserTap: { userId in
-                    let member = compose.members.first(where: { $0.userId == userId })
-                    let profile = member.map { UserProfile(member: $0) }
-                        ?? UserProfile(userId: userId)
-                    onUserTap?(profile)
-                },
-                onRoomTap: onRoomTap,
-                onAppear: { row in
-                    advanceFullyReadMarker(to: row.message.eventID)
-                },
-                onContextAction: { action in
-                    handleContextAction(action)
-                },
-                onHighlightDismissed: {
-                    highlightedMessageId = nil
-                },
-                onNearBottomChanged: { nearBottom in
-                    isNearBottom = nearBottom
-                    if nearBottom, NSApp.isActive {
-                        Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
-                    }
-                },
-                onPaginateBackward: {
-                    guard !viewModel.isLoadingMore, !viewModel.hasReachedStart else { return }
-                    Task { await viewModel.loadMoreHistory() }
-                },
-                onPaginateForward: {
-                    Task { await viewModel.loadMoreFuture() }
-                },
+                actions: timelineActions,
+                onAppear: rendererOnAppear,
+                onNearBottomChanged: rendererOnNearBottomChanged,
+                onPaginateBackward: rendererOnPaginateBackward,
+                onPaginateForward: rendererOnPaginateForward,
                 hasReachedEnd: viewModel.hasReachedEnd,
                 isLive: viewModel.timelineFocus == .live,
                 bottomContentMargin: composeBarHeight + 4,
@@ -439,55 +457,11 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 firstUnreadMessageId: viewModel.firstUnreadMessageId,
                 highlightedMessageId: highlightedMessageId,
                 showURLPreviews: showURLPreviews,
-                currentUserID: matrixService.userId(),
-                onToggleReaction: { messageId, key in
-                    Task { await viewModel.toggleReaction(messageId: messageId, key: key) }
-                },
-                onTapReply: { eventID in
-                    if let message = viewModel.messages.first(where: { $0.eventID == eventID }) {
-                        tableProxy.scrollToRow(id: message.id)
-                        highlightedMessageId = eventID
-                    } else {
-                        focusedMessageId = eventID
-                    }
-                },
-                onReply: { message in
-                    withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
-                        compose.replyingTo = message
-                    }
-                },
-                onAvatarDoubleTap: { message in
-                    onUserTap?(UserProfile(message: message))
-                },
-                onUserTap: { userId in
-                    let member = compose.members.first(where: { $0.userId == userId })
-                    let profile = member.map { UserProfile(member: $0) }
-                        ?? UserProfile(userId: userId)
-                    onUserTap?(profile)
-                },
-                onRoomTap: onRoomTap,
-                onAppear: { row in
-                    advanceFullyReadMarker(to: row.message.eventID)
-                },
-                onContextAction: { action in
-                    handleContextAction(action)
-                },
-                onHighlightDismissed: {
-                    highlightedMessageId = nil
-                },
-                onNearBottomChanged: { nearBottom in
-                    isNearBottom = nearBottom
-                    if nearBottom, NSApp.isActive {
-                        Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
-                    }
-                },
-                onPaginateBackward: {
-                    guard !viewModel.isLoadingMore, !viewModel.hasReachedStart else { return }
-                    Task { await viewModel.loadMoreHistory() }
-                },
-                onPaginateForward: {
-                    Task { await viewModel.loadMoreFuture() }
-                },
+                actions: timelineActions,
+                onAppear: rendererOnAppear,
+                onNearBottomChanged: rendererOnNearBottomChanged,
+                onPaginateBackward: rendererOnPaginateBackward,
+                onPaginateForward: rendererOnPaginateForward,
                 scrollProxy: tableProxy
             )
             .ignoresSafeArea()

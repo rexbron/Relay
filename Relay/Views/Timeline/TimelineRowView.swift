@@ -46,6 +46,9 @@ extension EnvironmentValues {
 /// Extracted from ``TimelineView`` so that SwiftUI can diff and re-evaluate each
 /// row independently based only on its own inputs, rather than re-evaluating the
 /// entire parent view's 20+ `@State` properties on every frame.
+///
+/// Interactive callbacks (reply, reaction, context menu, etc.) are read from
+/// the ``TimelineActions`` environment value, injected by the renderer.
 struct TimelineRowView: View, Equatable {
     let row: MessageRow
     let isNewlyAppended: Bool
@@ -53,23 +56,22 @@ struct TimelineRowView: View, Equatable {
     let firstUnreadMessageId: String?
     let highlightedMessageId: String?
     let showURLPreviews: Bool
-    let currentUserID: String?
 
-    var onToggleReaction: (String, String) -> Void
-    var onTapReply: (String) -> Void
-    var onReply: (TimelineMessage) -> Void
-    var onAvatarDoubleTap: (TimelineMessage) -> Void
-    var onUserTap: (String) -> Void
-    var onRoomTap: ((String) -> Void)?
+    /// Called when this row appears on screen (for read receipt advancement).
     var onAppear: (MessageRow) -> Void
-    var onContextAction: (TimelineRowContextAction) -> Void
-    var onHighlightDismissed: () -> Void
 
     /// Observable swipe state from the table view controller. When the user
     /// swipes this row, the offset and reply arrow are rendered here.
     var swipeState: TimelineSwipeState?
 
+    /// Explicitly provided actions (used by the NSTableView renderer where
+    /// environment injection isn't possible on the concrete type).
+    var injectedActions: TimelineActions?
+
+    @Environment(\.timelineActions) private var environmentActions
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var actions: TimelineActions { injectedActions ?? environmentActions }
 
     /// Drives the entry animation for newly appended messages. Starts
     /// `false` for new messages and is set to `true` on appear.
@@ -87,7 +89,6 @@ struct TimelineRowView: View, Equatable {
             && lhs.firstUnreadMessageId == rhs.firstUnreadMessageId
             && lhs.highlightedMessageId == rhs.highlightedMessageId
             && lhs.showURLPreviews == rhs.showURLPreviews
-            && lhs.currentUserID == rhs.currentUserID
     }
 
     private var message: TimelineMessage { row.message }
@@ -111,6 +112,7 @@ struct TimelineRowView: View, Equatable {
     var body: some View {
         rowContent
             .padding(.horizontal, 16)
+            .environment(\.timelineActions, actions)
             .environment(\.swipeOffset, currentSwipeOffset)
             .environment(\.swipeIsLocked, isSwipeLocked)
             .offset(x: currentSwipeOffset)
@@ -138,7 +140,7 @@ struct TimelineRowView: View, Equatable {
         let replyScale = 1.0 + longSwipeProgress * 0.8
 
         return Button("Reply", systemImage: "arrowshape.turn.up.left.fill") {
-            onReply(message)
+            actions.reply(message)
         }
         .labelStyle(.iconOnly)
         .scaleEffect(replyScale)
@@ -173,7 +175,7 @@ struct TimelineRowView: View, Equatable {
                 .help(message.formattedTime)
                 .onAppear { onAppear(row) }
                 .messageHighlight(highlightedMessageId == message.eventID) {
-                    onHighlightDismissed()
+                    actions.highlightDismissed()
                 }
         } else {
             ZStack(alignment: .leading) {
@@ -189,21 +191,6 @@ struct TimelineRowView: View, Equatable {
                     message: message,
                     isLastInGroup: info.isLastInGroup,
                     showSenderName: info.showSenderName,
-                    onToggleReaction: { key in
-                        onToggleReaction(message.eventID, key)
-                    },
-                    onTapReply: { eventID in
-                        onTapReply(eventID)
-                    },
-                    onAvatarDoubleTap: {
-                        onAvatarDoubleTap(message)
-                    },
-                    onUserTap: { userId in
-                        onUserTap(userId)
-                    },
-                    onRoomTap: onRoomTap,
-                    currentUserID: currentUserID,
-                    onMessageContextAction: onContextAction,
                     triggerReactionPickerFromParent: $triggerReactionPicker
                 )
             }
@@ -214,7 +201,7 @@ struct TimelineRowView: View, Equatable {
                 contextMenu
             }
             .messageHighlight(highlightedMessageId == message.eventID) {
-                onHighlightDismissed()
+                actions.highlightDismissed()
             }
 
             if showURLPreviews, message.kind == .text,
@@ -240,13 +227,13 @@ struct TimelineRowView: View, Equatable {
         switch entry {
         case .reply:
             Button {
-                onContextAction(.reply(message))
+                actions.contextAction(.reply(message))
             } label: {
                 Label("Reply", systemImage: "arrowshape.turn.up.left")
             }
         case .copyMessage:
             Button {
-                onContextAction(.copy(message.body))
+                actions.contextAction(.copy(message.body))
             } label: {
                 Label("Copy Message", systemImage: "doc.on.doc")
             }
@@ -254,17 +241,17 @@ struct TimelineRowView: View, Equatable {
             Button {
                 triggerReactionPicker = true
             } label: {
-                Label("Add Reaction…", systemImage: "face.smiling")
+                Label("Add Reaction\u{2026}", systemImage: "face.smiling")
             }
         case .togglePin:
             Button {
-                onContextAction(.togglePin(message.eventID))
+                actions.contextAction(.togglePin(message.eventID))
             } label: {
                 Label("Pin/Unpin", systemImage: "pin")
             }
         case .edit:
             Button {
-                onContextAction(.edit(message))
+                actions.contextAction(.edit(message))
             } label: {
                 Label("Edit Message", systemImage: "pencil")
             }
@@ -272,7 +259,7 @@ struct TimelineRowView: View, Equatable {
             Divider()
         case .delete:
             Button(role: .destructive) {
-                onContextAction(.delete(message))
+                actions.contextAction(.delete(message))
             } label: {
                 Label("Delete Message", systemImage: "trash")
             }
@@ -316,7 +303,7 @@ struct TimelineRowView: View, Equatable {
 
 // MARK: - Previews
 
-private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .default) -> TimelineRowView {
+private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .default) -> some View {
     TimelineRowView(
         row: .init(message: message, info: info, isPaginationTrigger: false),
         isNewlyAppended: false,
@@ -324,17 +311,9 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
         firstUnreadMessageId: nil,
         highlightedMessageId: nil,
         showURLPreviews: true,
-        currentUserID: "@me:matrix.org",
-        onToggleReaction: { _, _ in },
-        onTapReply: { _ in },
-        onReply: { _ in },
-        onAvatarDoubleTap: { _ in },
-        onUserTap: { _ in },
-        onRoomTap: nil,
-        onAppear: { _ in },
-        onContextAction: { _ in },
-        onHighlightDismissed: {}
+        onAppear: { _ in }
     )
+    .environment(\.timelineActions, TimelineActions(currentUserID: "@me:matrix.org"))
 }
 
 #Preview("Conversation") {
@@ -351,21 +330,13 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
                     firstUnreadMessageId: nil,
                     highlightedMessageId: nil,
                     showURLPreviews: true,
-                    currentUserID: "@me:matrix.org",
-                    onToggleReaction: { _, _ in },
-                    onTapReply: { _ in },
-                    onReply: { _ in },
-                    onAvatarDoubleTap: { _ in },
-                    onUserTap: { _ in },
-                    onRoomTap: nil,
-                    onAppear: { _ in },
-                    onContextAction: { _ in },
-                    onHighlightDismissed: {}
+                    onAppear: { _ in }
                 )
             }
         }
         .padding()
     }
+    .environment(\.timelineActions, TimelineActions(currentUserID: "@me:matrix.org"))
     .frame(width: 500, height: 700)
 }
 
@@ -411,9 +382,9 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
               body: "Check out this new feature!",
               timestamp: .now, isOutgoing: true,
               reactions: [
-                .init(key: "🎉", count: 3, senderIDs: ["@alice:matrix.org", "@bob:matrix.org", "@charlie:matrix.org"], highlightedByCurrentUser: false),
-                .init(key: "🚀", count: 1, senderIDs: ["@alice:matrix.org"], highlightedByCurrentUser: false),
-                .init(key: "👍", count: 2, senderIDs: ["@bob:matrix.org", "@me:matrix.org"], highlightedByCurrentUser: true)
+                .init(key: "\u{1F389}", count: 3, senderIDs: ["@alice:matrix.org", "@bob:matrix.org", "@charlie:matrix.org"], highlightedByCurrentUser: false),
+                .init(key: "\u{1F680}", count: 1, senderIDs: ["@alice:matrix.org"], highlightedByCurrentUser: false),
+                .init(key: "\u{1F44D}", count: 2, senderIDs: ["@bob:matrix.org", "@me:matrix.org"], highlightedByCurrentUser: true)
               ]),
         info: .init(isLastInGroup: true)
     )
@@ -445,21 +416,12 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
                     firstUnreadMessageId: "5",
                     highlightedMessageId: nil,
                     showURLPreviews: true,
-                    currentUserID: "@me:matrix.org",
-                    onToggleReaction: { _, _ in },
-                    onTapReply: { _ in },
-                    onReply: { _ in },
-                    onAvatarDoubleTap: { _ in },
-                    onUserTap: { _ in },
-                    onRoomTap: nil,
-                    onAppear: { _ in },
-                    onContextAction: { _ in },
-                    onHighlightDismissed: {}
+                    onAppear: { _ in }
                 )
             }
         }
         .padding()
     }
+    .environment(\.timelineActions, TimelineActions(currentUserID: "@me:matrix.org"))
     .frame(width: 500, height: 500)
 }
-

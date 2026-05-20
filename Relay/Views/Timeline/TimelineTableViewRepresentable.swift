@@ -29,18 +29,14 @@ struct TimelineTableViewRepresentable: NSViewControllerRepresentable {
     let firstUnreadMessageId: String?
     let highlightedMessageId: String?
     let showURLPreviews: Bool
-    let currentUserID: String?
 
-    // Callbacks
-    var onToggleReaction: (String, String) -> Void
-    var onTapReply: (String) -> Void
-    var onReply: (TimelineMessage) -> Void
-    var onAvatarDoubleTap: (TimelineMessage) -> Void
-    var onUserTap: (String) -> Void
-    var onRoomTap: ((String) -> Void)?
+    /// The consolidated timeline interaction callbacks.
+    let actions: TimelineActions
+
+    /// Called when a row appears on screen (for read receipt advancement).
     var onAppear: (MessageRow) -> Void
-    var onContextAction: (TimelineRowContextAction) -> Void
-    var onHighlightDismissed: () -> Void
+
+    // Renderer-level callbacks (not part of TimelineActions).
     var onNearBottomChanged: (Bool) -> Void
     var onPaginateBackward: () -> Void
     var onPaginateForward: () -> Void
@@ -69,13 +65,14 @@ struct TimelineTableViewRepresentable: NSViewControllerRepresentable {
 
     private func configureCallbacks(_ vc: TimelineTableViewController, context: Context) {
         let swipeState = vc.swipeState
+        let actions = actions
         vc.callbacks = .init(
             onNearBottomChanged: onNearBottomChanged,
             onPaginateBackward: onPaginateBackward,
             onPaginateForward: onPaginateForward,
             onMessageAppeared: onAppear,
             onSwipeReply: { row in
-                onReply(row.message)
+                actions.reply(row.message)
             },
             makeRowView: { row, isNewlyAppended in
                 TimelineRowView(
@@ -85,17 +82,9 @@ struct TimelineTableViewRepresentable: NSViewControllerRepresentable {
                     firstUnreadMessageId: firstUnreadMessageId,
                     highlightedMessageId: highlightedMessageId,
                     showURLPreviews: showURLPreviews,
-                    currentUserID: currentUserID,
-                    onToggleReaction: onToggleReaction,
-                    onTapReply: onTapReply,
-                    onReply: onReply,
-                    onAvatarDoubleTap: onAvatarDoubleTap,
-                    onUserTap: onUserTap,
-                    onRoomTap: onRoomTap,
                     onAppear: onAppear,
-                    onContextAction: onContextAction,
-                    onHighlightDismissed: onHighlightDismissed,
-                    swipeState: swipeState
+                    swipeState: swipeState,
+                    injectedActions: actions
                 )
             }
         )
