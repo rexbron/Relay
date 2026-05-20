@@ -112,6 +112,12 @@ public final class RoomSummary: Identifiable {
     /// unread messages, confirming the server has processed the read receipt.
     public var isOptimisticallyCleared: Bool = false
 
+    /// The SDK's ``numUnreadMessages`` at the moment the room was optimistically
+    /// marked as read. If the SDK later reports a count *higher* than this value,
+    /// new messages arrived after the read receipt was sent and the count should
+    /// be accepted rather than suppressed.
+    public var optimisticClearedBaseline: UInt = 0
+
     /// The user's current membership state in this room.
     public var membership: RoomMembership
 

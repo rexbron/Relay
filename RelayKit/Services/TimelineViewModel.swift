@@ -553,8 +553,9 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
     /// Resumes live timeline observation after a ``suspend()``.
     ///
     /// Re-creates the SDK timeline and re-subscribes to diffs, pagination status,
-    /// and typing notifications. The existing ``messages`` remain visible until
-    /// fresh data arrives.
+    /// and typing notifications. Unlike the initial ``loadTimeline()`` call, a
+    /// resume does not show a loading spinner — the existing ``messages`` remain
+    /// visible until fresh data arrives via the normal diff pipeline.
     func resume() async {
         guard isSuspended else { return }
         logger.info("Resuming timeline for room \(self.roomId)")
@@ -712,6 +713,10 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         }
     }
 
+    /// Maximum number of retry attempts for auto-pagination when the server
+    /// is unreachable. Each attempt uses exponential backoff (1s, 2s, 4s).
+    private static let maxPaginationRetries = 3
+
     // swiftlint:disable:next identifier_name
     private func observePaginationStatus(_ tl: Timeline) async throws {
         let (stream, continuation) = AsyncStream<PaginationStatus>.makeStream()
@@ -735,16 +740,9 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                     // state events, membership changes, date dividers, etc.)
                     // because a room with many members can easily have 20+
                     // non-message items but zero actual messages.
-                    let msgLikeCount = self.timelineItems.lazy
-                        .compactMap { $0.asEvent() }
-                        .filter {
-                            if case .msgLike = $0.content { return true }
-                            return false
-                        }
-                        .count
+                    let msgLikeCount = self.countMsgLikeItems()
                     if !hitStart && msgLikeCount < 20 {
-                        try? await Task.sleep(for: .milliseconds(500))
-                        _ = try? await tl.paginateBackwards(numEvents: 100)
+                        await self.paginateBackwardsWithRetry(tl)
                     } else if self.isLoading {
                         // The initial auto-pagination loop has settled — either
                         // we have enough items or hit the room start.  Wait for
@@ -759,6 +757,53 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                     }
                 case .paginating:
                     self.isLoadingMore = true
+                }
+            }
+        }
+    }
+
+    /// Counts the number of message-like (non-state) event items currently
+    /// in ``timelineItems``.
+    private func countMsgLikeItems() -> Int {
+        timelineItems.lazy
+            .compactMap { $0.asEvent() }
+            .filter {
+                if case .msgLike = $0.content { return true }
+                return false
+            }
+            .count
+    }
+
+    /// Attempts backward pagination with retry and exponential backoff.
+    ///
+    /// On transient errors (network unreachable, connection timeout), retries
+    /// up to ``maxPaginationRetries`` times with 1s / 2s / 4s delays. On
+    /// success or permanent failure, returns without throwing.
+    private func paginateBackwardsWithRetry(_ timeline: Timeline) async {
+        for attempt in 0 ..< Self.maxPaginationRetries {
+            do {
+                try await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled else { return }
+                _ = try await timeline.paginateBackwards(numEvents: 100)
+                return
+            } catch is CancellationError {
+                return
+            } catch {
+                let isTransient = NetworkErrorClassifier.isOfflineShaped(error)
+                    || "\(error)".contains("HostUnreachable")
+                    || "\(error)".contains("EventCacheError")
+                if isTransient && attempt < Self.maxPaginationRetries - 1 {
+                    let delay = Duration.seconds(1 << attempt) // 1s, 2s, 4s
+                    logger.info(
+                        "Pagination attempt \(attempt + 1) failed (transient), retrying in \(1 << attempt)s: \(error.localizedDescription)"
+                    )
+                    try? await Task.sleep(for: delay)
+                    guard !Task.isCancelled else { return }
+                } else {
+                    logger.error(
+                        "Pagination failed after \(attempt + 1) attempt(s): \(error)"
+                    )
+                    return
                 }
             }
         }

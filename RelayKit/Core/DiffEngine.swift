@@ -24,8 +24,7 @@
 /// popBack, truncate, reset). `DiffEngine` applies these operations
 /// to maintain a local Swift array that mirrors the SDK's internal state.
 ///
-/// Used by both ``RoomSummaryProvider`` (for `RoomListEntriesUpdate`)
-/// and ``TimelineItemProvider`` (for `TimelineDiff`).
+/// Used by ``RoomSummaryProvider`` (for `RoomListEntriesUpdate`).
 ///
 /// ## Usage
 ///

@@ -441,6 +441,10 @@ private final class RoomEntry: Identifiable {
         // report stale non-zero unread counts until the server processes the
         // read receipt. Skip overwriting the cleared values in that case.
         // Once the SDK itself reports zero, clear the optimistic flag.
+        //
+        // However, if the SDK reports a count *higher* than what was present
+        // when markAsRead was called, new messages arrived after the read
+        // receipt was sent and we should accept the SDK's value.
         let sdkUnread = UInt(info.numUnreadMessages)
         let sdkMentions = UInt(info.numUnreadMentions)
         if summary.isOptimisticallyCleared {
@@ -449,8 +453,17 @@ private final class RoomEntry: Identifiable {
                 summary.isOptimisticallyCleared = false
                 summary.unreadMentions = 0
                 summary.hasKeywordHighlight = false
+            } else if sdkUnread > summary.optimisticClearedBaseline {
+                // New messages arrived after the read receipt was sent.
+                // Accept the SDK's values and clear the optimistic flag.
+                summary.isOptimisticallyCleared = false
+                summary.unreadMessages = sdkUnread
+                if sdkMentions > summary.unreadMentions {
+                    summary.unreadMentions = sdkMentions
+                }
             }
-            // Otherwise keep the optimistically-cleared zeros.
+            // Otherwise keep the optimistically-cleared zeros — the SDK
+            // is still echoing stale counts from before the read receipt.
         } else {
             summary.unreadMessages = sdkUnread
             // Use the SDK's mention count as a floor; our client-side detection
@@ -505,18 +518,34 @@ private final class RoomEntry: Identifiable {
 
         // Fetch the latest event, update the message preview, and check
         // for new notification-worthy events in a single task.
-        // The notification check compares the latest event's timestamp
-        // against the last one we processed — this works reliably because
-        // latestEvent() is fetched asynchronously, giving the SDK time to
-        // deliver the new event before we read it.
+        //
+        // The room info update fires before the SDK's event cache is
+        // guaranteed to have the new event available via latestEvent().
+        // When the fetched event has the same timestamp as the last one
+        // we processed, we yield briefly (up to 2 retries at 50ms) to
+        // give the SDK time to flush the event into its cache.
         Task { [weak self] in
             guard let self else { return }
 
-            // Fetch the latest event exactly once — both the message
-            // preview and notification detection use the same snapshot
-            // so there is no race between two separate latestEvent() calls.
-            let latest = await self.room.latestEvent()
-            let eventInfo = Self.extractEventInfo(from: latest)
+            var latest = await self.room.latestEvent()
+            var eventInfo = Self.extractEventInfo(from: latest)
+
+            // Retry if the event looks stale (same timestamp as what we
+            // already processed).  Two short retries cover the common
+            // case where the event cache lags by a few milliseconds.
+            if shouldCheckNotification,
+               let ts = eventInfo?.timestamp,
+               ts <= self.lastNotifiedEventTimestamp {
+                for _ in 0 ..< 2 {
+                    try? await Task.sleep(for: .milliseconds(50))
+                    guard !Task.isCancelled else { return }
+                    latest = await self.room.latestEvent()
+                    eventInfo = Self.extractEventInfo(from: latest)
+                    if let newTs = eventInfo?.timestamp, newTs > self.lastNotifiedEventTimestamp {
+                        break
+                    }
+                }
+            }
             let preview = Self.extractPreview(from: latest)
 
             // Update message preview for the room list.

@@ -509,11 +509,12 @@ final class TimelineTableViewController: NSViewController {
             invalidateHeight(for: id)
         }
 
+        let oldSet = Set(oldIDs)
+
         // Detect messages appended at the bottom (newest end) while in live
         // mode after the initial load.  These IDs are exposed to row views
         // so they can play an entry animation.
         if isLive && hasScrolledToBottom && !oldIDs.isEmpty {
-            let oldSet = Set(oldIDs)
             // newIDs is reversed (newest = index 0).  Walk from the front
             // and collect IDs that didn't exist in the previous snapshot.
             var appended: Set<String> = []
@@ -527,15 +528,26 @@ final class TimelineTableViewController: NSViewController {
         }
 
         // Structural update via diffable data source.
+        //
+        // When more than half of the existing items are being replaced
+        // (e.g. after a timeline resume delivers substantially different
+        // content), animate the transition so the user sees a smooth
+        // cross-fade instead of a jarring snap. Normal incremental
+        // updates (pagination, new messages) keep animation disabled to
+        // avoid distracting movement during regular use.
+        let overlap = oldSet.intersection(newIDs).count
+        let isReplacement = !oldIDs.isEmpty && !snapshotIsEmpty
+            && overlap < oldIDs.count / 2
+
         var snapshot = NSDiffableDataSourceSnapshot<Section, String>()
         snapshot.appendSections([.main])
         snapshot.appendItems(newIDs, toSection: .main)
-        dataSource?.apply(snapshot, animatingDifferences: false)
+        dataSource?.apply(snapshot, animatingDifferences: isReplacement)
 
         Self.perfSignposter.endInterval(
             "updateRows" as StaticString,
             updateState,
-            "structural: \(newIDs.count) items, \(removedIDs.count) removed"
+            "structural: \(newIDs.count) items, \(removedIDs.count) removed, animated: \(isReplacement)"
         )
 
         // Re-measure visible rows after SwiftUI hosting views settle,

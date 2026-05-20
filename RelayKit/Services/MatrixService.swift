@@ -738,6 +738,7 @@ public final class MatrixService: MatrixServiceProtocol {
         // overwriting these zeros with stale SDK values before the server processes
         // the read receipt.
         if let summary = rooms.first(where: { $0.id == roomId }) {
+            summary.optimisticClearedBaseline = summary.unreadMessages
             summary.unreadMessages = 0
             summary.unreadMentions = 0
             summary.hasKeywordHighlight = false
