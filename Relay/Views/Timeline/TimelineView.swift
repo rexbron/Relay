@@ -29,6 +29,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     @Environment(\.errorReporter) private var errorReporter
     @Environment(\.gifSearchService) private var gifSearchService
     @Environment(\.composeDraftStore) private var composeDraftStore
+    @Environment(\.scrollAnchorStore) private var scrollAnchorStore
 
     /// The Matrix room identifier for the displayed room.
     let roomId: String
@@ -197,6 +198,11 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             // Cache isDirect once — avoids O(n) room scan on every body evaluation.
             isDirectRoom = matrixService.rooms.first(where: { $0.id == roomId })?.isDirect ?? false
 
+            // Seed the row cache immediately so cached messages from a
+            // previously visited room render in the first frame, before
+            // the async loadTimeline call reconnects to the SDK.
+            rebuildCachedRows()
+
             // Load focused on the fully-read marker if the user has opted out of "always load newest"
             var focusEventId: String?
             if !readOnly, !alwaysLoadNewest {
@@ -204,13 +210,21 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             }
             await viewModel.loadTimeline(focusedOnEventId: focusEventId)
 
-            // Seed the row cache now that messages are available.
-            rebuildCachedRows()
-
-            // defaultScrollAnchor(.bottom) handles the initial layout,
-            // but async data arrival needs an explicit nudge.
-            if timelineUseLazyVStack, focusEventId == nil {
-                // Yield to let SwiftUI lay out the newly populated LazyVStack.
+            // Restore scroll position from a previous visit to this room.
+            // If the user was scrolled up reading history, jump back to
+            // that position instead of snapping to the bottom.
+            let savedAnchor = scrollAnchorStore.take(roomId: roomId)
+            if let savedAnchor, !savedAnchor.isNearBottom, focusEventId == nil {
+                // Yield briefly so the table view has applied its initial
+                // snapshot before we attempt the scroll.
+                try? await Task.sleep(for: .milliseconds(50))
+                if !timelineUseLazyVStack {
+                    tableProxy.scrollToRow(id: savedAnchor.eventId, animated: false)
+                }
+                isNearBottom = false
+            } else if timelineUseLazyVStack, focusEventId == nil {
+                // defaultScrollAnchor(.bottom) handles the initial layout,
+                // but async data arrival needs an explicit nudge.
                 try? await Task.sleep(for: .milliseconds(50))
                 scrollToBottom(animated: false)
             }
@@ -222,13 +236,27 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
 
             guard !readOnly else { return }
 
-            await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts)
+            // Only mark as read when the user can see the latest messages.
+            // If we restored to a saved scroll position mid-history, wait
+            // until they scroll to the bottom (handled by onNearBottomChanged).
+            if isNearBottom {
+                await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts)
+            }
 
             // Fetch room members for mention autocomplete
             compose.members = await matrixService.roomMembers(roomId: roomId)
 
         }
         .onDisappear {
+            // Save the scroll anchor before the view is destroyed so
+            // returning to this room can restore the scroll position.
+            if !timelineUseLazyVStack, let eventId = tableProxy.topVisibleEventId() {
+                scrollAnchorStore.save(
+                    roomId: roomId,
+                    anchor: ScrollAnchor(eventId: eventId, isNearBottom: isNearBottom)
+                )
+            }
+
             if !readOnly, sendTypingNotifications {
                 Task { await matrixService.sendTypingNotice(roomId: roomId, isTyping: false) }
             }
@@ -553,7 +581,11 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
 
     @ViewBuilder
     private var loadingOrEmptyOverlay: some View {
-        if !viewModel.isLoading && viewModel.messages.isEmpty {
+        if viewModel.isLoading && viewModel.messages.isEmpty {
+            ProgressView()
+                .controlSize(.large)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if !viewModel.isLoading && viewModel.messages.isEmpty {
             ContentUnavailableView(
                 "No Messages Yet",
                 systemImage: "text.bubble",

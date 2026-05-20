@@ -54,6 +54,15 @@ final class TimelineTableProxy {
         controller?.contentInsets = insets
     }
 
+    /// Returns the event ID of the message nearest the top of the visible
+    /// area, or `nil` if no rows are visible.
+    ///
+    /// In the unflipped table (newest = row 0 at screen bottom), the
+    /// top-visible row is the highest-indexed row in the visible range.
+    func topVisibleEventId() -> String? {
+        controller?.topVisibleEventId()
+    }
+
     /// The swipe state for the current table view, used by row views
     /// to render the swipe offset and reply arrow.
     var swipeState: TimelineSwipeState? {
@@ -616,6 +625,20 @@ final class TimelineTableViewController: NSViewController {
             scrollView.contentView.scroll(to: scrollPoint)
             scrollView.reflectScrolledClipView(scrollView.contentView)
         }
+    }
+
+    // MARK: - Scroll Anchor
+
+    /// Returns the event ID of the message nearest the top of the visible
+    /// area (oldest visible row), or `nil` if no rows are visible.
+    func topVisibleEventId() -> String? {
+        let visibleRange = tableView.rows(in: tableView.visibleRect)
+        guard visibleRange.length > 0 else { return nil }
+        // In the unflipped table (newest = row 0 at bottom), the highest
+        // row index in the visible range is the one nearest the screen top.
+        let topIndex = visibleRange.upperBound - 1
+        guard topIndex < rows.count else { return nil }
+        return rows[topIndex].message.eventID
     }
 
     // MARK: - Swipe-to-Reply
