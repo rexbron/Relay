@@ -297,9 +297,21 @@ public final class MatrixService: MatrixServiceProtocol {
                 // service. Without this, timelines created before the
                 // reconnect hold stale references and never receive new
                 // events.
-                for (_, vm) in self.timelineViewModels where !vm.isSuspended {
+                var activeRoomIds: [String] = []
+                for (roomId, vm) in self.timelineViewModels where !vm.isSuspended {
                     vm.suspend()
                     await vm.resume()
+                    activeRoomIds.append(roomId)
+                }
+
+                // Re-subscribe active rooms to the new RoomListService so
+                // the sliding sync proxy delivers full timeline events for
+                // them. The previous subscriptions were tied to the old
+                // sync service and are no longer valid.
+                if !activeRoomIds.isEmpty {
+                    for roomId in activeRoomIds {
+                        self.subscribeToRoom(roomId)
+                    }
                 }
             }
 
@@ -461,6 +473,7 @@ public final class MatrixService: MatrixServiceProtocol {
     public func makeTimelineViewModel(roomId: String) -> (any TimelineViewModelProtocol)? {
         if let cached = timelineViewModels[roomId] {
             touchTimelineAccessOrder(roomId)
+            subscribeToRoom(roomId)
             return cached
         }
         guard let room = room(id: roomId) else { return nil }
@@ -476,14 +489,7 @@ public final class MatrixService: MatrixServiceProtocol {
         touchTimelineAccessOrder(roomId)
         evictStaleTimelines()
 
-        // Subscribe to this room at a higher detail level in the sliding sync.
-        // This requests additional state events (including m.room.pinned_events)
-        // that aren't included in the default room list sync.
-        if let rls = roomListManager.roomListService {
-            Task {
-                try? await rls.subscribeToRooms(roomIds: [roomId])
-            }
-        }
+        subscribeToRoom(roomId)
 
         return vm
     }
@@ -519,10 +525,19 @@ public final class MatrixService: MatrixServiceProtocol {
     /// prioritises updates for it again.
     public func resumeTimeline(roomId: String) async {
         await timelineViewModels[roomId]?.resume()
+        subscribeToRoom(roomId)
+    }
 
-        // Re-subscribe so the sliding sync proxy knows this room is active
-        // again and should receive higher-detail updates.
-        if let rls = roomListManager.roomListService {
+    /// Subscribes to a room at a higher detail level in the sliding sync.
+    ///
+    /// This tells the sliding sync proxy to prioritise this room for
+    /// full timeline event delivery (including `m.room.pinned_events`
+    /// and other state events). Must be called every time a room becomes
+    /// active — the subscription is tied to the current ``RoomListService``
+    /// and is lost when the sync service is rebuilt.
+    private func subscribeToRoom(_ roomId: String) {
+        guard let rls = roomListManager.roomListService else { return }
+        Task {
             try? await rls.subscribeToRooms(roomIds: [roomId])
         }
     }
