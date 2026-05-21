@@ -67,6 +67,10 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
     private var hasComputedUnreadMarker = false
     private var isSendingFullyReadReceipt = false
     private var fetchedReplyEventIds: Set<String> = []
+    /// Set to `true` when backward pagination hits a permanent error (e.g.
+    /// corrupted event cache). Prevents the auto-pagination loop from
+    /// retrying indefinitely.
+    private var paginationPermanentlyFailed = false
 
     /// Tracks which indices in ``timelineItems`` were modified by the latest
     /// batch of diffs. `nil` means a full remap is required (e.g. after a
@@ -594,6 +598,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         hasReachedStart = false
         hasReachedEnd = true
         isLoadingMore = false
+        paginationPermanentlyFailed = false
         fetchedReplyEventIds = []
         pendingChangedIndices = IndexSet()
         messageCache = [:]
@@ -754,9 +759,13 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                     // because a room with many members can easily have 20+
                     // non-message items but zero actual messages.
                     let msgLikeCount = self.countMsgLikeItems()
-                    if !hitStart && msgLikeCount < 20 {
-                        await self.paginateBackwardsWithRetry(tl)
-                    } else if self.isLoading {
+                    if !hitStart && msgLikeCount < 20 && !self.paginationPermanentlyFailed {
+                        let succeeded = await self.paginateBackwardsWithRetry(tl)
+                        if !succeeded {
+                            self.paginationPermanentlyFailed = true
+                        }
+                    }
+                    if self.isLoading && (hitStart || msgLikeCount >= 20 || self.paginationPermanentlyFailed) {
                         // The initial auto-pagination loop has settled — either
                         // we have enough items or hit the room start.  Wait for
                         // the diff observer to deliver at least one batch so
@@ -797,26 +806,29 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
     /// On transient errors (network unreachable, connection timeout), retries
     /// up to ``maxPaginationRetries`` times with 1s / 2s / 4s delays. On
     /// success or permanent failure, returns without throwing.
-    private func paginateBackwardsWithRetry(_ timeline: Timeline) async {
+    ///
+    /// - Returns: `true` if pagination succeeded, `false` if it failed
+    ///   permanently (non-transient error or retries exhausted).
+    @discardableResult
+    private func paginateBackwardsWithRetry(_ timeline: Timeline) async -> Bool {
         for attempt in 0 ..< Self.maxPaginationRetries {
             do {
                 try await Task.sleep(for: .milliseconds(500))
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else { return false }
                 _ = try await timeline.paginateBackwards(numEvents: 100)
-                return
+                return true
             } catch is CancellationError {
-                return
+                return false
             } catch {
                 let isTransient = NetworkErrorClassifier.isOfflineShaped(error)
                     || "\(error)".contains("HostUnreachable")
-                    || "\(error)".contains("EventCacheError")
                 if isTransient && attempt < Self.maxPaginationRetries - 1 {
                     let delay = Duration.seconds(1 << attempt) // 1s, 2s, 4s
                     logger.info(
                         "Pagination attempt \(attempt + 1) failed (transient), retrying in \(1 << attempt)s: \(error.localizedDescription)"
                     )
                     try? await Task.sleep(for: delay)
-                    guard !Task.isCancelled else { return }
+                    guard !Task.isCancelled else { return false }
                 } else {
                     logger.error(
                         "Pagination failed after \(attempt + 1) attempt(s): \(error)"
@@ -827,10 +839,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                         detail: "\(error)",
                         roomId: roomId
                     )
-                    return
+                    return false
                 }
             }
         }
+        return false
     }
 
     private func observeTypingNotifications() {
