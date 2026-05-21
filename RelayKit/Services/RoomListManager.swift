@@ -67,6 +67,9 @@ final class RoomListManager {
     /// Debounce task for re-sorting after room info updates.
     private var resortTask: Task<Void, Never>?
 
+    /// The diagnostic activity log for capturing service-level events.
+    var activityLog: ActivityLog?
+
     /// Callback invoked when a room has new notification-worthy activity.
     ///
     /// The app layer uses this to post system notifications.
@@ -184,6 +187,11 @@ final class RoomListManager {
         }
 
         logger.info("Room list manager restarted with new sync service")
+        activityLog?.log(
+            category: .roomList, severity: .info, source: "RoomListManager",
+            summary: "Room list restarted with new sync service",
+            detail: "Preserving \(roomEntries.count) existing room entries"
+        )
     }
 
     /// Stops listening and clears state.
@@ -228,6 +236,7 @@ final class RoomListManager {
     private func makeEntry(room: Room) -> RoomEntry {
         RoomEntry(
             room: room,
+            activityLog: activityLog,
             onInfoUpdated: { [weak self] in self?.scheduleResort() },
             onNotificationEvent: { [weak self] event in self?.onNotificationEvent?(event) },
             highlightContextProvider: { [weak self] in
@@ -305,6 +314,29 @@ final class RoomListManager {
             state,
             "\(entryCountAfter) entries after"
         )
+
+        // Log the diff batch to the activity log.
+        let diffSummary = updates.map { update -> String in
+            switch update {
+            case .append(let v): "append(\(v.count))"
+            case .clear: "clear"
+            case .pushFront: "pushFront"
+            case .pushBack: "pushBack"
+            case .popFront: "popFront"
+            case .popBack: "popBack"
+            case .insert(let idx, _): "insert(@\(idx))"
+            case .set(let idx, _): "set(@\(idx))"
+            case .remove(let idx): "remove(@\(idx))"
+            case .truncate(let len): "truncate(\(len))"
+            case .reset(let v): "reset(\(v.count))"
+            }
+        }.joined(separator: ", ")
+        activityLog?.log(
+            category: .roomList, severity: .debug, source: "RoomListManager",
+            summary: "\(updates.count) entry update(s): \(entryCountBefore) → \(entryCountAfter) entries",
+            detail: diffSummary
+        )
+
         rebuildRoomSummaries()
     }
 
@@ -333,6 +365,10 @@ final class RoomListManager {
             state,
             "\(roomCount) rooms sorted"
         )
+        activityLog?.log(
+            category: .roomList, severity: .debug, source: "RoomListManager",
+            summary: "Room list rebuilt: \(roomCount) rooms sorted"
+        )
         onRoomsRebuilt?()
     }
 }
@@ -353,6 +389,7 @@ private final class RoomEntry: Identifiable {
     @ObservationIgnored private var roomInfoHandle: TaskHandle?
     @ObservationIgnored private var listenerTask: Task<Void, Never>?
     @ObservationIgnored private var onInfoUpdated: (() -> Void)?
+    @ObservationIgnored private weak var activityLog: ActivityLog?
 
     @ObservationIgnored private var onNotificationEvent: ((RoomNotificationEvent) -> Void)?
     @ObservationIgnored private var highlightContextProvider: (() -> (userId: String?, keywords: [String]))?
@@ -367,12 +404,14 @@ private final class RoomEntry: Identifiable {
 
     init(
         room: Room,
+        activityLog: ActivityLog? = nil,
         onInfoUpdated: (() -> Void)? = nil,
         onNotificationEvent: ((RoomNotificationEvent) -> Void)? = nil,
         highlightContextProvider: (() -> (userId: String?, keywords: [String]))? = nil
     ) {
         self.id = room.id()
         self.room = room
+        self.activityLog = activityLog
         self.onInfoUpdated = onInfoUpdated
         self.onNotificationEvent = onNotificationEvent
         self.highlightContextProvider = highlightContextProvider
@@ -425,6 +464,7 @@ private final class RoomEntry: Identifiable {
     }
 
     private func applyRoomInfo(_ info: RoomInfo) {
+        let previousUnread = summary.unreadMessages
         summary.name = info.displayName ?? room.displayName() ?? id
         summary.topic = info.topic
         // For DM rooms without an explicit room avatar, fall back to the
@@ -511,6 +551,21 @@ private final class RoomEntry: Identifiable {
             }
         } else {
             summary.notificationMode = nil
+        }
+
+        // Log significant room info changes (unread count transitions).
+        if summary.unreadMessages != previousUnread {
+            var meta = ["roomName": summary.name]
+            if let alias = summary.canonicalAlias {
+                meta["roomAlias"] = alias
+            }
+            activityLog?.log(
+                category: .roomList, severity: .debug, source: "RoomEntry",
+                summary: "Room info updated: \(summary.canonicalAlias ?? summary.name)",
+                detail: "Unread: \(previousUnread) → \(summary.unreadMessages), mentions: \(summary.unreadMentions)",
+                roomId: id,
+                metadata: meta
+            )
         }
 
         let shouldCheckNotification = hasReceivedInitialInfo

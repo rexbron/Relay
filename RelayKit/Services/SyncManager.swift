@@ -88,6 +88,7 @@ final class SyncManager {
     var onPendingOnlineRestore: (() async -> Void)?
 
     private let networkMonitor: NetworkMonitor
+    private let activityLog: ActivityLog
 
     private var client: (any ClientProxyProtocol)?
     private var syncStateHandle: TaskHandle?
@@ -124,8 +125,9 @@ final class SyncManager {
     private let baseSlotSeconds: Double = 1
     private let maxBackoffExponent: Int = 6
 
-    init(networkMonitor: NetworkMonitor) {
+    init(networkMonitor: NetworkMonitor, activityLog: ActivityLog) {
         self.networkMonitor = networkMonitor
+        self.activityLog = activityLog
     }
 
     /// Starts the sync service for the given client if not already running.
@@ -142,15 +144,23 @@ final class SyncManager {
 
         self.client = client
         syncState = .syncing
+        activityLog.log(
+            category: .sync, severity: .info, source: "SyncManager",
+            summary: "Starting sync"
+        )
 
         try await buildAndStartSyncService(client: client)
         try Task.checkCancellation()
 
         // Wait for the first .running state (up to 15 seconds)
-        _ = await waitForFirstSync()
+        let reachedRunning = await waitForFirstSync()
         hasCompletedInitialSync = true
         isPendingOnlineRestore = false
         reconnectAttempt = 0
+        activityLog.log(
+            category: .sync, severity: reachedRunning ? .info : .warning, source: "SyncManager",
+            summary: reachedRunning ? "Initial sync reached running state" : "Initial sync did not reach running state"
+        )
 
         // Begin observing network and system lifecycle changes
         startNetworkObservation()
@@ -246,29 +256,33 @@ final class SyncManager {
                 switch state {
                 case .running:
                     self.syncState = .running
+                    self.activityLog.log(
+                        category: .sync, severity: .info, source: "SyncManager",
+                        summary: "Sync state: running"
+                    )
                 case .idle:
                     break
                 case .offline:
-                    // The SDK itself detected an offline condition. Treat this
-                    // the same as a network monitor offline transition —
-                    // unless a rebuild is in progress, in which case the
-                    // active handler will decide the final state.
+                    self.activityLog.log(
+                        category: .sync, severity: .warning, source: "SyncManager",
+                        summary: "SDK reported offline",
+                        detail: self.isRebuilding ? "Suppressed (rebuild in progress)" : nil
+                    )
                     if !self.isRebuilding {
                         self.syncState = .offline
                     }
                 case .terminated:
+                    self.activityLog.log(
+                        category: .sync, severity: .error, source: "SyncManager",
+                        summary: "Sync service terminated"
+                    )
                     self.syncState = .error("The sync service was terminated.")
                 case .error:
-                    // The SDK doesn't expose a typed underlying error here
-                    // (the listener only delivers the variant). Treat it
-                    // as offline-shaped: drop to `.offline` and schedule a
-                    // backoff retry. If it really is a terminal error,
-                    // every retry will hit the same wall but the user
-                    // sees a banner instead of a hard-stuck sync.
-                    //
-                    // Skip the state change and reconnect if a rebuild is
-                    // already in progress — the active handler will deal
-                    // with failure.
+                    self.activityLog.log(
+                        category: .sync, severity: .error, source: "SyncManager",
+                        summary: "SDK sync error",
+                        detail: self.isRebuilding ? "Suppressed (rebuild in progress)" : "Transitioning to offline + backoff retry"
+                    )
                     if !self.isRebuilding {
                         self.syncState = .offline
                         self.scheduleReconnect()
@@ -374,6 +388,10 @@ final class SyncManager {
         guard syncState == .running || syncState == .syncing else { return }
 
         logger.info("System will sleep — tearing down sync service")
+        activityLog.log(
+            category: .sync, severity: .info, source: "SyncManager",
+            summary: "System sleep — tearing down sync service"
+        )
 
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -402,6 +420,10 @@ final class SyncManager {
         if syncState == .offline || isPendingOnlineRestore { return }
 
         logger.info("System did wake — rebuilding sync service")
+        activityLog.log(
+            category: .sync, severity: .info, source: "SyncManager",
+            summary: "System wake — rebuilding sync service"
+        )
         reconnectAttempt = 0
 
         // Give the network stack a moment to re-establish after wake.
@@ -467,6 +489,10 @@ final class SyncManager {
         guard syncState == .running || syncState == .syncing else { return }
 
         logger.info("Network lost — stopping sync service")
+        activityLog.log(
+            category: .sync, severity: .warning, source: "SyncManager",
+            summary: "Network lost — stopping sync service"
+        )
 
         // Disable send queues so the SDK stops trying to deliver messages
         await client?.enableAllSendQueues(enable: false)
@@ -498,6 +524,11 @@ final class SyncManager {
         guard let client, syncState == .offline else { return }
 
         logger.info("Network restored — restarting sync service")
+        activityLog.log(
+            category: .sync, severity: .info, source: "SyncManager",
+            summary: "Network restored — restarting sync service",
+            detail: "Reconnect attempt #\(reconnectAttempt)"
+        )
         isRebuilding = true
         defer { isRebuilding = false }
 
@@ -552,6 +583,11 @@ final class SyncManager {
         let delay = Double(slots) * baseSlotSeconds
         reconnectAttempt += 1
         logger.info("Scheduling sync reconnect attempt #\(self.reconnectAttempt) in \(delay)s")
+        activityLog.log(
+            category: .sync, severity: .info, source: "SyncManager",
+            summary: "Scheduling reconnect attempt #\(reconnectAttempt)",
+            detail: "Delay: \(String(format: "%.1f", delay))s (slot \(slots)/\(upperBound), exponent \(attempt))"
+        )
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard let self, !Task.isCancelled else { return }

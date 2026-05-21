@@ -22,6 +22,7 @@ import RelayInterface
 /// All mutating operations are no-ops (or operate only on the in-memory sample data).
 @Observable
 final class PreviewMatrixService: MatrixServiceProtocol {
+    let activityLog: any ActivityLogProtocol = PreviewActivityLog()
     var authState: AuthState = .loggedIn(userId: "@preview:matrix.org")
     var syncState: SyncState = .running
     var rooms: [RoomSummary] = PreviewMatrixService.sampleRooms

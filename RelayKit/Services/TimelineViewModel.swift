@@ -44,8 +44,13 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
 
     private let room: Room
     private let roomId: String
+    /// A human-readable label for this room used in activity log entries.
+    /// Prefers the canonical alias (e.g. ``"#design:matrix.org"``) over the
+    /// display name, falling back to the room ID.
+    private let roomLabel: String
     private let currentUserId: String?
     private let unreadCount: Int
+    private weak var activityLog: ActivityLog?
     /// The SDK timeline, exposed for use by ``MatrixService/pinnedMessages(roomId:)``.
     private(set) var sdkTimeline: Timeline?
     private var timelineItems: [TimelineItem] = []
@@ -100,10 +105,12 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         currentUserId: String?,
         unreadCount: Int = 0,
         notificationKeywords: [String] = [],
-        errorReporter: ErrorReporter
+        errorReporter: ErrorReporter,
+        activityLog: ActivityLog? = nil
     ) {
         self.room = room
         self.roomId = room.id()
+        self.roomLabel = room.canonicalAlias() ?? room.displayName() ?? room.id()
         self.currentUserId = currentUserId
         self.unreadCount = unreadCount
         self.messageMapper = TimelineMessageMapper(
@@ -111,6 +118,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             notificationKeywords: notificationKeywords
         )
         self.errorReporter = errorReporter
+        self.activityLog = activityLog
     }
 
     deinit {
@@ -733,6 +741,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 case .idle(let hitStart):
                     self.isLoadingMore = false
                     self.hasReachedStart = hitStart
+                    self.activityLog?.log(
+                        category: .timeline, severity: .debug, source: "TimelineViewModel",
+                        summary: "Pagination idle in \(self.roomLabel) (hitStart: \(hitStart))",
+                        roomId: self.roomId
+                    )
 
                     // Auto-paginate if we have few message-like events and
                     // haven't hit start, ensuring enough content to fill the
@@ -757,6 +770,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                     }
                 case .paginating:
                     self.isLoadingMore = true
+                    self.activityLog?.log(
+                        category: .timeline, severity: .debug, source: "TimelineViewModel",
+                        summary: "Paginating backwards in \(self.roomLabel)",
+                        roomId: self.roomId
+                    )
                 }
             }
         }
@@ -802,6 +820,12 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 } else {
                     logger.error(
                         "Pagination failed after \(attempt + 1) attempt(s): \(error)"
+                    )
+                    activityLog?.log(
+                        category: .timeline, severity: .error, source: "TimelineViewModel",
+                        summary: "Pagination failed in \(roomLabel)",
+                        detail: "\(error)",
+                        roomId: roomId
                     )
                     return
                 }
@@ -954,6 +978,29 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             state,
             "\(itemCountAfter) items after"
         )
+
+        let diffSummary = diffs.map { diff -> String in
+            switch diff {
+            case .reset(let v): "reset(\(v.count))"
+            case .append(let v): "append(\(v.count))"
+            case .pushBack: "pushBack"
+            case .pushFront: "pushFront"
+            case .insert(let idx, _): "insert(@\(idx))"
+            case .set(let idx, _): "set(@\(idx))"
+            case .remove(let idx): "remove(@\(idx))"
+            case .clear: "clear"
+            case .popBack: "popBack"
+            case .popFront: "popFront"
+            case .truncate(let len): "truncate(\(len))"
+            }
+        }.joined(separator: ", ")
+        let changedDesc = pendingChangedIndices.map { "\($0.count) changed" } ?? "full remap"
+        activityLog?.log(
+            category: .timeline, severity: .debug, source: "TimelineViewModel",
+            summary: "\(diffs.count) diff(s) in \(roomLabel): \(itemCountBefore) → \(itemCountAfter) items",
+            detail: "Diffs: \(diffSummary)\nIndices: \(changedDesc)",
+            roomId: roomId
+        )
     }
 
     // MARK: - Index Tracking Helpers
@@ -1032,6 +1079,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 rebuildState,
                 "discarded (stale generation)"
             )
+            activityLog?.log(
+                category: .timeline, severity: .debug, source: "TimelineViewModel",
+                summary: "Rebuild discarded in \(roomLabel) (stale generation \(generation))",
+                roomId: roomId
+            )
             return
         }
 
@@ -1080,6 +1132,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         if changed {
             messages = mapping.messages
             messagesVersion &+= 1
+            activityLog?.log(
+                category: .timeline, severity: .debug, source: "TimelineViewModel",
+                summary: "Messages updated in \(roomLabel): \(mapping.messages.count) messages (v\(messagesVersion))",
+                roomId: roomId
+            )
         }
 
         computeUnreadMarkerIfNeeded(mapping.messages)

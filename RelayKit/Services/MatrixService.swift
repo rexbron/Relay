@@ -85,12 +85,17 @@ public final class MatrixService: MatrixServiceProtocol {
     private let spaceListManager = SpaceListManager()
     private let media = MediaService()
     private let directorySearch = DirectorySearchService()
+    private let _activityLog = ActivityLog()
+
+    public var activityLog: any ActivityLogProtocol { _activityLog }
 
     /// Creates a new ``MatrixService``. Call ``restoreSession()`` after initialization to
     /// attempt automatic sign-in from a previously saved keychain session.
     public init() {
         auth = AuthenticationService(networkMonitor: networkMonitor)
-        syncManager = SyncManager(networkMonitor: networkMonitor)
+        syncManager = SyncManager(networkMonitor: networkMonitor, activityLog: _activityLog)
+        networkMonitor.activityLog = _activityLog
+        roomListManager.activityLog = _activityLog
     }
 
     // MARK: - Session Restore
@@ -104,18 +109,28 @@ public final class MatrixService: MatrixServiceProtocol {
         switch await auth.restoreSession() {
         case .noSavedSession:
             authState = .loggedOut
+            _activityLog.log(
+                category: .auth, severity: .info, source: "MatrixService",
+                summary: "No saved session found"
+            )
 
         case .restored(let restoredClient, let userId):
             client = restoredClient
             await restoredClient.loadProfile()
             authState = .loggedIn(userId: userId)
+            _activityLog.log(
+                category: .auth, severity: .info, source: "MatrixService",
+                summary: "Session restored",
+                metadata: ["userId": userId]
+            )
 
         case .offlineWithSavedSession(let userId, _):
-            // We have a saved session but couldn't reach the homeserver.
-            // Treat the user as logged-in so they see their cached rooms,
-            // and ask SyncManager to retry the full restore once
-            // connectivity comes back.
             authState = .loggedIn(userId: userId)
+            _activityLog.log(
+                category: .auth, severity: .warning, source: "MatrixService",
+                summary: "Offline with saved session — deferring sync",
+                metadata: ["userId": userId]
+            )
             syncManager.onPendingOnlineRestore = { [weak self] in
                 await self?.retryPendingOnlineRestore()
             }
@@ -123,6 +138,11 @@ public final class MatrixService: MatrixServiceProtocol {
 
         case .failed(let error):
             authState = .error(error.localizedDescription)
+            _activityLog.log(
+                category: .auth, severity: .error, source: "MatrixService",
+                summary: "Session restore failed",
+                detail: error.localizedDescription
+            )
         }
     }
 
@@ -279,6 +299,11 @@ public final class MatrixService: MatrixServiceProtocol {
     private func performSync() async {
         guard let client else { return }
 
+        _activityLog.log(
+            category: .sync, severity: .info, source: "MatrixService",
+            summary: "Starting sync pipeline"
+        )
+
         do {
             // Start network monitoring before sync so the SyncManager can
             // react to connectivity changes from the very beginning.
@@ -316,6 +341,10 @@ public final class MatrixService: MatrixServiceProtocol {
             }
 
             try await syncManager.startSync(client: client)
+            _activityLog.log(
+                category: .sync, severity: .info, source: "MatrixService",
+                summary: "Sync manager started, starting client observation"
+            )
             try await client.startObserving()
             if let sdkController = try? await client.getSessionVerificationController() {
                 verificationController = SessionVerificationControllerProxy(controller: sdkController)
@@ -324,9 +353,17 @@ public final class MatrixService: MatrixServiceProtocol {
             observeVerificationState(client: client)
             if let syncService = syncManager.syncService {
                 try await roomListManager.start(syncService: syncService)
+                _activityLog.log(
+                    category: .sync, severity: .info, source: "MatrixService",
+                    summary: "Room list manager started"
+                )
             }
             observeSpaceDescendants()
             await spaceListManager.start(client: client)
+            _activityLog.log(
+                category: .sync, severity: .info, source: "MatrixService",
+                summary: "Space list manager started — sync pipeline complete"
+            )
             cachedNotificationKeywords = (try? await getNotificationKeywords()) ?? []
             roomListManager.notificationKeywords = cachedNotificationKeywords
             roomListManager.currentUserId = client.userID
@@ -483,7 +520,8 @@ public final class MatrixService: MatrixServiceProtocol {
             room: room, currentUserId: userId(),
             unreadCount: Int(unreadCount),
             notificationKeywords: cachedNotificationKeywords,
-            errorReporter: errorReporter
+            errorReporter: errorReporter,
+            activityLog: _activityLog
         )
         timelineViewModels[roomId] = vm
         touchTimelineAccessOrder(roomId)
@@ -499,7 +537,8 @@ public final class MatrixService: MatrixServiceProtocol {
         return TimelineViewModel(
             room: room,
             currentUserId: userId(),
-            errorReporter: errorReporter
+            errorReporter: errorReporter,
+            activityLog: _activityLog
         )
     }
 

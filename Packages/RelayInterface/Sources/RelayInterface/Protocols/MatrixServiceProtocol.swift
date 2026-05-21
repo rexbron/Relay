@@ -130,6 +130,9 @@ public struct IncomingVerificationRequest: Sendable, Identifiable {
 /// that SwiftUI views can react to state changes.
 @MainActor
 public protocol MatrixServiceProtocol: AnyObject, Observable {
+    /// The diagnostic activity log, capturing service-level events for debugging.
+    var activityLog: any ActivityLogProtocol { get }
+
     /// The current authentication state of the client.
     var authState: AuthState { get }
 
@@ -748,6 +751,7 @@ public extension EnvironmentValues {
 
 @Observable
 private final class PlaceholderMatrixService: MatrixServiceProtocol {
+    let activityLog: any ActivityLogProtocol = PlaceholderActivityLog()
     var authState: AuthState = .unknown
     var syncState: SyncState = .idle
     var rooms: [RoomSummary] = []

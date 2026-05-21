@@ -109,6 +109,13 @@ struct RelayApp: App {
                 .environment(\.gifSearchService, gifSearchService)
                 .environment(\.errorReporter, matrixService.errorReporter)
         }
+
+        Window("Activity Log", id: "activity-log") {
+            ActivityLogView()
+                .environment(\.activityLog, matrixService.activityLog)
+        }
+        .defaultSize(width: 900, height: 600)
+        .keyboardShortcut("a", modifiers: [.option, .command])
     }
 
     // MARK: - Notifications

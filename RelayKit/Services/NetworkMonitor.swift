@@ -14,6 +14,7 @@
 
 import Network
 import Observation
+import RelayInterface
 import os
 
 private let logger = Logger(subsystem: "RelayKit", category: "Network")
@@ -36,6 +37,9 @@ private let logger = Logger(subsystem: "RelayKit", category: "Network")
 final class NetworkMonitor {
     /// Whether the device currently has a viable network path.
     private(set) var isConnected: Bool = true
+
+    /// The diagnostic activity log for capturing network state changes.
+    weak var activityLog: ActivityLog?
 
     @ObservationIgnored private var monitor: NWPathMonitor?
     @ObservationIgnored private let monitorQueue = DispatchQueue(
@@ -61,8 +65,16 @@ final class NetworkMonitor {
 
                 if satisfied {
                     logger.info("Network connectivity restored")
+                    self.activityLog?.log(
+                        category: .network, severity: .info, source: "NetworkMonitor",
+                        summary: "Network connectivity restored"
+                    )
                 } else {
                     logger.info("Network connectivity lost")
+                    self.activityLog?.log(
+                        category: .network, severity: .warning, source: "NetworkMonitor",
+                        summary: "Network connectivity lost"
+                    )
                 }
             }
         }
