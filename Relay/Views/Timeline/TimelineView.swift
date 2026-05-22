@@ -75,8 +75,39 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     @State private var isDirectRoom = false
     @State private var highlightedMessageId: String?
     @State private var memberRefreshTask: Task<Void, Never>?
-    @State private var cachedMessageRows: [MessageRow] = []
+    @State private var cachedMessageRows: [MessageRow]
     @State private var isTimelineDropTargeted = false
+
+    init(
+        roomId: String,
+        roomName: String,
+        roomAvatarURL: String? = nil,
+        viewModel: any TimelineViewModelProtocol,
+        focusedMessageId: Binding<String?>,
+        onUserTap: ((UserProfile) -> Void)? = nil,
+        onRoomTap: ((String) -> Void)? = nil,
+        readOnly: Bool = false
+    ) {
+        self.roomId = roomId
+        self.roomName = roomName
+        self.roomAvatarURL = roomAvatarURL
+        _viewModel = State(wrappedValue: viewModel)
+        _focusedMessageId = focusedMessageId
+        self.onUserTap = onUserTap
+        self.onRoomTap = onRoomTap
+        self.readOnly = readOnly
+
+        // Seed the row cache from the view model's cached messages so
+        // the first body evaluation already has content to render.
+        // This avoids the empty frame that occurs when the table is
+        // created before .task has a chance to call rebuildCachedRows().
+        // The messages are passed unfiltered; .task applies the full
+        // filter (membership/state event preferences) immediately after.
+        _cachedMessageRows = State(initialValue: Self.buildRows(
+            for: viewModel.messages,
+            hasReachedStart: viewModel.hasReachedStart
+        ))
+    }
 
     /// Number of membership events observed in the timeline, used to trigger
     /// a member list refresh when new joins/leaves arrive.
