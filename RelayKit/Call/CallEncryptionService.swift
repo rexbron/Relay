@@ -17,6 +17,7 @@ import Foundation
 import LiveKit
 import MatrixRustSDK
 import OSLog
+import RelayInterface
 
 private let logger = Logger(subsystem: "RelayKit", category: "CallEncryption")
 
@@ -49,6 +50,8 @@ struct CallEncryptionService {
     /// The Matrix SDK room, used for `sendStateEventRaw` which goes through
     /// the SDK's authenticated client instead of raw REST API calls.
     let sdkRoom: MatrixRustSDK.Room?
+    /// Activity log for surfacing encryption signaling events in the Activity Log window.
+    var activityLog: ActivityLog?
 
     /// The to-device event type used by Element Call for key exchange.
     static let encryptionKeysEventType = "io.element.call.encryption_keys"
@@ -124,6 +127,11 @@ struct CallEncryptionService {
             content: jsonString
         )
         logger.info("[RTC]Sent call membership state event")
+        activityLog?.log(
+            category: .call, severity: .debug, source: "CallEncryptionService",
+            summary: "Sent call membership state event",
+            roomId: roomID
+        )
     }
 
     /// Removes the call membership state event (sets content to empty object)
@@ -139,6 +147,11 @@ struct CallEncryptionService {
             content: "{}"
         )
         logger.info("[RTC]Removed call membership state event")
+        activityLog?.log(
+            category: .call, severity: .debug, source: "CallEncryptionService",
+            summary: "Removed call membership state event",
+            roomId: roomID
+        )
     }
 
     // MARK: - Debug: Fetch Existing Call Members

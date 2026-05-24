@@ -102,6 +102,15 @@ public final class CallViewModel: CallViewModelProtocol {
     /// safety margin against missed sends.
     private static let heartbeatInterval: Duration = .seconds(30 * 60)
 
+    /// The Matrix room ID for this call, used for activity log context.
+    @ObservationIgnored
+    private var roomID: String?
+    /// Activity log for surfacing call lifecycle events in the Activity Log window.
+    @ObservationIgnored
+    weak var activityLog: ActivityLog? {
+        didSet { encryptionService?.activityLog = activityLog }
+    }
+
     /// Creates a call view model without E2EE. Use ``init(encryptionContext:)``
     /// for encrypted calls that interoperate with Element Call.
     public init() {
@@ -152,13 +161,16 @@ public final class CallViewModel: CallViewModelProtocol {
         self.delegate = delegate
         room.add(delegate: delegate)
 
+        self.roomID = encryptionContext.roomID
+
         self.encryptionService = CallEncryptionService(
             homeserver: encryptionContext.homeserver,
             accessToken: encryptionContext.accessToken,
             userID: encryptionContext.userID,
             deviceID: encryptionContext.deviceID,
             roomID: encryptionContext.roomID,
-            sdkRoom: encryptionContext.matrixRoom
+            sdkRoom: encryptionContext.matrixRoom,
+            activityLog: nil  // Set after activityLog is wired by MatrixService
         )
 
         if encryptionContext.isRoomEncrypted {
@@ -188,6 +200,12 @@ public final class CallViewModel: CallViewModelProtocol {
 
     public func connect(url: String, token: String, sfuServiceURL: String = "") async throws {
         state = .connecting
+        activityLog?.log(
+            category: .call, severity: .info, source: "CallViewModel",
+            summary: "Connecting to call",
+            detail: "E2EE: \(isE2eeEnabled ? "enabled" : "disabled")",
+            roomId: roomID
+        )
         do {
             // Microphone publish is deferred until AFTER the local E2EE key
             // has been installed and distributed to peers. If we let
@@ -246,6 +264,7 @@ public final class CallViewModel: CallViewModelProtocol {
                         isRoomEncrypted: true,
                         keyProvider: self.keyProvider
                     )
+                    bridge.activityLog = self.activityLog
                     bridge.start()
                     self.widgetBridge = bridge
                 } catch {
@@ -351,6 +370,11 @@ public final class CallViewModel: CallViewModelProtocol {
                             keyIndex: keyIndex,
                             toMembers: targets
                         )
+                        activityLog?.log(
+                            category: .call, severity: .debug, source: "CallViewModel",
+                            summary: "Distributed E2EE key to \(targets.count) user(s)",
+                            roomId: roomID
+                        )
                     } catch {
                         logger.warning("[RTC]Widget-bridge key distribution failed: \(error.localizedDescription, privacy: .private)")
                     }
@@ -366,14 +390,30 @@ public final class CallViewModel: CallViewModelProtocol {
             isLocalMicrophoneEnabled = true
             state = .connected
             videoTrackRevision += 1
+            activityLog?.log(
+                category: .call, severity: .info, source: "CallViewModel",
+                summary: "Connected to call",
+                roomId: roomID
+            )
         } catch {
             logger.error("[RTC]Connect failed: \(error.localizedDescription, privacy: .private)")
             state = .failed(error.localizedDescription)
+            activityLog?.log(
+                category: .call, severity: .error, source: "CallViewModel",
+                summary: "Call connection failed",
+                detail: error.localizedDescription,
+                roomId: roomID
+            )
             throw error
         }
     }
 
     public func disconnect() async {
+        activityLog?.log(
+            category: .call, severity: .info, source: "CallViewModel",
+            summary: "Disconnected from call",
+            roomId: roomID
+        )
         // Update UI state immediately — SwiftUI re-renders to the
         // disconnected state while the awaited cleanup runs.
         state = .disconnected
@@ -649,6 +689,11 @@ public final class CallViewModel: CallViewModelProtocol {
                     }
                 case .reconnecting:
                     logger.info("[RTC]Reconnecting…")
+                    viewModel.activityLog?.log(
+                        category: .call, severity: .warning, source: "CallViewModel",
+                        summary: "Call reconnecting",
+                        roomId: viewModel.roomID
+                    )
                 default:
                     break
                 }
@@ -661,6 +706,12 @@ public final class CallViewModel: CallViewModelProtocol {
                 let identityStr = participant.identity?.stringValue ?? "(none)"
                 let sidStr = participant.sid?.stringValue ?? "(none)"
                 logger.info("[RTC]Remote participant connected: identity=\(identityStr, privacy: .public) sid=\(sidStr, privacy: .public) name=\(participant.name ?? "(none)", privacy: .public)")
+                viewModel.activityLog?.log(
+                    category: .call, severity: .debug, source: "CallViewModel",
+                    summary: "Remote participant connected",
+                    detail: "Identity: \(identityStr)",
+                    roomId: viewModel.roomID
+                )
                 viewModel.syncParticipants(trackChanged: true)
                 if viewModel.isE2eeEnabled, let identity = participant.identity?.stringValue {
                     viewModel.redistributeKey(to: identity)
@@ -680,7 +731,15 @@ public final class CallViewModel: CallViewModelProtocol {
 
         func room(_ room: LiveKit.Room, participantDidDisconnect participant: RemoteParticipant) {
             Task { @MainActor [weak viewModel] in
-                viewModel?.syncParticipants(trackChanged: true)
+                guard let viewModel else { return }
+                let identityStr = participant.identity?.stringValue ?? "(none)"
+                viewModel.activityLog?.log(
+                    category: .call, severity: .debug, source: "CallViewModel",
+                    summary: "Remote participant disconnected",
+                    detail: "Identity: \(identityStr)",
+                    roomId: viewModel.roomID
+                )
+                viewModel.syncParticipants(trackChanged: true)
             }
         }
 

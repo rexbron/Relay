@@ -28,6 +28,7 @@ public struct ActivityEvent: Identifiable, Sendable {
         case network
         case auth
         case media
+        case call
 
         public var id: String { rawValue }
 
@@ -40,6 +41,7 @@ public struct ActivityEvent: Identifiable, Sendable {
             case .network: "Network"
             case .auth: "Auth"
             case .media: "Media"
+            case .call: "Call"
             }
         }
 
@@ -52,6 +54,7 @@ public struct ActivityEvent: Identifiable, Sendable {
             case .network: "network"
             case .auth: "person.badge.key"
             case .media: "photo"
+            case .call: "phone.fill"
             }
         }
     }

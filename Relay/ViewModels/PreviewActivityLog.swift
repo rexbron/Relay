@@ -144,6 +144,45 @@ final class PreviewActivityLog: ActivityLogProtocol {
                 category: .sync, severity: .info, source: "SyncManager",
                 summary: "Scheduling reconnect attempt #1",
                 detail: "Delay: 1.0s (slot 1/2, exponent 1)"
+            ),
+            ActivityEvent(
+                timestamp: base.addingTimeInterval(50.0),
+                category: .call, severity: .info, source: "MatrixService",
+                summary: "Created call view model",
+                detail: "E2EE: enabled",
+                roomId: "!design:matrix.org"
+            ),
+            ActivityEvent(
+                timestamp: base.addingTimeInterval(50.5),
+                category: .call, severity: .info, source: "LiveKitCredentialService",
+                summary: "Fetching call credentials",
+                roomId: "!design:matrix.org"
+            ),
+            ActivityEvent(
+                timestamp: base.addingTimeInterval(51.0),
+                category: .call, severity: .info, source: "LiveKitCredentialService",
+                summary: "Call credentials obtained",
+                roomId: "!design:matrix.org"
+            ),
+            ActivityEvent(
+                timestamp: base.addingTimeInterval(51.5),
+                category: .call, severity: .info, source: "CallViewModel",
+                summary: "Connecting to call",
+                detail: "E2EE: enabled",
+                roomId: "!design:matrix.org"
+            ),
+            ActivityEvent(
+                timestamp: base.addingTimeInterval(53.0),
+                category: .call, severity: .info, source: "CallViewModel",
+                summary: "Connected to call",
+                roomId: "!design:matrix.org"
+            ),
+            ActivityEvent(
+                timestamp: base.addingTimeInterval(55.0),
+                category: .call, severity: .debug, source: "CallViewModel",
+                summary: "Remote participant connected",
+                detail: "Identity: @bob:matrix.org:DEVICEABC",
+                roomId: "!design:matrix.org"
             )
         ]
     }()

@@ -14,6 +14,7 @@
 
 import Foundation
 import os
+import RelayInterface
 
 private let logger = Logger(subsystem: "RelayKit", category: "LiveKitCredentialService")
 
@@ -45,6 +46,8 @@ struct LiveKitCredentialService {
     /// Used for `.well-known` lookups, which must query the server name domain,
     /// not the delegated homeserver URL (e.g. `fedora.ems.host`).
     let serverName: String
+    /// Activity log for surfacing credential exchange events in the Activity Log window.
+    let activityLog: ActivityLog?
 
     // MARK: - Public Entry Point
 
@@ -52,12 +55,37 @@ struct LiveKitCredentialService {
     /// The `sfuServiceURL` is the SFU service URL from discovery, used in call member events.
     func credentials(for roomID: String) async throws -> (url: String, token: String, sfuServiceURL: String) {
         logger.info("[RTC]Fetching LiveKit credentials for room \(roomID, privacy: .private)")
-        let sfuURL = try await discoverSFUURL()
-        logger.info("[RTC]SFU URL discovered: \(sfuURL)")
-        let openIDToken = try await requestOpenIDToken()
-        logger.debug("[RTC]OpenID token obtained")
-        let (url, jwt) = try await fetchLiveKitToken(sfuURL: sfuURL, roomID: roomID, openIDToken: openIDToken)
-        return (url, jwt, sfuURL)
+        activityLog?.log(
+            category: .call, severity: .info, source: "LiveKitCredentialService",
+            summary: "Fetching call credentials",
+            roomId: roomID
+        )
+        do {
+            let sfuURL = try await discoverSFUURL()
+            logger.info("[RTC]SFU URL discovered: \(sfuURL)")
+            activityLog?.log(
+                category: .call, severity: .debug, source: "LiveKitCredentialService",
+                summary: "SFU URL discovered",
+                roomId: roomID
+            )
+            let openIDToken = try await requestOpenIDToken()
+            logger.debug("[RTC]OpenID token obtained")
+            let (url, jwt) = try await fetchLiveKitToken(sfuURL: sfuURL, roomID: roomID, openIDToken: openIDToken)
+            activityLog?.log(
+                category: .call, severity: .info, source: "LiveKitCredentialService",
+                summary: "Call credentials obtained",
+                roomId: roomID
+            )
+            return (url, jwt, sfuURL)
+        } catch {
+            activityLog?.log(
+                category: .call, severity: .error, source: "LiveKitCredentialService",
+                summary: "Failed to fetch call credentials",
+                detail: error.localizedDescription,
+                roomId: roomID
+            )
+            throw error
+        }
     }
 
     // MARK: - Step 1: Discover SFU URL

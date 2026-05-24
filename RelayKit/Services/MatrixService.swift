@@ -1483,10 +1483,20 @@ public final class MatrixService: MatrixServiceProtocol {
                 isRoomEncrypted: isEncrypted,
                 matrixRoom: sdkRoom
             )
-            return CallViewModel(encryptionContext: context)
+            let viewModel = CallViewModel(encryptionContext: context)
+            viewModel.activityLog = _activityLog
+            _activityLog.log(
+                category: .call, severity: .info, source: "MatrixService",
+                summary: "Created call view model",
+                detail: "E2EE: \(isEncrypted ? "enabled" : "disabled")",
+                roomId: roomId
+            )
+            return viewModel
         } catch {
             logger.warning("Could not create encryption context, falling back to unencrypted call: \(error.localizedDescription)")
-            return CallViewModel()
+            let viewModel = CallViewModel()
+            viewModel.activityLog = _activityLog
+            return viewModel
         }
     }
 
@@ -1503,7 +1513,8 @@ public final class MatrixService: MatrixServiceProtocol {
             accessToken: session.accessToken,
             userID: client.userID,
             deviceID: client.deviceID,
-            serverName: serverName
+            serverName: serverName,
+            activityLog: _activityLog
         )
         let result = try await service.credentials(for: roomId)
         return (livekitURL: result.url, token: result.token, sfuServiceURL: result.sfuServiceURL)

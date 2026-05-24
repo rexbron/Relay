@@ -23,6 +23,7 @@ import LiveKit
 import MatrixRustSDK
 import os
 import OSLog
+import RelayInterface
 
 private let logger = Logger(subsystem: "RelayKit", category: "CallWidgetBridge")
 
@@ -82,6 +83,8 @@ public final class CallWidgetBridge: @unchecked Sendable {
     private let ownUserId: String
     private let ownDeviceId: String
     private let roomId: String
+    /// Activity log for surfacing widget bridge events in the Activity Log window.
+    weak var activityLog: ActivityLog?
     /// Per-call MatrixRTC membership UUID. Must match the `membershipID`
     /// field in the `org.matrix.msc3401.call.member` state event and the
     /// `member.id` field in outbound `io.element.call.encryption_keys`
@@ -209,6 +212,14 @@ public final class CallWidgetBridge: @unchecked Sendable {
         }
 
         logger.info("[RTC]CallWidgetBridge started (widgetId=\(self.widgetId, privacy: .public))")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.activityLog?.log(
+                category: .call, severity: .debug, source: "CallWidgetBridge",
+                summary: "Widget bridge started",
+                roomId: self.roomId
+            )
+        }
     }
 
     /// Cancels both tasks and fails any outstanding pending requests.
@@ -230,6 +241,14 @@ public final class CallWidgetBridge: @unchecked Sendable {
 
         resolveReady()
         logger.info("[RTC]CallWidgetBridge shut down")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.activityLog?.log(
+                category: .call, severity: .debug, source: "CallWidgetBridge",
+                summary: "Widget bridge shut down",
+                roomId: self.roomId
+            )
+        }
     }
 
     /// Suspends until the capabilities handshake has completed and the
@@ -336,6 +355,15 @@ public final class CallWidgetBridge: @unchecked Sendable {
 
         _ = try await sendRequest(action: "send_to_device", data: data)
         logger.info("[RTC]Sent encryption key (index \(keyIndex)) to \(toMembers.count) user(s) member.id=\(self.membershipId, privacy: .public) sha256[0..8]=\(fp, privacy: .public)")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.activityLog?.log(
+                category: .call, severity: .debug, source: "CallWidgetBridge",
+                summary: "Sent E2EE key to \(toMembers.count) user(s)",
+                detail: "Key index: \(keyIndex)",
+                roomId: self.roomId
+            )
+        }
     }
 
     /// Sends a MatrixRTC call member state event
@@ -594,6 +622,15 @@ public final class CallWidgetBridge: @unchecked Sendable {
             // connect) — if these do not match byte-for-byte, LiveKit will
             // silently fail to decrypt this peer's frames.
             logger.info("[RTC]Applied inbound key -> routed to LiveKit participantId=\(participantIdentity, privacy: .public) sender=\(sender, privacy: .public) device=\(deviceId, privacy: .public) member=\(memberId, privacy: .public) index=\(index)")
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.activityLog?.log(
+                    category: .call, severity: .debug, source: "CallWidgetBridge",
+                    summary: "Received E2EE key from \(sender)",
+                    detail: "Participant: \(participantIdentity), key index: \(index)",
+                    roomId: self.roomId
+                )
+            }
         }
     }
 
