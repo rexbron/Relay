@@ -70,7 +70,20 @@ struct RoomListView: View {
             if !pinned.isEmpty {
                 Section {
                     ForEach(pinned) { room in
-                        roomRow(room)
+                        RoomListRow(room: room)
+                            .tag(room.id)
+                            .swipeActions(edge: .trailing) {
+                                Button("Leave", systemImage: "door.right.hand.open", role: .destructive, action: { confirmLeave(room) })
+                            }
+                            .contextMenu {
+                                Button(
+                                    room.isFavourite ? "Unpin" : "Pin",
+                                    systemImage: room.isFavourite ? "pin.slash" : "pin",
+                                    action: { toggleFavourite(room) }
+                                )
+                                Divider()
+                                Button("Leave", systemImage: "door.right.hand.open", role: .destructive, action: { confirmLeave(room) })
+                            }
                     }
                 } header: {
                     Text("Pinned")
@@ -79,7 +92,20 @@ struct RoomListView: View {
 
             Section {
                 ForEach(unpinned) { room in
-                    roomRow(room)
+                    RoomListRow(room: room)
+                        .tag(room.id)
+                        .swipeActions(edge: .trailing) {
+                            Button("Leave", systemImage: "door.right.hand.open", role: .destructive, action: { confirmLeave(room) })
+                        }
+                        .contextMenu {
+                            Button(
+                                room.isFavourite ? "Unpin" : "Pin",
+                                systemImage: room.isFavourite ? "pin.slash" : "pin",
+                                action: { toggleFavourite(room) }
+                            )
+                            Divider()
+                            Button("Leave", systemImage: "door.right.hand.open", role: .destructive, action: { confirmLeave(room) })
+                        }
                 }
             } header: {
                 if !invites.isEmpty || !pinned.isEmpty {
@@ -138,25 +164,6 @@ struct RoomListView: View {
         } message: { invite in
             Text("Decline the invitation to \"\(invite.name)\"? You'll need to be re-invited to join later.")
         }
-    }
-
-    // MARK: - Room Row
-
-    private func roomRow(_ room: RoomSummary) -> some View {
-        RoomListRow(room: room)
-            .tag(room.id)
-            .swipeActions(edge: .trailing) {
-                Button("Leave", systemImage: "door.right.hand.open", role: .destructive, action: { confirmLeave(room) })
-            }
-            .contextMenu {
-                Button(
-                    room.isFavourite ? "Unpin" : "Pin",
-                    systemImage: room.isFavourite ? "pin.slash" : "pin",
-                    action: { toggleFavourite(room) }
-                )
-                Divider()
-                Button("Leave", systemImage: "door.right.hand.open", role: .destructive, action: { confirmLeave(room) })
-            }
     }
 
     // MARK: - Sort Menu
@@ -391,6 +398,7 @@ extension RoomListView {
         previewingInvite: $invite
     )
     .environment(\.matrixService, PreviewMatrixService())
+    .environment(AppActions())
     .frame(width: 300, height: 400)
 }
 
@@ -401,5 +409,6 @@ extension RoomListView {
         selectedSpaceId: .constant(nil),
         previewingInvite: .constant(nil)
     )
+    .environment(AppActions())
     .frame(width: 300, height: 400)
 }
