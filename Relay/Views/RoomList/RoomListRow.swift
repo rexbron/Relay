@@ -51,18 +51,10 @@ struct RoomListRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            if room.isMuted {
-                Image(systemName: "bell.slash.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Circle()
-                    .fill(dotColor)
-                    .frame(width: 8, height: 8)
-                    .opacity(showDot ? 1 : 0)
-            }
-
             AvatarView(name: room.name, mxcURL: room.avatarURL, size: 48)
+                .overlay(alignment: .topTrailing) {
+                    badge
+                }
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
@@ -93,6 +85,30 @@ struct RoomListRow: View {
             .padding(4)
         }
         .padding(.vertical, 8)
+    }
+
+    /// Badge overlay displayed on the bottom-trailing corner of the avatar.
+    ///
+    /// Shows a colored unread dot for rooms with unread activity, or a mute
+    /// icon for muted rooms.
+    @ViewBuilder
+    private var badge: some View {
+        if room.isMuted {
+            Image(systemName: "bell.slash.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .padding(2)
+                .background(.background, in: Circle())
+        } else if showDot {
+            Circle()
+                .fill(dotColor)
+                .frame(width: 14, height: 14)
+                .overlay {
+                    Circle()
+                        .strokeBorder(.background, lineWidth: 2)
+                }
+                .offset(x: 3, y: 3)
+        }
     }
 }
 
@@ -189,6 +205,31 @@ extension AttributedString {
         lastMessageTimestamp: .now.addingTimeInterval(-600),
         unreadCount: 5,
         notificationMode: .mentionsAndKeywordsOnly
+    ))
+    .frame(width: 300)
+}
+
+#Preview("Unread Messages") {
+    RoomListRow(room: RoomSummary(
+        id: "!general:matrix.org",
+        name: "General",
+        lastAuthor: "Charlie",
+        lastMessage: AttributedString("Has anyone tried the new build?"),
+        lastMessageTimestamp: .now.addingTimeInterval(-1800),
+        unreadCount: 7
+    ))
+    .frame(width: 300)
+}
+
+#Preview("Unread DM") {
+    RoomListRow(room: RoomSummary(
+        id: "!bob:matrix.org",
+        name: "Bob",
+        lastAuthor: "Bob",
+        lastMessage: AttributedString("Hey, are you free for a call?"),
+        lastMessageTimestamp: .now.addingTimeInterval(-120),
+        unreadCount: 2,
+        isDirect: true
     ))
     .frame(width: 300)
 }
