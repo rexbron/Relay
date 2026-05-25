@@ -27,6 +27,11 @@ private let logger = Logger(subsystem: "Relay", category: "DeepLink")
 /// mentions, direct messages, and incoming verification requests.
 @main
 struct RelayApp: App {
+    /// `true` when Xcode is running the process solely to render SwiftUI
+    /// previews. Checked once at launch so that heavy services (Matrix SDK,
+    /// keychain, network monitor, etc.) are never created in preview mode.
+    private static let isPreview = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+
     @State private var matrixService = MatrixService()
     @State private var gifSearchService = GiphyService(apiKey: Secrets.giphyAPIKey ?? "")
     @State private var callManager = CallManager()
@@ -41,43 +46,7 @@ struct RelayApp: App {
 
     var body: some Scene {
         WindowGroup(id: "main") {
-            ContentView()
-                .environment(\.matrixService, matrixService)
-                .environment(\.gifSearchService, gifSearchService)
-                .environment(\.callManager, callManager)
-                .environment(\.errorReporter, matrixService.errorReporter)
-                .environment(\.composeDraftStore, composeDraftStore)
-                .environment(appActions)
-                .onChange(of: dockBadgeCount) { _, newCount in
-                    NSApp.dockTile.badgeLabel = newCount > 0 ? "\(newCount)" : nil
-                }
-                .onChange(of: matrixService.pendingVerificationRequest?.id) { _, newValue in
-                    if newValue != nil, let request = matrixService.pendingVerificationRequest {
-                        postVerificationNotification(request: request)
-                    }
-                }
-                .onOpenURL { url in
-                    if let uri = MatrixURI(url: url) {
-                        logger.info("Received deep link: \(url.absoluteString)")
-                        matrixService.pendingDeepLink = uri
-                    }
-                }
-                .task {
-                    await setupNotifications()
-                    matrixService.onNotificationEvent = { event in
-                        Task { @MainActor in
-                            self.handleNotificationEvent(event)
-                        }
-                    }
-                }
-                .alert("Clear Cache", isPresented: $showClearCacheConfirmation) {
-                    Button("Cancel", role: .cancel) {}
-                    Button("Clear Cache", role: .destructive) {
-                        Task { await matrixService.clearLocalData() }
-                    }
-                } message: {
-                    Text("This will delete all locally cached data and resync from the server. You will remain logged in.")
-                }
+            contentView
         }
         .defaultSize(width: 880, height: 560)
         .commands {
@@ -129,6 +98,52 @@ struct RelayApp: App {
         .defaultSize(width: 360, height: 540)
         .defaultPosition(.topTrailing)
         .defaultLaunchBehavior(.suppressed)
+    }
+
+    /// The root content view, configured with real services at runtime or
+    /// bare (using environment-key defaults) during Xcode previews.
+    @ViewBuilder private var contentView: some View {
+        if Self.isPreview {
+            ContentView()
+        } else {
+            ContentView()
+                .environment(\.matrixService, matrixService)
+                .environment(\.gifSearchService, gifSearchService)
+                .environment(\.callManager, callManager)
+                .environment(\.errorReporter, matrixService.errorReporter)
+                .environment(\.composeDraftStore, composeDraftStore)
+                .environment(appActions)
+                .onChange(of: dockBadgeCount) { _, newCount in
+                    NSApp.dockTile.badgeLabel = newCount > 0 ? "\(newCount)" : nil
+                }
+                .onChange(of: matrixService.pendingVerificationRequest?.id) { _, newValue in
+                    if newValue != nil, let request = matrixService.pendingVerificationRequest {
+                        postVerificationNotification(request: request)
+                    }
+                }
+                .onOpenURL { url in
+                    if let uri = MatrixURI(url: url) {
+                        logger.info("Received deep link: \(url.absoluteString)")
+                        matrixService.pendingDeepLink = uri
+                    }
+                }
+                .task {
+                    await setupNotifications()
+                    matrixService.onNotificationEvent = { event in
+                        Task { @MainActor in
+                            self.handleNotificationEvent(event)
+                        }
+                    }
+                }
+                .alert("Clear Cache", isPresented: $showClearCacheConfirmation) {
+                    Button("Cancel", role: .cancel) {}
+                    Button("Clear Cache", role: .destructive) {
+                        Task { await matrixService.clearLocalData() }
+                    }
+                } message: {
+                    Text("This will delete all locally cached data and resync from the server. You will remain logged in.")
+                }
+        }
     }
 
     // MARK: - Notifications
