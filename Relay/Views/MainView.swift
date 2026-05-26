@@ -49,6 +49,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     @State private var inspectorSelectedProfile: UserProfile?
     @State private var inspectorInitialTab: InspectorTab?
     @State private var isPreparingCall = false
+    @Namespace private var toolbarNamespace
 
     private func scrollToMessage(_ eventId: String) {
         showingPinnedMessages = false
@@ -305,9 +306,6 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                     startCallButton(roomId: selectedRoomId)
                 }
             }
-            ToolbarItem(placement: .primaryAction) {
-                showInspectorButton
-            }
         }
 
     }
@@ -323,17 +321,48 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     }
 
     private var toolbarTitleCapsule: some View {
-        HStack(spacing: 0) {
-            if let currentRoom {
-                AvatarView(name: currentRoom.name,
-                           mxcURL: currentRoom.avatarURL,
-                           size: 28)
-                .padding(.leading, 4)
-                Text(currentRoom.name)
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
+        GlassEffectContainer {
+            HStack(spacing: 8) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        showingInspector.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 0) {
+                        if let currentRoom {
+                            AvatarView(name: currentRoom.name,
+                                       mxcURL: currentRoom.avatarURL,
+                                       size: 28)
+                            .padding(.leading, 4)
+                            Text(currentRoom.name)
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 4)
+
+                            if !showingInspector {
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.trailing, 8)
+                                    .glassEffectID("inspectorToggle", in: toolbarNamespace)
+                            } else {
+                                Button {
+                                    dismissInspector()
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 12, weight: .bold))
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.trailing, 8)
+                                .glassEffectID("inspectorToggle", in: toolbarNamespace)
+                                .help("Close Inspector")
+                            }
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .help(showingInspector ? "Hide Inspector" : "Show Inspector")
             }
         }
     }
@@ -395,19 +424,6 @@ struct MainView: View { // swiftlint:disable:this type_body_length
             }
             .help("Room Directory")
         }
-    }
-
-    @ViewBuilder
-    private var showInspectorButton: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.25)) {
-                showingInspector.toggle()
-            }
-        } label: {
-            Label("Toggle Inspector", systemImage: "sidebar.trailing")
-        }
-        .help(showingInspector ? "Hide Inspector" : "Show Inspector")
-        .disabled(selectedRoomId == nil && selectedSpaceId == nil)
     }
 
     // MARK: - Call Handling
@@ -562,6 +578,12 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     }
 
     // MARK: - Inspector Panel
+
+    private func dismissInspector() {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            showingInspector = false
+        }
+    }
 
     private func inspectorPanel(roomId: String) -> some View {
         TimelineInspectorView(
