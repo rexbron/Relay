@@ -87,7 +87,7 @@ struct RoomListRow: View {
         .padding(.vertical, 8)
     }
 
-    /// Badge overlay displayed on the bottom-trailing corner of the avatar.
+    /// Badge overlay on the top-trailing corner of the avatar.
     ///
     /// Shows a colored unread dot for rooms with unread activity, or a mute
     /// icon for muted rooms.
@@ -95,19 +95,14 @@ struct RoomListRow: View {
     private var badge: some View {
         if room.isMuted {
             Image(systemName: "bell.slash.fill")
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-                .padding(2)
-                .background(.background, in: Circle())
+                .font(.system(size: 8))
+                .foregroundStyle(.white)
+                .frame(width: 14, height: 14)
+                .background(.gray, in: Circle())
         } else if showDot {
             Circle()
                 .fill(dotColor)
                 .frame(width: 14, height: 14)
-                .overlay {
-                    Circle()
-                        .strokeBorder(.background, lineWidth: 2)
-                }
-                .offset(x: 3, y: 3)
         }
     }
 }

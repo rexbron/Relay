@@ -132,9 +132,9 @@ struct SpaceRail: View {
             selectedSpaceId = space.id
         } label: {
             SpaceRailIcon(name: space.name, mxcURL: space.avatarURL, size: 36)
-                .overlay(alignment: .topTrailing) {
-                    spaceUnreadBadge(for: space, size: 12)
-                }
+        }
+        .overlay(alignment: .topTrailing) {
+            spaceUnreadBadge(for: space)
         }
         .contextMenu {
             Button("Leave Space", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
@@ -152,9 +152,9 @@ struct SpaceRail: View {
             selectedSpaceId = space.id
         } label: {
             SpaceRailIcon(name: space.name, mxcURL: space.avatarURL, size: 26)
-                .overlay(alignment: .topTrailing) {
-                    spaceUnreadBadge(for: space, size: 10)
-                }
+        }
+        .overlay(alignment: .topTrailing) {
+            spaceUnreadBadge(for: space)
         }
         .contextMenu {
             Button("Leave Space", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
@@ -175,16 +175,11 @@ struct SpaceRail: View {
 
     /// A colored dot badge for the space icon, or nothing when there are no unreads.
     @ViewBuilder
-    private func spaceUnreadBadge(for space: RoomSummary, size: CGFloat) -> some View {
+    private func spaceUnreadBadge(for space: RoomSummary) -> some View {
         if let color = spaceUnreadColor(space) {
             Circle()
                 .fill(color)
-                .frame(width: size, height: size)
-                .overlay {
-                    Circle()
-                        .strokeBorder(.background, lineWidth: 2)
-                }
-                .offset(x: size / 4, y: -size / 4)
+                .frame(width: 8, height: 8)
         }
     }
 
