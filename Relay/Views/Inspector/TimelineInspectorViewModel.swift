@@ -198,6 +198,15 @@ final class TimelineInspectorViewModel {
     /// Whether the current user can edit any room detail (name, topic, or avatar).
     var canEditRoomDetails: Bool { permissions?.canEditDetails ?? false }
 
+    /// Whether the current user can change the room's join rule.
+    var canEditJoinRules: Bool { permissions?.canEditJoinRules ?? false }
+
+    /// Whether the current user can change the room's history visibility.
+    var canEditHistoryVisibility: Bool { permissions?.canEditHistoryVisibility ?? false }
+
+    /// Whether the current user can edit any room access setting (join rules or history visibility).
+    var canEditAccess: Bool { canEditJoinRules || canEditHistoryVisibility }
+
     // MARK: - Helpers
 
     var currentUserId: String? {
@@ -231,7 +240,8 @@ final class TimelineInspectorViewModel {
         let previewPermissions: RoomPermissions? = asAdmin ? RoomPermissions(
             canEditName: true, canEditTopic: true, canEditAvatar: true,
             canInvite: true, canKick: true, canBan: true,
-            canRedactOther: true, canChangePermissions: true
+            canRedactOther: true, canChangePermissions: true,
+            canPin: true, canEditJoinRules: true, canEditHistoryVisibility: true
         ) : RoomPermissions()
         let previewPowerLevelSettings: RoomPowerLevelSettings? = asAdmin
             ? RoomPowerLevelSettings() : nil

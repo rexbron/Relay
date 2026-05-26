@@ -932,7 +932,11 @@ public final class MatrixService: MatrixServiceProtocol {
                 canKick: pl.canOwnUserKick(),
                 canBan: pl.canOwnUserBan(),
                 canRedactOther: pl.canOwnUserRedactOther(),
-                canChangePermissions: pl.canOwnUserSendState(stateEvent: .roomPowerLevels)
+                canChangePermissions: pl.canOwnUserSendState(stateEvent: .roomPowerLevels),
+                canPin: pl.canOwnUserSendState(stateEvent: .roomPinnedEvents),
+                canEditJoinRules: pl.canOwnUserSendState(stateEvent: .roomJoinRules),
+                canEditHistoryVisibility: pl.canOwnUserSendState(stateEvent: .roomHistoryVisibility),
+                canSendMessages: pl.canOwnUserSendMessage(message: .roomMessage)
             )
             let values = pl.values()
             powerLevelSettings = RoomPowerLevelSettings(

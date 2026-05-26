@@ -42,6 +42,9 @@ struct MessageTextView: NSViewRepresentable {
 
     var onPresentReactionPicker: (() -> Void)?
 
+    /// The current user's room-level permissions for gating context menu actions.
+    var permissions: RoomPermissions?
+
     private var foregroundColor: NSColor {
         isOutgoing ? .white : .labelColor
     }
@@ -100,6 +103,7 @@ struct MessageTextView: NSViewRepresentable {
         view.contextMessage = contextMessage
         view.onMessageContextAction = onMessageContextAction
         view.onPresentReactionPicker = onPresentReactionPicker
+        view.permissions = permissions
 
         // Populate text immediately so sizeThatFits (which SwiftUI may
         // call before updateNSView) has content to measure. Without this,
@@ -129,6 +133,7 @@ struct MessageTextView: NSViewRepresentable {
         view.contextMessage = contextMessage
         view.onMessageContextAction = onMessageContextAction
         view.onPresentReactionPicker = onPresentReactionPicker
+        view.permissions = permissions
 
         let coordinator = context.coordinator
 

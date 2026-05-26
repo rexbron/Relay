@@ -73,6 +73,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     @State private var fullyReadDebounceTask: Task<Void, Never>?
     @State private var lastFullyReadEventId: String?
     @State private var isDirectRoom = false
+    @State private var roomPermissions: RoomPermissions?
     @State private var highlightedMessageId: String?
     @State private var memberRefreshTask: Task<Void, Never>?
     @State private var cachedMessageRows: [MessageRow]
@@ -177,7 +178,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 }
             }
             .overlay(alignment: .bottom) {
-                if !readOnly {
+                if !readOnly, roomPermissions?.canSendMessages ?? true {
                     composeBarSection
                 }
             }
@@ -228,6 +229,10 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
 
             // Cache isDirect once — avoids O(n) room scan on every body evaluation.
             isDirectRoom = matrixService.rooms.first(where: { $0.id == roomId })?.isDirect ?? false
+
+            // Fetch room permissions to determine moderator capabilities.
+            let details = await matrixService.roomDetails(roomId: roomId)
+            roomPermissions = details?.permissions
 
             // Seed the row cache immediately so cached messages from a
             // previously visited room render in the first frame, before
@@ -462,6 +467,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             highlightDismissed: {
                 highlightedMessageId = nil
             },
+            permissions: roomPermissions,
             currentUserID: matrixService.userId()
         )
     }

@@ -89,6 +89,10 @@ struct InspectorMembersTab: View {
         viewModel.permissions?.canBan ?? false
     }
 
+    private var canInvite: Bool {
+        viewModel.permissions?.canInvite ?? false
+    }
+
     private func isSelfMember(_ member: RoomMemberDetails) -> Bool {
         member.userId == viewModel.currentUserId
     }
@@ -149,7 +153,7 @@ struct InspectorMembersTab: View {
 
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    if context == .space {
+                    if context == .space, canInvite {
                         inviteSection
                     }
 

@@ -18,14 +18,18 @@ import SwiftUI
 /// The Security & Privacy tab of the timeline inspector, showing room access settings,
 /// encryption status, and history visibility.
 ///
-/// When the current user is an admin, the join rule, history visibility, and directory
-/// visibility become editable. Non-admins see read-only displays.
+/// When the current user has sufficient power level, the join rule, history visibility,
+/// and directory visibility become editable. Each section is gated by the corresponding
+/// fine-grained permission from ``RoomPermissions``.
 struct InspectorSecurityTab: View {
     let viewModel: TimelineInspectorViewModel
 
     @State private var isSaving = false
 
-    private var canEdit: Bool { viewModel.isCurrentUserAdmin }
+    /// Directory visibility is a server-side setting that requires admin privileges.
+    private var canEditVisibility: Bool { viewModel.isCurrentUserAdmin }
+    private var canEditJoinRules: Bool { viewModel.canEditJoinRules }
+    private var canEditHistoryVisibility: Bool { viewModel.canEditHistoryVisibility }
 
     var body: some View {
         ScrollView {
@@ -71,7 +75,7 @@ struct InspectorSecurityTab: View {
 
     private func visibilitySection(_ details: RoomDetails) -> some View {
         GroupBox {
-            if canEdit {
+            if canEditVisibility {
                 Toggle(isOn: Binding(
                     get: { details.isPublic },
                     set: { newValue in
@@ -113,7 +117,7 @@ struct InspectorSecurityTab: View {
 
     private func joinRuleSection(_ details: RoomDetails) -> some View {
         GroupBox {
-            if canEdit {
+            if canEditJoinRules {
                 VStack(alignment: .leading, spacing: 8) {
                     Picker("Join Rule", selection: Binding(
                         get: { details.joinRule ?? "invite" },
@@ -157,7 +161,7 @@ struct InspectorSecurityTab: View {
 
     private func historySection(_ details: RoomDetails) -> some View {
         GroupBox {
-            if canEdit {
+            if canEditHistoryVisibility {
                 VStack(alignment: .leading, spacing: 8) {
                     Picker("History Visibility", selection: Binding(
                         get: { details.historyVisibility ?? "shared" },

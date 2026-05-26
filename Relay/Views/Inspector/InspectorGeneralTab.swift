@@ -43,7 +43,10 @@ struct InspectorGeneralTab: View {
     private var canEditName: Bool { permissions?.canEditName ?? false }
     private var canEditTopic: Bool { permissions?.canEditTopic ?? false }
     private var canEditAvatar: Bool { permissions?.canEditAvatar ?? false }
-    private var canEditAccess: Bool { viewModel.isCurrentUserAdmin }
+    private var canEditJoinRules: Bool { viewModel.canEditJoinRules }
+    /// Directory visibility is a server-side setting that requires admin privileges.
+    private var canEditVisibility: Bool { viewModel.isCurrentUserAdmin }
+    private var canEditHistoryVisibility: Bool { viewModel.canEditHistoryVisibility }
     private var isSpace: Bool { context == .space }
     private var entityName: String { isSpace ? "space" : "room" }
 
@@ -320,9 +323,9 @@ struct InspectorGeneralTab: View {
         let trimmedTopic = editTopic.trimmingCharacters(in: .whitespacesAndNewlines)
         let nameChanged = canEditName && !trimmedName.isEmpty && trimmedName != details.name
         let topicChanged = canEditTopic && trimmedTopic != (details.topic ?? "")
-        let joinRuleChanged = isSpace && canEditAccess && editJoinRule != (details.joinRule ?? "invite")
-        let visibilityChanged = isSpace && canEditAccess && editIsPublic != details.isPublic
-        let historyChanged = isSpace && canEditAccess
+        let joinRuleChanged = isSpace && canEditJoinRules && editJoinRule != (details.joinRule ?? "invite")
+        let visibilityChanged = isSpace && canEditVisibility && editIsPublic != details.isPublic
+        let historyChanged = isSpace && canEditHistoryVisibility
             && editHistoryVisibility != (details.historyVisibility ?? "shared")
 
         guard nameChanged || topicChanged || joinRuleChanged
@@ -377,7 +380,7 @@ struct InspectorGeneralTab: View {
     private func spaceAccessSections(_ details: RoomDetails) -> some View {
         // Join Rule
         GroupBox {
-            if canEditAccess {
+            if canEditJoinRules {
                 VStack(alignment: .leading, spacing: 8) {
                     Picker("Join Rule", selection: $editJoinRule) {
                         Label("Anyone Can Join", systemImage: "globe").tag("public")
@@ -413,7 +416,7 @@ struct InspectorGeneralTab: View {
 
         // Directory Visibility
         GroupBox {
-            if canEditAccess {
+            if canEditVisibility {
                 Toggle(isOn: $editIsPublic) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Listed in Room Directory")
@@ -447,7 +450,7 @@ struct InspectorGeneralTab: View {
 
         // History Visibility
         GroupBox {
-            if canEditAccess {
+            if canEditHistoryVisibility {
                 VStack(alignment: .leading, spacing: 8) {
                     Picker("History Visibility", selection: $editHistoryVisibility) {
                         Label("Since Joined", systemImage: "person.badge.key").tag("joined")

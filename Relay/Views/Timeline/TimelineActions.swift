@@ -47,6 +47,10 @@ struct TimelineActions {
     /// Dismisses the highlight animation on the currently highlighted message.
     var highlightDismissed: () -> Void = {}
 
+    /// The current user's room-level permissions, used by context menus and
+    /// the compose bar to gate actions on power level capabilities.
+    var permissions: RoomPermissions?
+
     /// The Matrix user ID of the signed-in user. Used to determine whether
     /// replied-to messages are outgoing.
     var currentUserID: String?

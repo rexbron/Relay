@@ -43,6 +43,18 @@ public struct RoomPermissions: Sendable {
     /// Whether the current user can modify the room's power level configuration.
     public let canChangePermissions: Bool
 
+    /// Whether the current user can pin or unpin messages in the room.
+    public let canPin: Bool
+
+    /// Whether the current user can change the room's join rule.
+    public let canEditJoinRules: Bool
+
+    /// Whether the current user can change the room's history visibility.
+    public let canEditHistoryVisibility: Bool
+
+    /// Whether the current user can send message events in the room.
+    public let canSendMessages: Bool
+
     /// Creates a new ``RoomPermissions`` value.
     nonisolated public init(
         canEditName: Bool = false,
@@ -52,7 +64,11 @@ public struct RoomPermissions: Sendable {
         canKick: Bool = false,
         canBan: Bool = false,
         canRedactOther: Bool = false,
-        canChangePermissions: Bool = false
+        canChangePermissions: Bool = false,
+        canPin: Bool = false,
+        canEditJoinRules: Bool = false,
+        canEditHistoryVisibility: Bool = false,
+        canSendMessages: Bool = true
     ) {
         self.canEditName = canEditName
         self.canEditTopic = canEditTopic
@@ -62,6 +78,10 @@ public struct RoomPermissions: Sendable {
         self.canBan = canBan
         self.canRedactOther = canRedactOther
         self.canChangePermissions = canChangePermissions
+        self.canPin = canPin
+        self.canEditJoinRules = canEditJoinRules
+        self.canEditHistoryVisibility = canEditHistoryVisibility
+        self.canSendMessages = canSendMessages
     }
 
     /// Whether the current user can edit any room detail (name, topic, or avatar).

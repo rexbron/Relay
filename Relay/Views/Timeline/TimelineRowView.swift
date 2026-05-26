@@ -217,7 +217,7 @@ struct TimelineRowView: View, Equatable {
 
     @ViewBuilder
     private var contextMenu: some View {
-        ForEach(TimelineMessageContextMenu.entries(for: message).enumerated(), id: \.offset) { _, entry in
+        ForEach(TimelineMessageContextMenu.entries(for: message, permissions: actions.permissions).enumerated(), id: \.offset) { _, entry in
             contextMenuEntry(entry)
         }
     }

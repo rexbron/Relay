@@ -75,7 +75,8 @@ struct MessageBubbleContent: View {
                     onRoomTap: actions.roomTap,
                     contextMessage: onPresentReactionPicker != nil ? message : nil,
                     onMessageContextAction: { actions.contextAction($0) },
-                    onPresentReactionPicker: onPresentReactionPicker
+                    onPresentReactionPicker: onPresentReactionPicker,
+                    permissions: actions.permissions
                 )
             }
             .padding(.horizontal, BubbleStyle.horizontalPadding)
@@ -151,7 +152,8 @@ struct MessageBubbleContent: View {
             onRoomTap: actions.roomTap,
             contextMessage: onPresentReactionPicker != nil ? message : nil,
             onMessageContextAction: { actions.contextAction($0) },
-            onPresentReactionPicker: onPresentReactionPicker
+            onPresentReactionPicker: onPresentReactionPicker,
+            permissions: actions.permissions
         )
         .padding(.horizontal, BubbleStyle.horizontalPadding)
         .padding(.vertical, BubbleStyle.verticalPadding)
