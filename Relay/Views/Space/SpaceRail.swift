@@ -132,6 +132,9 @@ struct SpaceRail: View {
             selectedSpaceId = space.id
         } label: {
             SpaceRailIcon(name: space.name, mxcURL: space.avatarURL, size: 36)
+                .overlay(alignment: .topTrailing) {
+                    spaceUnreadBadge(for: space, size: 12)
+                }
         }
         .contextMenu {
             Button("Leave Space", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
@@ -149,6 +152,9 @@ struct SpaceRail: View {
             selectedSpaceId = space.id
         } label: {
             SpaceRailIcon(name: space.name, mxcURL: space.avatarURL, size: 26)
+                .overlay(alignment: .topTrailing) {
+                    spaceUnreadBadge(for: space, size: 10)
+                }
         }
         .contextMenu {
             Button("Leave Space", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
@@ -165,6 +171,44 @@ struct SpaceRail: View {
                 && room.unreadMessages > 0
                 && !room.isMuted
         }
+    }
+
+    /// A colored dot badge for the space icon, or nothing when there are no unreads.
+    @ViewBuilder
+    private func spaceUnreadBadge(for space: RoomSummary, size: CGFloat) -> some View {
+        if let color = spaceUnreadColor(space) {
+            Circle()
+                .fill(color)
+                .frame(width: size, height: size)
+                .overlay {
+                    Circle()
+                        .strokeBorder(.background, lineWidth: 2)
+                }
+                .offset(x: size / 4, y: -size / 4)
+        }
+    }
+
+    /// The badge color for unread activity in a space, or `nil` when there are no unreads.
+    ///
+    /// Returns red when any child room has unread mentions, keyword highlights, or is a
+    /// DM with unread messages. Returns accent color for plain unread messages in group rooms.
+    private func spaceUnreadColor(_ space: RoomSummary) -> Color? {
+        var hasUnread = false
+        var hasHighPriority = false
+
+        for room in matrixService.rooms where room.parentSpaceIds.contains(space.id) && !room.isMuted {
+            if room.unreadMentions > 0 || room.hasKeywordHighlight || (room.isDirect && room.unreadMessages > 0) {
+                hasHighPriority = true
+                break
+            }
+            if room.unreadMessages > 0 {
+                hasUnread = true
+            }
+        }
+
+        if hasHighPriority { return .red }
+        if hasUnread { return .accentColor }
+        return nil
     }
 }
 
