@@ -14,14 +14,33 @@
 
 import SwiftUI
 
-/// The Appearance tab of the Settings window, providing a visual picker for
-/// message bubble styles (grey vs. colored), styled after Apple's System Settings
-/// appearance picker.
+/// The Appearance tab of the Settings window, providing visual pickers for
+/// the app's color scheme (light, dark, or system) and message bubble styles
+/// (grey vs. colored), styled after Apple's System Settings appearance picker.
 struct SettingsAppearanceTab: View {
+    @AppStorage("appearance.mode") private var appearanceMode: AppAppearance = .system
     @AppStorage("appearance.coloredBubbles") private var coloredBubbles = false
 
     var body: some View {
         Form {
+            Section {
+                HStack(spacing: 12) {
+                    Spacer()
+                    ForEach(AppAppearance.allCases) { mode in
+                        AppearanceOption(
+                            mode: mode,
+                            isSelected: appearanceMode == mode
+                        ) {
+                            appearanceMode = mode
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Appearance")
+            }
+
             Section {
                 HStack(spacing: 16) {
                     Spacer()
@@ -49,6 +68,141 @@ struct SettingsAppearanceTab: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+// MARK: - Appearance Option
+
+/// A selectable mini-desktop thumbnail for one of the three appearance modes.
+private struct AppearanceOption: View {
+    let mode: AppAppearance
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                AppearanceThumbnail(mode: mode)
+                    .clipShape(.rect(cornerRadius: 5))
+                    .padding(2)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7)
+                            .strokeBorder(
+                                isSelected ? Color.accentColor : .clear,
+                                lineWidth: 3
+                            )
+                    }
+
+                Text(mode.label)
+                    .font(.callout)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Appearance Thumbnail
+
+/// A miniature macOS desktop scene used as a thumbnail for appearance mode selection.
+///
+/// Light and dark modes render a single desktop with gradient wallpaper and two
+/// overlapping mini windows. The "Auto" mode renders a split thumbnail: left half
+/// light, right half dark.
+private struct AppearanceThumbnail: View {
+    let mode: AppAppearance
+
+    private static let thumbnailWidth: CGFloat = 90
+    private static let thumbnailHeight: CGFloat = 64
+
+    var body: some View {
+        switch mode {
+        case .light:
+            singleVariant(isDark: false)
+        case .dark:
+            singleVariant(isDark: true)
+        case .system:
+            systemThumbnail
+        }
+    }
+
+    private func singleVariant(isDark: Bool) -> some View {
+        desktopScene(isDark: isDark)
+            .frame(width: Self.thumbnailWidth, height: Self.thumbnailHeight)
+    }
+
+    /// Split thumbnail showing light on the left, dark on the right.
+    private var systemThumbnail: some View {
+        HStack(spacing: 0) {
+            desktopScene(isDark: false)
+                .frame(width: Self.thumbnailWidth, height: Self.thumbnailHeight)
+                .clipped()
+                .frame(width: Self.thumbnailWidth / 2, alignment: .leading)
+                .clipped()
+
+            desktopScene(isDark: true)
+                .frame(width: Self.thumbnailWidth, height: Self.thumbnailHeight)
+                .clipped()
+                .frame(width: Self.thumbnailWidth / 2, alignment: .trailing)
+                .clipped()
+        }
+    }
+
+    /// A miniature desktop with wallpaper gradient and two overlapping windows.
+    private func desktopScene(isDark: Bool) -> some View {
+        let wallpaper = isDark
+            ? LinearGradient(
+                colors: [
+                    Color(red: 0.05, green: 0.10, blue: 0.30),
+                    Color(red: 0.08, green: 0.15, blue: 0.40),
+                    Color(red: 0.05, green: 0.12, blue: 0.35),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+              )
+            : LinearGradient(
+                colors: [
+                    Color(red: 0.35, green: 0.55, blue: 0.90),
+                    Color(red: 0.40, green: 0.60, blue: 0.95),
+                    Color(red: 0.30, green: 0.50, blue: 0.85),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+              )
+
+        return ZStack {
+            wallpaper
+
+            miniWindow(isDark: isDark)
+                .scaleEffect(0.85)
+                .offset(x: -6, y: -4)
+
+            miniWindow(isDark: isDark)
+                .scaleEffect(0.85)
+                .offset(x: 6, y: 4)
+        }
+    }
+
+    /// A tiny window with a title bar containing traffic-light circles.
+    private func miniWindow(isDark: Bool) -> some View {
+        let background = isDark
+            ? Color(white: 0.18)
+            : Color(white: 0.96)
+
+        return ZStack(alignment: .topLeading) {
+            Rectangle()
+                .fill(background)
+
+            HStack(spacing: 2) {
+                Circle().fill(.red.opacity(0.85)).frame(width: 3.5, height: 3.5)
+                Circle().fill(.yellow.opacity(0.85)).frame(width: 3.5, height: 3.5)
+                Circle().fill(.green.opacity(0.85)).frame(width: 3.5, height: 3.5)
+            }
+            .padding(4)
+        }
+        .frame(width: 56, height: 40)
+        .clipShape(.rect(cornerRadius: 4))
+        .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
     }
 }
 

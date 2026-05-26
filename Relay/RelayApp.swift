@@ -43,6 +43,7 @@ struct RelayApp: App {
     @Environment(\.openWindow) private var openWindow
 
     @AppStorage("selectedRoomId") private var selectedRoomId: String?
+    @AppStorage("appearance.mode") private var appearanceMode: AppAppearance = .system
 
     var body: some Scene {
         WindowGroup(id: "main") {
@@ -79,11 +80,13 @@ struct RelayApp: App {
                 .environment(\.matrixService, matrixService)
                 .environment(\.gifSearchService, gifSearchService)
                 .environment(\.errorReporter, matrixService.errorReporter)
+                .preferredColorScheme(appearanceMode.colorScheme)
         }
 
         Window("Activity Log", id: "activity-log") {
             ActivityLogView()
                 .environment(\.activityLog, matrixService.activityLog)
+                .preferredColorScheme(appearanceMode.colorScheme)
         }
         .defaultSize(width: 900, height: 600)
         .keyboardShortcut("a", modifiers: [.option, .command])
@@ -92,6 +95,7 @@ struct RelayApp: App {
             CallWindowView()
                 .environment(\.matrixService, matrixService)
                 .environment(\.callManager, callManager)
+                .preferredColorScheme(appearanceMode.colorScheme)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
@@ -105,6 +109,7 @@ struct RelayApp: App {
     @ViewBuilder private var contentView: some View {
         if Self.isPreview {
             ContentView()
+                .preferredColorScheme(appearanceMode.colorScheme)
         } else {
             ContentView()
                 .environment(\.matrixService, matrixService)
@@ -143,6 +148,7 @@ struct RelayApp: App {
                 } message: {
                     Text("This will delete all locally cached data and resync from the server. You will remain logged in.")
                 }
+                .preferredColorScheme(appearanceMode.colorScheme)
         }
     }
 
