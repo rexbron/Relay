@@ -177,8 +177,8 @@ struct RoomDirectoryView: View {
 
 /// A single row in the directory list, styled to match ``SpaceChildRow``.
 ///
-/// Spaces use a rounded-rectangle avatar (``SpaceRailIcon``), while regular
-/// rooms use a circular ``AvatarView``.
+/// Spaces use a rounded-rectangle avatar, while regular rooms use a
+/// circular ``AvatarView``.
 private struct DirectoryRoomRow: View {
     let room: DirectoryRoom
     var isJoining: Bool = false
@@ -211,9 +211,11 @@ private struct DirectoryRoomRow: View {
     @ViewBuilder
     private var avatar: some View {
         if room.isSpace {
-            SpaceRailIcon(
+            AvatarView(
                 name: room.name ?? room.roomId,
-                mxcURL: room.avatarURL
+                mxcURL: room.avatarURL,
+                size: 36,
+                shape: AnyShape(.rect(cornerRadius: 36 * 0.22))
             )
         } else {
             AvatarView(

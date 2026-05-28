@@ -48,7 +48,7 @@ struct SpaceChildRow: View {
     @ViewBuilder
     private var avatar: some View {
         if child.roomType == .space {
-            SpaceRailIcon(name: child.name, mxcURL: child.avatarURL)
+            AvatarView(name: child.name, mxcURL: child.avatarURL, size: 36, shape: AnyShape(.rect(cornerRadius: 36 * 0.22)))
         } else {
             AvatarView(name: child.name, mxcURL: child.avatarURL, size: 36)
         }

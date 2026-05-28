@@ -52,9 +52,7 @@ struct InspectorMembersTab: View {
 
     @State private var searchText = ""
     @State private var displayedProfile: UserProfile?
-    @State private var inviteUserId = ""
-    @State private var isSendingInvite = false
-    @State private var sentInviteUserIds: [String] = []
+
 
     private var filteredMembers: [RoomMemberDetails] {
         guard !searchText.isEmpty else { return viewModel.allMembers }
@@ -338,12 +336,6 @@ struct InspectorMembersTab: View {
 
     // MARK: - Invite Section
 
-    /// Whether the current invite input looks like a valid Matrix user ID.
-    private var isValidInviteUserId: Bool {
-        let trimmed = inviteUserId.trimmingCharacters(in: .whitespaces)
-        return trimmed.hasPrefix("@") && trimmed.contains(":")
-    }
-
     private var inviteSection: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
@@ -351,51 +343,10 @@ struct InspectorMembersTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                HStack(spacing: 6) {
-                    TextField("@user:server.org", text: $inviteUserId)
-                        .textFieldStyle(.plain)
-                        .autocorrectionDisabled()
-                        .font(.callout)
-                        .onSubmit { sendInvite() }
-
-                    Button("Invite", systemImage: "paperplane") {
-                        sendInvite()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(!isValidInviteUserId || isSendingInvite)
-                }
-
-                ForEach(sentInviteUserIds, id: \.self) { userId in
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                            .font(.caption)
-                        Text(userId)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                InviteUserSection(roomId: viewModel.roomId)
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
-        }
-    }
-
-    private func sendInvite() {
-        let trimmed = inviteUserId.trimmingCharacters(in: .whitespaces)
-        guard isValidInviteUserId, !isSendingInvite else { return }
-        isSendingInvite = true
-
-        Task {
-            do {
-                try await matrixService.inviteUser(roomId: viewModel.roomId, userId: trimmed)
-                sentInviteUserIds.append(trimmed)
-                inviteUserId = ""
-            } catch {
-                errorReporter.report(.roomJoinFailed(error.localizedDescription))
-            }
-            isSendingInvite = false
         }
     }
 }

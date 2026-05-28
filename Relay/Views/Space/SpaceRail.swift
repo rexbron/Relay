@@ -131,7 +131,7 @@ struct SpaceRail: View {
             onSpaceTapped?()
             selectedSpaceId = space.id
         } label: {
-            SpaceRailIcon(name: space.name, mxcURL: space.avatarURL, size: 36)
+            AvatarView(name: space.name, mxcURL: space.avatarURL, size: 36, shape: AnyShape(.rect(cornerRadius: 36 * 0.22)))
         }
         .overlay(alignment: .topTrailing) {
             spaceUnreadBadge(for: space)
@@ -151,7 +151,7 @@ struct SpaceRail: View {
             onSpaceTapped?()
             selectedSpaceId = space.id
         } label: {
-            SpaceRailIcon(name: space.name, mxcURL: space.avatarURL, size: 26)
+            AvatarView(name: space.name, mxcURL: space.avatarURL, size: 26, shape: AnyShape(.rect(cornerRadius: 26 * 0.22)))
         }
         .overlay(alignment: .topTrailing) {
             spaceUnreadBadge(for: space)
@@ -235,54 +235,6 @@ struct SpaceRailButton<Label: View>: View {
                 .animation(.easeInOut(duration: 0.15), value: hasUnread)
         }
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-}
-
-/// A rounded-rectangle avatar for a space in the rail.
-///
-/// Unlike ``AvatarView`` which clips to a circle, this view uses a rounded
-/// rectangle to visually distinguish spaces from user/room avatars.
-struct SpaceRailIcon: View {
-    @Environment(\.matrixService) private var matrixService
-    let name: String
-    let mxcURL: String?
-    var size: CGFloat = 36
-
-    @State private var image: NSImage?
-
-    private var cornerRadius: CGFloat { size * 0.22 }
-
-    var body: some View {
-        Group {
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Text(initials)
-                    .font(.system(size: size * 0.4, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(StableNameColor.color(for: name))
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(.rect(cornerRadius: cornerRadius))
-        .task(id: mxcURL) {
-            guard let mxcURL else {
-                image = nil
-                return
-            }
-            image = await matrixService.avatarThumbnail(mxcURL: mxcURL, size: size)
-        }
-    }
-
-    private var initials: String {
-        let words = name.split(separator: " ")
-        if words.count >= 2 {
-            return String(words[0].prefix(1) + words[1].prefix(1)).uppercased()
-        }
-        return String(name.prefix(2)).uppercased()
     }
 }
 

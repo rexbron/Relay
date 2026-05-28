@@ -221,10 +221,10 @@ struct MainView: View { // swiftlint:disable:this type_body_length
             VerificationSheet(viewModel: item.viewModel)
         }
         .sheet(isPresented: Bindable(appActions).showCreateRoom) {
-            CreateRoomSheet(selectedRoomId: $selectedRoomId)
+            CreateEntitySheet(kind: .room, selectedRoomId: $selectedRoomId)
         }
         .sheet(isPresented: Bindable(appActions).showCreateSpace) {
-            CreateSpaceSheet()
+            CreateEntitySheet(kind: .space)
         }
         .sheet(isPresented: Bindable(appActions).showJoinRoom) {
             JoinRoomSheet(selectedRoomId: $selectedRoomId)
