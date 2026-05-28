@@ -122,94 +122,52 @@ final class SpaceListManager {
 
     // MARK: - Space List Updates
 
-    // swiftlint:disable:next cyclomatic_complexity
     private func applySpaceUpdates(_ updates: [SpaceListUpdate]) {
-        for update in updates {
-            switch update {
-            case .append(let values):
-                spaceRooms.append(contentsOf: values)
-            case .clear:
-                spaceRooms.removeAll()
-            case .pushFront(let value):
-                spaceRooms.insert(value, at: 0)
-            case .pushBack(let value):
-                spaceRooms.append(value)
-            case .popFront:
-                if !spaceRooms.isEmpty { spaceRooms.removeFirst() }
-            case .popBack:
-                if !spaceRooms.isEmpty { spaceRooms.removeLast() }
-            case .insert(let index, let value):
-                let i = Int(index)
-                if i <= spaceRooms.count {
-                    spaceRooms.insert(value, at: i)
-                }
-            case .set(let index, let value):
-                let i = Int(index)
-                if i < spaceRooms.count {
-                    spaceRooms[i] = value
-                }
-            case .remove(let index):
-                let i = Int(index)
-                if i < spaceRooms.count {
-                    spaceRooms.remove(at: i)
-                }
-            case .truncate(let length):
-                let len = Int(length)
-                if len < spaceRooms.count {
-                    spaceRooms.removeSubrange(len..<spaceRooms.count)
-                }
-            case .reset(let values):
-                spaceRooms = values
-            }
-        }
-
+        let operations = updates.map(Self.spaceUpdateToOperation)
+        spaceRooms = DiffEngine.applyBatch(operations, to: spaceRooms)
         rebuildSpaceSummaries()
     }
 
     // MARK: - Space Filter Updates
 
-    // swiftlint:disable:next cyclomatic_complexity
     private func applyFilterUpdates(_ updates: [SpaceFilterUpdate]) {
-        for update in updates {
-            switch update {
-            case .append(let values):
-                spaceFilters.append(contentsOf: values)
-            case .clear:
-                spaceFilters.removeAll()
-            case .pushFront(let value):
-                spaceFilters.insert(value, at: 0)
-            case .pushBack(let value):
-                spaceFilters.append(value)
-            case .popFront:
-                if !spaceFilters.isEmpty { spaceFilters.removeFirst() }
-            case .popBack:
-                if !spaceFilters.isEmpty { spaceFilters.removeLast() }
-            case .insert(let index, let value):
-                let i = Int(index)
-                if i <= spaceFilters.count {
-                    spaceFilters.insert(value, at: i)
-                }
-            case .set(let index, let value):
-                let i = Int(index)
-                if i < spaceFilters.count {
-                    spaceFilters[i] = value
-                }
-            case .remove(let index):
-                let i = Int(index)
-                if i < spaceFilters.count {
-                    spaceFilters.remove(at: i)
-                }
-            case .truncate(let length):
-                let len = Int(length)
-                if len < spaceFilters.count {
-                    spaceFilters.removeSubrange(len..<spaceFilters.count)
-                }
-            case .reset(let values):
-                spaceFilters = values
-            }
-        }
-
+        let operations = updates.map(Self.filterUpdateToOperation)
+        spaceFilters = DiffEngine.applyBatch(operations, to: spaceFilters)
         rebuildSpaceDescendants()
+    }
+
+    // MARK: - SDK-to-DiffOperation Conversion
+
+    private static func spaceUpdateToOperation(_ update: SpaceListUpdate) -> DiffOperation<SpaceRoom> {
+        switch update {
+        case .append(let values): .append(values)
+        case .clear: .clear
+        case .pushFront(let value): .pushFront(value)
+        case .pushBack(let value): .pushBack(value)
+        case .popFront: .popFront
+        case .popBack: .popBack
+        case .insert(let index, let value): .insert(Int(index), value)
+        case .set(let index, let value): .set(Int(index), value)
+        case .remove(let index): .remove(Int(index))
+        case .truncate(let length): .truncate(Int(length))
+        case .reset(let values): .reset(values)
+        }
+    }
+
+    private static func filterUpdateToOperation(_ update: SpaceFilterUpdate) -> DiffOperation<SpaceFilter> {
+        switch update {
+        case .append(let values): .append(values)
+        case .clear: .clear
+        case .pushFront(let value): .pushFront(value)
+        case .pushBack(let value): .pushBack(value)
+        case .popFront: .popFront
+        case .popBack: .popBack
+        case .insert(let index, let value): .insert(Int(index), value)
+        case .set(let index, let value): .set(Int(index), value)
+        case .remove(let index): .remove(Int(index))
+        case .truncate(let length): .truncate(Int(length))
+        case .reset(let values): .reset(values)
+        }
     }
 
     // MARK: - Rebuild

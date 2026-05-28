@@ -39,19 +39,7 @@ struct VideoMessageView: View {
     }
 
     private var displaySize: CGSize {
-        let maxWidth: CGFloat = 280
-        let maxHeight: CGFloat = 320
-        // swiftlint:disable:next identifier_name
-        if let w = mediaInfo.width, let h = mediaInfo.height, w > 0, h > 0 {
-            let aspect = CGFloat(w) / CGFloat(h)
-            let width = min(CGFloat(w), maxWidth)
-            let height = width / aspect
-            if height > maxHeight {
-                return CGSize(width: maxHeight * aspect, height: maxHeight)
-            }
-            return CGSize(width: width, height: height)
-        }
-        return CGSize(width: maxWidth, height: 180)
+        mediaInfo.displaySize(defaultHeight: 180)
     }
 
     private var shouldShow: Bool { autoReveal || isRevealed }
@@ -108,7 +96,7 @@ struct VideoMessageView: View {
             if shouldShow {
                 HStack(spacing: 4) {
                     if let duration = mediaInfo.duration, duration > 0 {
-                        Text(formatDuration(duration))
+                        Text(duration.formattedDuration)
                             .font(.caption2)
                             .fontWeight(.medium)
                             .foregroundStyle(.white)
@@ -208,67 +196,35 @@ struct VideoMessageView: View {
         isLoadingMedia = true
         defer { isLoadingMedia = false }
 
-        let url: URL
         if let cached = cachedVideoFileURL, FileManager.default.fileExists(atPath: cached.path) {
-            url = cached
-        } else {
-            guard let data = await matrixService.mediaContent(
-                mxcURL: mediaInfo.mxcURL,
-                mediaSourceJSON: mediaInfo.mediaSourceJSON
-            ) else { return }
-            url = FileManager.default.temporaryDirectory.appendingPathComponent(mediaInfo.filename)
-            do {
-                try data.write(to: url)
-                cachedVideoFileURL = url
-            } catch {
-                errorReporter.report(.mediaPreviewFailed(
-                    filename: mediaInfo.filename,
-                    reason: error.localizedDescription
-                ))
-                return
-            }
-        }
-        quickLookURL = url
-    }
-
-    private func saveMedia() async {
-        let data: Data
-        // swiftlint:disable:next identifier_name
-        if let cached = cachedVideoFileURL, let d = try? Data(contentsOf: cached) {
-            data = d
-        // swiftlint:disable:next identifier_name
-        } else if let d = await matrixService.mediaContent(
-            mxcURL: mediaInfo.mxcURL,
-            mediaSourceJSON: mediaInfo.mediaSourceJSON
-        ) {
-            data = d
-        } else {
+            quickLookURL = cached
             return
         }
 
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = mediaInfo.filename
-        panel.allowedContentTypes = [.movie, .video, .mpeg4Movie, .quickTimeMovie]
-        panel.canCreateDirectories = true
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
         do {
-            try data.write(to: url)
+            let url = try await MediaFileHelper.downloadToTemporaryFile(
+                mediaInfo: mediaInfo, matrixService: matrixService
+            )
+            cachedVideoFileURL = url
+            quickLookURL = url
         } catch {
-            errorReporter.report(.mediaSaveFailed(filename: mediaInfo.filename, reason: error.localizedDescription))
+            errorReporter.report(.mediaPreviewFailed(
+                filename: mediaInfo.filename,
+                reason: error.localizedDescription
+            ))
         }
     }
 
-    private func formatDuration(_ seconds: TimeInterval) -> String {
-        let totalSeconds = Int(seconds)
-        let mins = totalSeconds / 60
-        let secs = totalSeconds % 60
-        if mins >= 60 {
-            let hours = mins / 60
-            let remainingMins = mins % 60
-            return String(format: "%d:%02d:%02d", hours, remainingMins, secs)
+    private func saveMedia() async {
+        let cachedData = cachedVideoFileURL.flatMap { try? Data(contentsOf: $0) }
+        do {
+            try await MediaFileHelper.saveToFile(
+                mediaInfo: mediaInfo, matrixService: matrixService,
+                contentTypes: [.movie, .video, .mpeg4Movie, .quickTimeMovie],
+                data: cachedData
+            )
+        } catch {
+            errorReporter.report(.mediaSaveFailed(filename: mediaInfo.filename, reason: error.localizedDescription))
         }
-        return String(format: "%d:%02d", mins, secs)
     }
 }

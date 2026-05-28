@@ -24,7 +24,8 @@
 /// popBack, truncate, reset). `DiffEngine` applies these operations
 /// to maintain a local Swift array that mirrors the SDK's internal state.
 ///
-/// Used by ``RoomSummaryProvider`` (for `RoomListEntriesUpdate`).
+/// Used by ``RoomSummaryProvider`` (for `RoomListEntriesUpdate`) and
+/// ``SpaceListManager`` (for `SpaceListUpdate` and `SpaceFilterUpdate`).
 ///
 /// ## Usage
 ///
@@ -72,10 +73,13 @@ public enum DiffEngine {
                 result.removeLast()
             }
         case .insert(let index, let item):
+            guard index <= result.count else { break }
             result.insert(item, at: index)
         case .set(let index, let item):
+            guard index < result.count else { break }
             result[index] = item
         case .remove(let index):
+            guard index < result.count else { break }
             result.remove(at: index)
         case .truncate(let length):
             if length < result.count {

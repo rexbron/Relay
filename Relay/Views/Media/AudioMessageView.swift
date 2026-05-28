@@ -58,7 +58,7 @@ struct AudioMessageView: View {
 
                 HStack(spacing: 6) {
                     if let duration = mediaInfo.duration, duration > 0 {
-                        Text(formatDuration(duration))
+                        Text(duration.formattedDuration)
                             .font(.caption)
                     }
                     if let size = mediaInfo.size, size > 0 {
@@ -119,50 +119,24 @@ struct AudioMessageView: View {
         isLoadingMedia = true
         defer { isLoadingMedia = false }
 
-        guard let data = await matrixService.mediaContent(
-            mxcURL: mediaInfo.mxcURL,
-            mediaSourceJSON: mediaInfo.mediaSourceJSON
-        ) else { return }
-
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(mediaInfo.filename)
         do {
-            try data.write(to: url)
-            quickLookURL = url
+            quickLookURL = try await MediaFileHelper.downloadToTemporaryFile(
+                mediaInfo: mediaInfo, matrixService: matrixService
+            )
         } catch {
             errorReporter.report(.mediaPreviewFailed(filename: mediaInfo.filename, reason: error.localizedDescription))
         }
     }
 
     private func saveMedia() async {
-        guard let data = await matrixService.mediaContent(
-            mxcURL: mediaInfo.mxcURL,
-            mediaSourceJSON: mediaInfo.mediaSourceJSON
-        ) else { return }
-
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = mediaInfo.filename
-        panel.allowedContentTypes = [.audio, .mp3, .mpeg4Audio, .wav, .aiff]
-        panel.canCreateDirectories = true
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
         do {
-            try data.write(to: url)
+            try await MediaFileHelper.saveToFile(
+                mediaInfo: mediaInfo, matrixService: matrixService,
+                contentTypes: [.audio, .mp3, .mpeg4Audio, .wav, .aiff]
+            )
         } catch {
             errorReporter.report(.mediaSaveFailed(filename: mediaInfo.filename, reason: error.localizedDescription))
         }
-    }
-
-    private func formatDuration(_ seconds: TimeInterval) -> String {
-        let totalSeconds = Int(seconds)
-        let mins = totalSeconds / 60
-        let secs = totalSeconds % 60
-        if mins >= 60 {
-            let hours = mins / 60
-            let remainingMins = mins % 60
-            return String(format: "%d:%02d:%02d", hours, remainingMins, secs)
-        }
-        return String(format: "%d:%02d", mins, secs)
     }
 
     private func formatFileSize(_ bytes: UInt64) -> String {

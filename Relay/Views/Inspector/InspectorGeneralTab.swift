@@ -390,7 +390,7 @@ struct InspectorGeneralTab: View {
                     .labelsHidden()
                     .pickerStyle(.radioGroup)
 
-                    Text(joinRuleDescription(editJoinRule))
+                    Text(RoomAccessLabels.joinRuleDescription(editJoinRule, entityName: entityName))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -400,10 +400,10 @@ struct InspectorGeneralTab: View {
                 .padding(.vertical, 2)
             } else {
                 SecurityStatusRow(
-                    icon: joinRuleIcon(details.joinRule),
+                    icon: RoomAccessLabels.joinRuleIcon(details.joinRule),
                     color: .secondary,
-                    title: joinRuleLabel(details.joinRule),
-                    detail: joinRuleDescription(details.joinRule)
+                    title: RoomAccessLabels.joinRuleLabel(details.joinRule),
+                    detail: RoomAccessLabels.joinRuleDescription(details.joinRule, entityName: entityName)
                 )
                 .padding(.vertical, 2)
             }
@@ -461,7 +461,7 @@ struct InspectorGeneralTab: View {
                     .labelsHidden()
                     .pickerStyle(.radioGroup)
 
-                    Text(historyDescription(editHistoryVisibility))
+                    Text(RoomAccessLabels.historyDescription(editHistoryVisibility))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -471,10 +471,10 @@ struct InspectorGeneralTab: View {
                 .padding(.vertical, 2)
             } else {
                 SecurityStatusRow(
-                    icon: historyIcon(details.historyVisibility),
-                    color: historyColor(details.historyVisibility),
-                    title: historyLabel(details.historyVisibility),
-                    detail: historyDescription(details.historyVisibility)
+                    icon: RoomAccessLabels.historyIcon(details.historyVisibility),
+                    color: RoomAccessLabels.historyColor(details.historyVisibility),
+                    title: RoomAccessLabels.historyLabel(details.historyVisibility),
+                    detail: RoomAccessLabels.historyDescription(details.historyVisibility)
                 )
                 .padding(.vertical, 2)
             }
@@ -484,77 +484,6 @@ struct InspectorGeneralTab: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal)
-    }
-
-    // MARK: - Label Helpers
-
-    private func joinRuleLabel(_ rule: String?) -> String {
-        switch rule {
-        case "public": "Anyone Can Join"
-        case "invite": "Invite Only"
-        case "knock": "Request to Join"
-        case "restricted": "Restricted"
-        default: "Unknown"
-        }
-    }
-
-    private func joinRuleIcon(_ rule: String?) -> String {
-        switch rule {
-        case "public": "globe"
-        case "invite": "envelope"
-        case "knock": "hand.raised"
-        default: "questionmark.circle"
-        }
-    }
-
-    private func joinRuleDescription(_ rule: String?) -> String {
-        switch rule {
-        case "public": "Anyone can join this \(entityName) without an invitation."
-        case "invite": "Users must receive an invitation to join this \(entityName)."
-        case "knock": "Users can request to join. Admins must approve each request."
-        case "restricted": "Users can join if they meet specific conditions."
-        default: "The join rule for this \(entityName) is not configured."
-        }
-    }
-
-    private func historyLabel(_ visibility: String?) -> String {
-        switch visibility {
-        case "world_readable": "Anyone (World Readable)"
-        case "shared": "Full History"
-        case "invited": "Since Invited"
-        case "joined": "Since Joined"
-        default: "Unknown"
-        }
-    }
-
-    private func historyIcon(_ visibility: String?) -> String {
-        switch visibility {
-        case "world_readable": "globe"
-        case "shared": "person.2"
-        case "invited": "envelope"
-        case "joined": "person.badge.key"
-        default: "questionmark.circle"
-        }
-    }
-
-    private func historyColor(_ visibility: String?) -> Color {
-        switch visibility {
-        case "world_readable": .blue
-        case "shared": .green
-        case "invited": .orange
-        case "joined": .secondary
-        default: .secondary
-        }
-    }
-
-    private func historyDescription(_ visibility: String?) -> String {
-        switch visibility {
-        case "world_readable": "Anyone can read the history, even without joining."
-        case "shared": "Members can see the full history from before they joined."
-        case "invited": "Members can see history from the point they were invited."
-        case "joined": "Members can only see history from the point they joined."
-        default: "History visibility is not configured."
-        }
     }
 
     private func performUpdate(_ action: @escaping () async throws -> Void) {
