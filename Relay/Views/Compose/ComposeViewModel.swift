@@ -214,6 +214,7 @@ final class ComposeViewModel {
                     url: attachment.url, caption: caption.isEmpty ? nil : caption
                 )
             }
+            matrixService.donateOutgoingInteraction(roomId: roomId)
         }
     }
 

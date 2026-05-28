@@ -45,6 +45,7 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func logout() async {}
     func clearLocalData() async {}
     func startSyncIfNeeded() {}
+    func donateOutgoingInteraction(roomId: String) {}
     func userId() -> String? { "@preview:matrix.org" }
     func avatarThumbnail(mxcURL: String, size: CGFloat) async -> NSImage? { nil }
     func makeTimelineViewModel(roomId: String) -> (any TimelineViewModelProtocol)? {

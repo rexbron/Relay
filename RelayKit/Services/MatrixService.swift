@@ -56,7 +56,20 @@ public final class MatrixService: MatrixServiceProtocol {
     /// The app layer sets this to post system notifications. The callback
     /// provides the room name, room ID, message body, and whether it's a mention.
     public var onNotificationEvent: ((RoomNotificationEvent) -> Void)? {
-        didSet { roomListManager.onNotificationEvent = onNotificationEvent }
+        didSet {
+            let externalHandler = onNotificationEvent
+            roomListManager.onNotificationEvent = { [weak self] event in
+                externalHandler?(event)
+                // Donate an incoming message intent for share sheet suggestions.
+                guard let self else { return }
+                if let roomSummary = self.rooms.first(where: { $0.id == event.roomId }) {
+                    self.intentDonation.donateIncomingMessage(
+                        roomSummary: roomSummary,
+                        senderName: event.messageAuthor
+                    )
+                }
+            }
+        }
     }
 
     // MARK: - Private State
@@ -85,6 +98,7 @@ public final class MatrixService: MatrixServiceProtocol {
     private let spaceListManager = SpaceListManager()
     private let media = MediaService()
     private let directorySearch = DirectorySearchService()
+    private let intentDonation = IntentDonationService()
     private let _activityLog = ActivityLog()
 
     public var activityLog: any ActivityLogProtocol { _activityLog }
@@ -448,6 +462,7 @@ public final class MatrixService: MatrixServiceProtocol {
         }
         roomListManager.onRoomsRebuilt = { [weak self] in
             self?.applySpaceDescendantsToRooms()
+            self?.scheduleRoomCacheWrite()
         }
     }
 
@@ -475,6 +490,44 @@ public final class MatrixService: MatrixServiceProtocol {
             if space.parentSpaceIds != newParents {
                 space.parentSpaceIds = newParents
             }
+        }
+    }
+
+    // MARK: - Room Cache for Share Extension
+
+    @ObservationIgnored private var roomCacheWriteTask: Task<Void, Never>?
+
+    /// Writes the room list to the app group container after a short debounce.
+    ///
+    /// Called after each room list rebuild so the share extension always has a
+    /// recent snapshot of available rooms. Avatar data is read from the
+    /// on-disk media cache (no network requests are made).
+    private func scheduleRoomCacheWrite() {
+        roomCacheWriteTask?.cancel()
+        roomCacheWriteTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !Task.isCancelled else { return }
+
+            let joinedRooms = self.rooms.filter { !$0.isSpace && $0.membership == .joined }
+            var shareableRooms: [RelayInterface.ShareableRoom] = []
+            shareableRooms.reserveCapacity(joinedRooms.count)
+
+            for room in joinedRooms {
+                guard !Task.isCancelled else { return }
+                var avatarData: Data?
+                if let mxcURL = room.avatarURL {
+                    avatarData = await self.media.cachedAvatarData(mxcURL: mxcURL, size: 48)
+                }
+                shareableRooms.append(RelayInterface.ShareableRoom(
+                    id: room.id,
+                    name: room.name,
+                    isDirect: room.isDirect,
+                    avatarData: avatarData,
+                    lastActivityTimestamp: room.lastMessageTimestamp
+                ))
+            }
+
+            PendingShareStore.writeRoomCache(shareableRooms)
         }
     }
 
@@ -854,6 +907,11 @@ public final class MatrixService: MatrixServiceProtocol {
     public func sendTypingNotice(roomId: String, isTyping: Bool) async {
         guard let room = room(id: roomId) else { return }
         try? await room.typingNotice(isTyping: isTyping)
+    }
+
+    public func donateOutgoingInteraction(roomId: String) {
+        guard let roomSummary = rooms.first(where: { $0.id == roomId }) else { return }
+        intentDonation.donateOutgoingMessage(roomSummary: roomSummary)
     }
 
     // MARK: - Room Details

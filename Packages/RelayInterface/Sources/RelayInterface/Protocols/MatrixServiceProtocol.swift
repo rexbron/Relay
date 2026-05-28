@@ -371,6 +371,14 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     ///   - isTyping: `true` to indicate the user is typing, `false` to stop.
     func sendTypingNotice(roomId: String, isTyping: Bool) async
 
+    /// Donates an outgoing interaction intent for a room so the system can
+    /// suggest the conversation in the share sheet.
+    ///
+    /// Call this after successfully sending a message or attachment.
+    ///
+    /// - Parameter roomId: The Matrix room identifier.
+    func donateOutgoingInteraction(roomId: String)
+
     /// Fetches the full details and member list for a room.
     ///
     /// - Parameter roomId: The Matrix room identifier.
@@ -818,6 +826,7 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func markAsRead(roomId: String, sendPublicReceipt: Bool) async {}
     func fullyReadEventId(roomId: String) async -> String? { nil }
     func sendTypingNotice(roomId: String, isTyping: Bool) async {}
+    func donateOutgoingInteraction(roomId: String) {}
     func roomDetails(roomId: String) async -> RoomDetails? { nil }
     func roomMembers(roomId: String) async -> [RoomMemberDetails] { [] }
     func pinnedMessages(roomId: String) async -> [TimelineMessage] { [] }

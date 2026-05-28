@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import Intents
 import os
 import RelayKit
 import RelayInterface
@@ -130,6 +131,16 @@ struct RelayApp: App {
                     if let uri = MatrixURI(url: url) {
                         logger.info("Received deep link: \(url.absoluteString)")
                         matrixService.pendingDeepLink = uri
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    checkForPendingShare()
+                }
+                .onContinueUserActivity(NSStringFromClass(INSendMessageIntent.self)) { activity in
+                    if let intent = activity.interaction?.intent as? INSendMessageIntent,
+                       let roomId = intent.conversationIdentifier {
+                        logger.info("Received share suggestion for room: \(roomId)")
+                        selectedRoomId = roomId
                     }
                 }
                 .task {
@@ -255,6 +266,54 @@ struct RelayApp: App {
             trigger: nil
         )
         UNUserNotificationCenter.current().add(request)
+    }
+
+    /// Checks the app group container for a pending share from the share extension.
+    ///
+    /// The extension writes the share ID to `latest-share-id.txt` and activates
+    /// the app. This method reads that file, loads the corresponding pending share
+    /// record, navigates to the target room, and stages the attachments in the
+    /// compose bar for user review.
+    private func checkForPendingShare() {
+        guard let container = AppGroup.containerURL else { return }
+
+        let signalURL = container.appending(path: "latest-share-id.txt")
+        guard let idString = try? String(contentsOf: signalURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+              let shareId = UUID(uuidString: idString) else {
+            return
+        }
+
+        // Remove the signal file immediately to avoid re-processing.
+        try? FileManager.default.removeItem(at: signalURL)
+
+        let pendingShares = PendingShareStore.loadAll()
+        guard let share = pendingShares.first(where: { $0.id == shareId }) else {
+            logger.warning("Pending share not found: \(idString)")
+            return
+        }
+
+        logger.info("Share handoff: \(share.filenames.count) file(s) for room \(share.roomId)")
+
+        // Navigate to the target room.
+        selectedRoomId = share.roomId
+
+        // Resolve file URLs from the app group container and stage them.
+        let fileURLs = share.filenames.compactMap { PendingShareStore.fileURL(for: $0) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+
+        guard !fileURLs.isEmpty else {
+            logger.warning("No valid files found for pending share \(idString)")
+            PendingShareStore.remove(id: shareId)
+            return
+        }
+
+        // Stage attachments in the compose bar for the target room.
+        let draft = composeDraftStore.draft(for: share.roomId)
+        draft.stageAttachments(fileURLs, errorReporter: matrixService.errorReporter)
+
+        // Remove the pending share record (files will be cleaned up after send
+        // by TimelineViewModel.sendAttachment, which deletes the temp URL).
+        PendingShareStore.remove(id: shareId)
     }
 
     private func postVerificationNotification(request: IncomingVerificationRequest) {
