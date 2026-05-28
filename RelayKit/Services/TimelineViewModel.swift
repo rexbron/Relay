@@ -309,11 +309,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
 
     public func edit(messageId: String, newText: String, mentionedUserIds: [String] = []) async {
         guard let sdkTimeline else { return }
-        let itemId: EventOrTransactionId = if messageId.hasPrefix("$") {
-            .eventId(eventId: messageId)
-        } else {
-            .transactionId(transactionId: messageId)
-        }
+        let itemId = eventOrTransactionId(from: messageId)
         let content = messageEventContentFromMarkdown(md: newText)
             .withMentions(mentions: Mentions(userIds: mentionedUserIds, room: false))
         let editedContent = EditedContent.roomMessage(content: content)
@@ -327,11 +323,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
 
     public func toggleReaction(messageId: String, key: String) async {
         guard let sdkTimeline else { return }
-        let itemId: EventOrTransactionId = if messageId.hasPrefix("$") {
-            .eventId(eventId: messageId)
-        } else {
-            .transactionId(transactionId: messageId)
-        }
+        let itemId = eventOrTransactionId(from: messageId)
         do {
             _ = try await sdkTimeline.toggleReaction(itemId: itemId, key: key)
         } catch {
@@ -342,11 +334,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
 
     public func redact(messageId: String, reason: String? = nil) async {
         guard let sdkTimeline else { return }
-        let itemId: EventOrTransactionId = if messageId.hasPrefix("$") {
-            .eventId(eventId: messageId)
-        } else {
-            .transactionId(transactionId: messageId)
-        }
+        let itemId = eventOrTransactionId(from: messageId)
         do {
             try await sdkTimeline.redactEvent(eventOrTransactionId: itemId, reason: reason)
         } catch {
@@ -877,6 +865,14 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
     /// Uses the SDK's `uniqueId()` which remains constant across the
     /// local echo → server confirmation transition, preventing structural
     /// updates in the table's diffable data source.
+    /// Converts a message ID string into the SDK's ``EventOrTransactionId`` enum.
+    ///
+    /// Event IDs start with `$`; anything else is treated as a transaction ID
+    /// (local echo that hasn't been confirmed by the server yet).
+    private func eventOrTransactionId(from messageId: String) -> EventOrTransactionId {
+        messageId.hasPrefix("$") ? .eventId(eventId: messageId) : .transactionId(transactionId: messageId)
+    }
+
     private static func extractItemID(_ item: TimelineItem) -> String? {
         guard item.asEvent() != nil else { return nil }
         return item.uniqueId().id

@@ -257,13 +257,6 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
 
     /// Creates a new room and returns its room ID.
     ///
-    /// - Parameters:
-    ///   - name: The display name for the room.
-    ///   - topic: An optional topic description.
-    ///   - isPublic: Whether the room should be publicly joinable. Public rooms are not encrypted.
-    /// - Returns: The Matrix room ID of the newly created room.
-    func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String
-
     /// Creates a new room with detailed options and returns its room ID.
     ///
     /// - Parameter options: The room creation parameters.
@@ -804,7 +797,6 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func suspendTimeline(roomId: String) {}
     func resumeTimeline(roomId: String) async {}
     func joinRoom(idOrAlias: String) async throws {}
-    func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String { "" }
     func createRoom(options: CreateRoomOptions) async throws -> String { "" }
     func createDirectMessage(userId: String) async throws -> String { "" }
     func makeRoomDirectoryViewModel() -> (any RoomDirectoryViewModelProtocol)? { nil }
