@@ -138,13 +138,6 @@ private struct DeviceRow: View {
     let device: DeviceInfo
     var isVerified: Bool?
 
-    private static let relativeDateFormatter: RelativeDateTimeFormatter = {
-        // swiftlint:disable:next identifier_name
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .full
-        return f
-    }()
-
     private var iconName: String {
         if device.isCurrentDevice {
             return (isVerified == true) ? "checkmark.shield.fill" : "xmark.shield.fill"
@@ -186,11 +179,10 @@ private struct DeviceRow: View {
                         .foregroundStyle(.tertiary)
                         .textSelection(.enabled)
 
-                    // swiftlint:disable:next identifier_name
                     if let ts = device.lastSeenTimestamp {
                         Text("·")
                             .foregroundStyle(.tertiary)
-                        Text(Self.relativeDateFormatter.localizedString(for: ts, relativeTo: .now))
+                        Text(ts, format: .relative(presentation: .named))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

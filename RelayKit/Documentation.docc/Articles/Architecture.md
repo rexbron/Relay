@@ -60,4 +60,3 @@ SDK's internal state.
 ### Multi-Parameter Listeners
 - ``SendQueueUpdateListenerAdapter``
 - ``RoomAccountDataListenerAdapter``
-- ``SyncNotificationListenerAdapter``

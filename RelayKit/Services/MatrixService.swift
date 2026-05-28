@@ -1136,13 +1136,6 @@ public final class MatrixService: MatrixServiceProtocol {
         return messages
     }
 
-    // MARK: - Directory Search
-
-    public func searchDirectory(query: String) async throws -> [DirectoryRoom] {
-        guard let client else { return [] }
-        return try await directorySearch.search(query: query, client: client)
-    }
-
     // MARK: - Media
 
     public func avatarThumbnail(mxcURL: String, size: CGFloat) async -> NSImage? {

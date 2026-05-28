@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import AppKit
-import Foundation
 
 /// A file staged for sending, shown as a capsule in the compose bar.
 ///

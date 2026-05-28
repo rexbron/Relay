@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import AppKit
-import Foundation
 import OSLog
 
 private let logger = Logger(subsystem: "Relay", category: "PasteHandler")

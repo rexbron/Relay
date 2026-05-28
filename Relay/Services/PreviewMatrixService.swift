@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import AppKit
-import Foundation
 import RelayInterface
 
 /// A mock implementation of ``MatrixServiceProtocol`` for use in SwiftUI previews.
@@ -266,38 +265,6 @@ final class PreviewMatrixService: MatrixServiceProtocol {
                 lastSeenTimestamp: .now.addingTimeInterval(-86400 * 30)
             )
         ]
-    }
-
-    func searchDirectory(query: String) async throws -> [DirectoryRoom] {
-        let all = [
-            DirectoryRoom(
-                roomId: "!design:matrix.org", name: "Design Team",
-                topic: "UI/UX design discussion",
-                alias: "#design:matrix.org", memberCount: 42
-            ),
-            DirectoryRoom(
-                roomId: "!swift:matrix.org", name: "Swift Developers",
-                topic: "All things Swift",
-                alias: "#swift:matrix.org", memberCount: 1200,
-                isWorldReadable: true
-            ),
-            DirectoryRoom(
-                roomId: "!hq:matrix.org", name: "Matrix HQ",
-                topic: "General Matrix chat",
-                alias: "#matrix-hq:matrix.org", memberCount: 8500,
-                isWorldReadable: true
-            ),
-            DirectoryRoom(
-                roomId: "!rust:matrix.org", name: "Rust Programming",
-                topic: "Rust language discussion",
-                alias: "#rust:matrix.org", memberCount: 650
-            )
-        ]
-        guard !query.isEmpty else { return all }
-        return all.filter {
-            ($0.name ?? "").localizedCaseInsensitiveContains(query)
-                || ($0.alias ?? "").localizedCaseInsensitiveContains(query)
-        }
     }
 
     /// Sample room data used to populate the room list in previews.

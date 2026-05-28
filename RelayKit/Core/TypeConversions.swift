@@ -52,27 +52,4 @@ extension Optional<String> {
     }
 }
 
-// MARK: - Timestamp Conversions
 
-extension UInt64 {
-    /// Converts a millisecond timestamp to a `Date`.
-    ///
-    /// The Matrix SDK uses millisecond Unix timestamps. This property
-    /// converts them to Swift `Date` values.
-    ///
-    /// - Returns: A `Date` representing the timestamp.
-    public var matrixDate: Date {
-        Date(timeIntervalSince1970: TimeInterval(self) / 1000.0)
-    }
-}
-
-extension Optional<UInt64> {
-    /// Converts an optional millisecond timestamp to a `Date`.
-    ///
-    /// Returns `nil` if the value is `nil`.
-    ///
-    /// - Returns: A `Date` if the value exists, otherwise `nil`.
-    public var matrixDate: Date? {
-        self?.matrixDate
-    }
-}

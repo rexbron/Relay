@@ -22,7 +22,6 @@ import Foundation
 import LiveKit
 import MatrixRustSDK
 import os
-import OSLog
 import RelayInterface
 
 private let logger = Logger(subsystem: "RelayKit", category: "CallWidgetBridge")

@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import AppKit
-import Foundation
 import RelayInterface
 
 // MARK: - Parse Caches (MessageBubbleContent)

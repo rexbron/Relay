@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import AppKit
-import OSLog
 import os
 import RelayInterface
 import SwiftUI

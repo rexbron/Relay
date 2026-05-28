@@ -342,12 +342,6 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     ///   - isFavourite: `true` to pin the room, `false` to unpin it.
     func setFavourite(roomId: String, isFavourite: Bool) async throws
 
-    /// Searches the public room directory for rooms matching the query.
-    ///
-    /// - Parameter query: The search string to match against room names and aliases.
-    /// - Returns: A list of matching ``DirectoryRoom`` results.
-    func searchDirectory(query: String) async throws -> [DirectoryRoom]
-
     /// Sends a read receipt for the latest message in a room.
     ///
     /// - Parameters:
@@ -822,7 +816,6 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func leaveSpace(spaceId: String) async throws -> [LeaveSpaceChild] { [] }
     func confirmLeaveSpace(spaceId: String, roomIds: [String]) async throws {}
     func setFavourite(roomId: String, isFavourite: Bool) async throws {}
-    func searchDirectory(query: String) async throws -> [DirectoryRoom] { [] }
     func markAsRead(roomId: String, sendPublicReceipt: Bool) async {}
     func fullyReadEventId(roomId: String) async -> String? { nil }
     func sendTypingNotice(roomId: String, isTyping: Bool) async {}
