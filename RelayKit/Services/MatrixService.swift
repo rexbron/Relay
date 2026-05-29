@@ -520,7 +520,7 @@ public final class MatrixService: MatrixServiceProtocol {
     ///
     /// Use in methods whose API contract already throws.
     private func requireClient() throws -> ClientProxy {
-        let client = try requireClient()
+        guard let client else { throw RelayError.notLoggedIn }
         return client
     }
 
