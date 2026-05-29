@@ -60,9 +60,15 @@ struct TimelineRowView: View, Equatable {
     /// Called when this row appears on screen (for read receipt advancement).
     var onAppear: (MessageRow) -> Void
 
-    /// Observable swipe state from the table view controller. When the user
-    /// swipes this row, the offset and reply arrow are rendered here.
-    var swipeState: TimelineSwipeState?
+    /// The horizontal swipe offset for this row, or 0 when not swiped.
+    /// Pre-computed by the parent renderer from the shared swipe state so
+    /// that `TimelineRowView` does not need to observe the `@Observable`
+    /// swipe state object directly (which would invalidate every visible
+    /// row on each swipe frame).
+    var swipeOffset: CGFloat = 0
+
+    /// Whether the swipe action bar on this row is locked open.
+    var swipeIsLocked: Bool = false
 
     /// Explicitly provided actions (used by the NSTableView renderer where
     /// environment injection isn't possible on the concrete type).
@@ -85,6 +91,8 @@ struct TimelineRowView: View, Equatable {
             && lhs.row.info == rhs.row.info
             && lhs.row.isPaginationTrigger == rhs.row.isPaginationTrigger
             && lhs.isNewlyAppended == rhs.isNewlyAppended
+            && lhs.swipeOffset == rhs.swipeOffset
+            && lhs.swipeIsLocked == rhs.swipeIsLocked
             && lhs.showUnreadMarker == rhs.showUnreadMarker
             && lhs.firstUnreadMessageId == rhs.firstUnreadMessageId
             && lhs.highlightedMessageId == rhs.highlightedMessageId
@@ -94,18 +102,6 @@ struct TimelineRowView: View, Equatable {
     private var message: TimelineMessage { row.message }
     private var info: MessageGroupInfo { row.info }
 
-    /// The current swipe offset for this row, or 0 if not being swiped.
-    private var currentSwipeOffset: CGFloat {
-        guard let swipeState, swipeState.swipingMessageId == row.message.id else { return 0 }
-        return swipeState.offset
-    }
-
-    /// Whether the action bar on this row is locked open.
-    private var isSwipeLocked: Bool {
-        guard let swipeState, swipeState.swipingMessageId == row.message.id else { return false }
-        return swipeState.isLocked
-    }
-
     /// Whether this row should animate in.
     private var shouldAnimate: Bool { isNewlyAppended && !didAppear }
 
@@ -113,9 +109,9 @@ struct TimelineRowView: View, Equatable {
         rowContent
             .padding(.horizontal, 16)
             .environment(\.timelineActions, injectedActions ?? environmentActions)
-            .environment(\.swipeOffset, currentSwipeOffset)
-            .environment(\.swipeIsLocked, isSwipeLocked)
-            .offset(x: currentSwipeOffset)
+            .environment(\.swipeOffset, swipeOffset)
+            .environment(\.swipeIsLocked, swipeIsLocked)
+            .offset(x: swipeOffset)
             .opacity(shouldAnimate ? 0 : 1)
             .animation(
                 isNewlyAppended ? .easeOut(duration: 0.1) : nil,
@@ -136,7 +132,7 @@ struct TimelineRowView: View, Equatable {
     private var swipeActionBar: some View {
         // Scale the reply button when swiping past the lock threshold (100pt)
         // to hint that a long swipe (140pt+) triggers reply directly.
-        let longSwipeProgress = max(0, min((currentSwipeOffset - 100) / 80, 1.0))
+        let longSwipeProgress = max(0, min((swipeOffset - 100) / 80, 1.0))
         let replyScale = 1.0 + longSwipeProgress * 0.8
 
         return Button("Reply", systemImage: "arrowshape.turn.up.left.fill") {
@@ -147,7 +143,7 @@ struct TimelineRowView: View, Equatable {
         .font(.title3)
         .foregroundStyle(longSwipeProgress > 0 ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
         .buttonStyle(.plain)
-        .allowsHitTesting(isSwipeLocked)
+        .allowsHitTesting(swipeIsLocked)
     }
 
     @ViewBuilder
@@ -180,9 +176,9 @@ struct TimelineRowView: View, Equatable {
         } else {
             ZStack(alignment: .leading) {
                 // Action bar sits behind the message, revealed as the row slides right
-                if currentSwipeOffset > 0 {
+                if swipeOffset > 0 {
                     swipeActionBar
-                        .opacity(min(currentSwipeOffset / 60, 1.0))
+                        .opacity(min(swipeOffset / 60, 1.0))
                         .offset(x: message.isOutgoing ? 88 : -64,
                                 y: message.isOutgoing ? 0 : 8)
                 }

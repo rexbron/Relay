@@ -76,7 +76,8 @@ struct TimelineLazyVStackView: View {
                         highlightedMessageId: highlightedMessageId,
                         showURLPreviews: showURLPreviews,
                         onAppear: onAppear,
-                        swipeState: swipeState
+                        swipeOffset: swipeState.swipingMessageId == row.id ? swipeState.offset : 0,
+                        swipeIsLocked: swipeState.swipingMessageId == row.id && swipeState.isLocked
                     )
                     .id(row.id)
                     .onContinuousHover { phase in

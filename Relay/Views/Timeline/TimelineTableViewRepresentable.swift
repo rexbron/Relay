@@ -64,7 +64,6 @@ struct TimelineTableViewRepresentable: NSViewControllerRepresentable {
     }
 
     private func configureCallbacks(_ vc: TimelineTableViewController, context: Context) {
-        let swipeState = vc.swipeState
         let actions = actions
         vc.callbacks = .init(
             onNearBottomChanged: onNearBottomChanged,
@@ -74,7 +73,7 @@ struct TimelineTableViewRepresentable: NSViewControllerRepresentable {
             onSwipeReply: { row in
                 actions.reply(row.message)
             },
-            makeRowView: { row, isNewlyAppended in
+            makeRowView: { row, isNewlyAppended, swipeOffset, swipeIsLocked in
                 TimelineRowView(
                     row: row,
                     isNewlyAppended: isNewlyAppended,
@@ -83,7 +82,8 @@ struct TimelineTableViewRepresentable: NSViewControllerRepresentable {
                     highlightedMessageId: highlightedMessageId,
                     showURLPreviews: showURLPreviews,
                     onAppear: onAppear,
-                    swipeState: swipeState,
+                    swipeOffset: swipeOffset,
+                    swipeIsLocked: swipeIsLocked,
                     injectedActions: actions
                 )
             }

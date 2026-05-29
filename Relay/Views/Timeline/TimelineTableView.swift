@@ -196,7 +196,7 @@ final class TimelineTableViewController: NSViewController {
         var onPaginateForward: () -> Void = {}
         var onMessageAppeared: (MessageRow) -> Void = { _ in }
         var onSwipeReply: (MessageRow) -> Void = { _ in }
-        var makeRowView: (MessageRow, _ isNewlyAppended: Bool) -> TimelineRowView = { _, _ in
+        var makeRowView: (MessageRow, _ isNewlyAppended: Bool, _ swipeOffset: CGFloat, _ swipeIsLocked: Bool) -> TimelineRowView = { _, _, _, _ in
             fatalError("makeRowView not configured")
         }
     }
@@ -377,7 +377,9 @@ final class TimelineTableViewController: NSViewController {
             let messageRow = self.rows[row]
             let isNew = self.newlyAppendedMessageIDs.contains(messageRow.id)
             if isNew { self.consumeNewlyAppended(messageRow.id) }
-            let rowView = self.callbacks.makeRowView(messageRow, isNew)
+            let swipeOffset: CGFloat = self.swipeState.swipingMessageId == messageRow.id ? self.swipeState.offset : 0
+            let swipeIsLocked = self.swipeState.swipingMessageId == messageRow.id && self.swipeState.isLocked
+            let rowView = self.callbacks.makeRowView(messageRow, isNew, swipeOffset, swipeIsLocked)
             let reuseID = NSUserInterfaceItemIdentifier(messageRow.message.isSystemEvent ? "system" : "message")
 
             let hostView: NSHostingView<TimelineRowView>
@@ -824,7 +826,7 @@ extension TimelineTableViewController: NSTableViewDelegate {
             "heightOfRow" as StaticString,
             "cache miss: \(messageRow.id.prefix(8))"
         )
-        let rowView = callbacks.makeRowView(messageRow, false)
+        let rowView = callbacks.makeRowView(messageRow, false, 0, false)
         if let host = measurementHost {
             host.rootView = rowView
         } else {
