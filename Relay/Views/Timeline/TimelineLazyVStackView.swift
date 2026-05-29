@@ -196,7 +196,10 @@ private struct ScrollMetrics: Equatable {
 final class SwipeScrollHandler {
     var swipeState = TimelineSwipeState()
     var hoveredRowID: String?
-    var rows: [MessageRow] = []
+    var rows: [MessageRow] = [] {
+        didSet { rowsByID = Dictionary(uniqueKeysWithValues: rows.map { ($0.message.id, $0) }) }
+    }
+    private var rowsByID: [String: MessageRow] = [:]
     var onReply: (TimelineMessage) -> Void = { _ in }
     var onDismiss: () -> Void = {}
 
@@ -289,7 +292,7 @@ final class SwipeScrollHandler {
 
     private func applyDelta() {
         guard let id = swipingMessageID else { return }
-        let row = rows.first { $0.message.id == id }
+        let row = rowsByID[id]
         guard row?.message.isSystemEvent != true else { return }
 
         if swipeState.isLocked {
@@ -304,7 +307,7 @@ final class SwipeScrollHandler {
             onDismiss()
             return
         }
-        guard let row = rows.first(where: { $0.message.id == id }),
+        guard let row = rowsByID[id],
               !row.message.isSystemEvent else {
             onDismiss()
             return
