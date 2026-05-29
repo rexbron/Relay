@@ -59,7 +59,8 @@ struct TimelineLazyVStackView: View {
     @State private var swipeState = TimelineSwipeState()
     @State private var swipeHandler = SwipeScrollHandler()
     @State private var paginatingBackward = false
-    @State private var newlyAppendedIDs: Set<String> = []
+    @State private var previousLastRowID: String?
+    @State private var initialLoadComplete = false
 
     // MARK: - Body
 
@@ -69,7 +70,9 @@ struct TimelineLazyVStackView: View {
                 ForEach(rows) { row in
                     TimelineRowView(
                         row: row,
-                        isNewlyAppended: newlyAppendedIDs.contains(row.id),
+                        isNewlyAppended: isLive && initialLoadComplete
+                            && row.id == rows.last?.id
+                            && row.id != previousLastRowID,
                         showUnreadMarker: showUnreadMarker,
                         firstUnreadMessageId: firstUnreadMessageId,
                         highlightedMessageId: highlightedMessageId,
@@ -133,20 +136,16 @@ struct TimelineLazyVStackView: View {
         .onChange(of: rows.count) {
             swipeHandler.rows = rows
         }
-        .onChange(of: rows.last?.id) { oldLastID, newLastID in
-            guard isLive, oldLastID != nil, let newLastID else { return }
-            // Defer the state mutation to the next run loop turn so it
-            // doesn't land in the same layout pass that triggered this
-            // onChange.  Mutating @State during a layout/constraint pass
-            // causes every visible MessageTextView (NSViewRepresentable)
-            // to re-measure and invalidate constraints, which AppKit
-            // counts as a new "Update Constraints in Window" pass.  With
-            // enough visible rows the pass count exceeds the view count
-            // and AppKit throws.
+        .onChange(of: rows.last?.id) {
+            // Track the last row ID so the ForEach can determine whether
+            // a row is newly appended (its ID differs from the previous
+            // last). Deferred by one run-loop turn to avoid mutating
+            // @State during the same layout pass that triggered this
+            // onChange, which can cause AppKit constraint update issues
+            // with NSViewRepresentable rows.
             Task { @MainActor in
-                newlyAppendedIDs.insert(newLastID)
-                try? await Task.sleep(for: .milliseconds(300))
-                newlyAppendedIDs.remove(newLastID)
+                previousLastRowID = rows.last?.id
+                initialLoadComplete = true
             }
         }
     }
