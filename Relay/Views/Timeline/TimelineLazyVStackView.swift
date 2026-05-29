@@ -134,8 +134,8 @@ struct TimelineLazyVStackView: View {
         .onChange(of: hoveredRowID) { _, newValue in
             swipeHandler.hoveredRowID = newValue
         }
-        .onChange(of: rows) { oldValue, newValue in
-            swipeHandler.rows = newValue
+        .onChange(of: rows.count) {
+            swipeHandler.rows = rows
         }
         .onChange(of: rows.last?.id) { oldLastID, newLastID in
             guard isLive, oldLastID != nil, let newLastID else { return }
