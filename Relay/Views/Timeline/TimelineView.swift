@@ -844,7 +844,8 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
 
     /// The messages to display, with system events filtered based on user preferences.
     private var filteredMessages: [TimelineMessage] {
-        viewModel.messages.filter { message in
+        if showMembershipEvents && showStateEvents { return viewModel.messages }
+        return viewModel.messages.filter { message in
             switch message.kind {
             case .membership, .profileChange:
                 return showMembershipEvents
