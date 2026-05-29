@@ -57,7 +57,6 @@ struct TimelineLazyVStackView: View {
     // MARK: - Private State
 
     @State private var swipeState = TimelineSwipeState()
-    @State private var hoveredRowID: String?
     @State private var swipeHandler = SwipeScrollHandler()
     @State private var paginatingBackward = false
     @State private var newlyAppendedIDs: Set<String> = []
@@ -82,8 +81,8 @@ struct TimelineLazyVStackView: View {
                     .id(row.id)
                     .onContinuousHover { phase in
                         switch phase {
-                        case .active: hoveredRowID = row.id
-                        case .ended: if hoveredRowID == row.id { hoveredRowID = nil }
+                        case .active: swipeHandler.hoveredRowID = row.id
+                        case .ended: if swipeHandler.hoveredRowID == row.id { swipeHandler.hoveredRowID = nil }
                         }
                     }
                 }
@@ -131,9 +130,6 @@ struct TimelineLazyVStackView: View {
             swipeHandler.rows = rows
         }
         .onDisappear { swipeHandler.stopMonitoring() }
-        .onChange(of: hoveredRowID) { _, newValue in
-            swipeHandler.hoveredRowID = newValue
-        }
         .onChange(of: rows.count) {
             swipeHandler.rows = rows
         }
