@@ -112,7 +112,7 @@ struct TimelineRowView: View, Equatable {
     var body: some View {
         rowContent
             .padding(.horizontal, 16)
-            .environment(\.timelineActions, actions)
+            .environment(\.timelineActions, injectedActions ?? environmentActions)
             .environment(\.swipeOffset, currentSwipeOffset)
             .environment(\.swipeIsLocked, isSwipeLocked)
             .offset(x: currentSwipeOffset)

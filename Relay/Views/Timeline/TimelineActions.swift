@@ -19,10 +19,18 @@ import SwiftUI
 /// eliminating prop-drilling of closures through ``TimelineRowView``,
 /// ``MessageView``, ``MessageBubbleContent``, and ``ReplyPreviewBubble``.
 ///
+/// Stored as a reference type so that SwiftUI's environment comparison uses
+/// identity (`===`). As long as the same instance is injected, child views
+/// are not invalidated when a parent re-evaluates its body.
+///
 /// Injected once at the renderer level (``TimelineTableViewRepresentable`` or
 /// ``TimelineLazyVStackView``) and read by any descendant view that needs to
 /// dispatch a user action.
-struct TimelineActions {
+final class TimelineActions: Equatable {
+    nonisolated static func == (lhs: TimelineActions, rhs: TimelineActions) -> Bool {
+        lhs === rhs
+    }
+
     /// Toggles a reaction on a message. Parameters: (event ID, emoji key).
     var toggleReaction: (String, String) -> Void = { _, _ in }
 
@@ -54,12 +62,17 @@ struct TimelineActions {
     /// The Matrix user ID of the signed-in user. Used to determine whether
     /// replied-to messages are outgoing.
     var currentUserID: String?
+
+    /// Creates a ``TimelineActions`` with default (no-op) callbacks.
+    init(currentUserID: String? = nil) {
+        self.currentUserID = currentUserID
+    }
 }
 
 // MARK: - Environment Key
 
 private struct TimelineActionsKey: EnvironmentKey {
-    static let defaultValue = TimelineActions()
+    @MainActor static let defaultValue = TimelineActions()
 }
 
 extension EnvironmentValues {

@@ -78,6 +78,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     @State private var memberRefreshTask: Task<Void, Never>?
     @State private var cachedMessageRows: [MessageRow]
     @State private var isTimelineDropTargeted = false
+    @State private var timelineActionsRef = TimelineActions()
 
     init(
         roomId: String,
@@ -170,7 +171,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                             isLastInGroup: true,
                             showSenderName: !reply.isOutgoing
                         )
-                        .environment(\.timelineActions, TimelineActions(currentUserID: matrixService.userId()))
+                        .environment(\.timelineActions, timelineActionsRef)
                         .allowsHitTesting(false)
                         .padding(.horizontal, 16)
                     }
@@ -227,12 +228,18 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 compose = composeDraftStore.draft(for: roomId)
             }
 
+            // Bind the timeline action callbacks once. The closures capture
+            // @State / @Environment references which remain valid for the
+            // lifetime of this view.
+            configureTimelineActions()
+
             // Cache isDirect once — avoids O(n) room scan on every body evaluation.
             isDirectRoom = matrixService.rooms.first(where: { $0.id == roomId })?.isDirect ?? false
 
             // Fetch room permissions to determine moderator capabilities.
             let details = await matrixService.roomDetails(roomId: roomId)
             roomPermissions = details?.permissions
+            timelineActionsRef.permissions = roomPermissions
 
             // Seed the row cache immediately so cached messages from a
             // previously visited room render in the first frame, before
@@ -431,45 +438,47 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             .overlay { loadingOrEmptyOverlay }
     }
 
-    /// The shared set of timeline interaction callbacks, built once and
-    /// injected into whichever renderer is active.
-    private var timelineActions: TimelineActions {
-        TimelineActions(
-            toggleReaction: { messageId, key in
-                Task { await viewModel.toggleReaction(messageId: messageId, key: key) }
-            },
-            tapReply: { eventID in
-                if let message = viewModel.messages.first(where: { $0.eventID == eventID }) {
-                    scrollToRow(id: message.id)
-                    highlightedMessageId = eventID
-                } else {
-                    focusedMessageId = eventID
-                }
-            },
-            reply: { message in
-                withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
-                    compose.replyingTo = message
-                }
-            },
-            avatarDoubleTap: { message in
-                onUserTap?(UserProfile(message: message))
-            },
-            userTap: { userId in
-                let member = compose.members.first(where: { $0.userId == userId })
-                let profile = member.map { UserProfile(member: $0) }
-                    ?? UserProfile(userId: userId)
-                onUserTap?(profile)
-            },
-            roomTap: onRoomTap,
-            contextAction: { action in
-                handleContextAction(action)
-            },
-            highlightDismissed: {
-                highlightedMessageId = nil
-            },
-            permissions: roomPermissions,
-            currentUserID: matrixService.userId()
-        )
+    /// Populates the stable ``TimelineActions`` instance with the current
+    /// closures and values. Called once from `.task` to bind the callbacks
+    /// that capture `@State` / `@Environment` references. Because the
+    /// instance identity is stable, re-injecting it into the environment
+    /// does not invalidate child views.
+    private func configureTimelineActions() {
+        let actions = timelineActionsRef
+        actions.toggleReaction = { messageId, key in
+            Task { await self.viewModel.toggleReaction(messageId: messageId, key: key) }
+        }
+        actions.tapReply = { eventID in
+            if let message = self.viewModel.messages.first(where: { $0.eventID == eventID }) {
+                self.scrollToRow(id: message.id)
+                self.highlightedMessageId = eventID
+            } else {
+                self.focusedMessageId = eventID
+            }
+        }
+        actions.reply = { message in
+            withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
+                self.compose.replyingTo = message
+            }
+        }
+        actions.avatarDoubleTap = { message in
+            self.onUserTap?(UserProfile(message: message))
+        }
+        actions.userTap = { userId in
+            let member = self.compose.members.first(where: { $0.userId == userId })
+            let profile = member.map { UserProfile(member: $0) }
+                ?? UserProfile(userId: userId)
+            self.onUserTap?(profile)
+        }
+        actions.roomTap = onRoomTap
+        actions.contextAction = { action in
+            self.handleContextAction(action)
+        }
+        actions.highlightDismissed = {
+            self.highlightedMessageId = nil
+        }
+        actions.permissions = roomPermissions
+        actions.currentUserID = matrixService.userId()
     }
 
     /// Renderer-level callbacks shared by both timeline renderers.
@@ -503,7 +512,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 firstUnreadMessageId: viewModel.firstUnreadMessageId,
                 highlightedMessageId: highlightedMessageId,
                 showURLPreviews: showURLPreviews,
-                actions: timelineActions,
+                actions: timelineActionsRef,
                 onAppear: rendererOnAppear,
                 onNearBottomChanged: rendererOnNearBottomChanged,
                 onPaginateBackward: rendererOnPaginateBackward,
@@ -522,7 +531,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 firstUnreadMessageId: viewModel.firstUnreadMessageId,
                 highlightedMessageId: highlightedMessageId,
                 showURLPreviews: showURLPreviews,
-                actions: timelineActions,
+                actions: timelineActionsRef,
                 onAppear: rendererOnAppear,
                 onNearBottomChanged: rendererOnNearBottomChanged,
                 onPaginateBackward: rendererOnPaginateBackward,
