@@ -165,7 +165,8 @@ struct TimelineLazyVStackView: View {
             swipeState.offset = 0
             swipeState.isLocked = false
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
             swipeState.swipingMessageId = nil
         }
     }
