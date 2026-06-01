@@ -430,14 +430,34 @@ final class ComposeViewModel {
 
     /// Converts the draft text + mentions into markdown with Matrix.to links.
     ///
-    /// Scans the text for each mention's user ID and replaces occurrences with
-    /// a Matrix.to markdown link: `[DisplayName](https://matrix.to/#/@user:server)`.
+    /// Builds the result in a single forward pass: the original text is
+    /// copied segment-by-segment, and each mention's user ID is replaced
+    /// with a Matrix.to markdown link inline. Because the output is built
+    /// sequentially and the original text is only read (never searched
+    /// after mutation), duplicate mentions of the same user are each
+    /// substituted exactly once.
     func markdownWithMentions() -> String {
-        var result = text
+        guard !mentions.isEmpty else { return text }
+
+        // Locate each mention's range in the original text, left-to-right.
+        var ranges: [(range: Range<String.Index>, mention: Mention)] = []
+        var searchStart = text.startIndex
         for mention in mentions {
-            let link = "[\(mention.displayName)](https://matrix.to/#/\(mention.userId))"
-            result = result.replacing(mention.userId, with: link)
+            if let range = text.range(of: mention.userId, range: searchStart..<text.endIndex) {
+                ranges.append((range, mention))
+                searchStart = range.upperBound
+            }
         }
+
+        // Build the markdown string in a single forward pass.
+        var result = ""
+        var cursor = text.startIndex
+        for (range, mention) in ranges {
+            result += text[cursor..<range.lowerBound]
+            result += "[\(mention.displayName)](https://matrix.to/#/\(mention.userId))"
+            cursor = range.upperBound
+        }
+        result += text[cursor..<text.endIndex]
         return result
     }
 
