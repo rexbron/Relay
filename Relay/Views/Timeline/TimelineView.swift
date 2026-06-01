@@ -810,7 +810,8 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
         /[#@!][a-zA-Z0-9._=\-\/]+:[a-zA-Z0-9.\-]+(:[0-9]+)?/
 
     /// Returns the first HTTP(S) URL found in the given string, excluding
-    /// `matrix.to` links and false positives from Matrix identifiers.
+    /// `matrix.to` links, false positives from Matrix identifiers, and bare
+    /// URLs without an explicit scheme (e.g. `example.com`).
     static func firstPreviewURL(in body: String) -> URL? {
         urlCache.value(forKey: body) {
             guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
@@ -826,11 +827,20 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 guard let url = match.url,
                       let scheme = url.scheme?.lowercased(),
                       scheme == "https" || scheme == "http",
-                      url.host?.lowercased() != "matrix.to" else { continue }
+                      url.host?.lowercased() != "matrix.to",
+                      let matchRange = Range(match.range, in: body) else { continue }
 
                 // Skip URLs whose detected range overlaps a Matrix identifier.
-                if let matchRange = Range(match.range, in: body),
-                   identifierRanges.contains(where: { $0.overlaps(matchRange) }) {
+                if identifierRanges.contains(where: { $0.overlaps(matchRange) }) {
+                    continue
+                }
+
+                // Only show previews for URLs with an explicit scheme in the
+                // original text. NSDataDetector fabricates "http://" for bare
+                // hostnames like "example.com" — skip those.
+                let originalText = body[matchRange]
+                guard originalText.lowercased().hasPrefix("http://")
+                   || originalText.lowercased().hasPrefix("https://") else {
                     continue
                 }
 
