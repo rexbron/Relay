@@ -205,12 +205,12 @@ struct RelayApp: App {
             case .mute:
                 return total
             case .mentionsAndKeywordsOnly:
-                return total + room.unreadMentions
+                return total + room.highlightCount
             case .allMessages:
-                return total + room.unreadMessages
+                return total + room.notificationCount
             case nil:
-                // Default: DMs count all messages, groups count mentions only
-                return room.isDirect ? total + room.unreadMessages : total + room.unreadMentions
+                // Default: DMs count all notifications, groups count highlights only
+                return room.isDirect ? total + room.notificationCount : total + room.highlightCount
             }
         }
     }

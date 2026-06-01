@@ -103,8 +103,8 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func sendTypingNotice(roomId: String, isTyping: Bool) async {}
     func markAsRead(roomId: String, sendPublicReceipt: Bool) async {
         if let room = rooms.first(where: { $0.id == roomId }) {
-            room.unreadMessages = 0
-            room.unreadMentions = 0
+            room.notificationCount = 0
+            room.highlightCount = 0
         }
     }
     func fullyReadEventId(roomId: String) async -> String? { nil }
@@ -280,8 +280,8 @@ final class PreviewMatrixService: MatrixServiceProtocol {
                 options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
             ),
             lastMessageTimestamp: .now.addingTimeInterval(-300),
-            unreadCount: 3,
-            unreadMentions: 1,
+            notificationCount: 3,
+            highlightCount: 1,
             isDirect: false,
             pinnedEventIds: ["$pinned1", "$pinned2"],
             isFavourite: true,
@@ -297,7 +297,6 @@ final class PreviewMatrixService: MatrixServiceProtocol {
                 options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
             ),
             lastMessageTimestamp: .now.addingTimeInterval(-7200),
-            unreadCount: 0,
             isDirect: true,
             isFavourite: true,
             parentSpaceIds: ["!space-friends:matrix.org"]
@@ -310,7 +309,6 @@ final class PreviewMatrixService: MatrixServiceProtocol {
             lastAuthor: nil,
             lastMessage: nil,
             lastMessageTimestamp: nil,
-            unreadCount: 0,
             isDirect: false,
             notificationMode: .mute,
             parentSpaceIds: ["!space-work:matrix.org"]
@@ -322,7 +320,7 @@ final class PreviewMatrixService: MatrixServiceProtocol {
             lastAuthor: "Charlie",
             lastMessage: AttributedString("Sent an image"),
             lastMessageTimestamp: .now.addingTimeInterval(-86400 * 2),
-            unreadCount: 12,
+            notificationCount: 12,
             isDirect: true,
             parentSpaceIds: ["!space-friends:matrix.org"]
         ),

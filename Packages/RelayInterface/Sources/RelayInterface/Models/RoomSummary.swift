@@ -61,11 +61,19 @@ public final class RoomSummary: Identifiable {
     /// The timestamp of the most recent message, used for sorting the room list.
     public var lastMessageTimestamp: Date?
 
-    /// The number of unread messages in this room.
-    public var unreadMessages: UInt
+    /// The server-side unread notification count for this room.
+    ///
+    /// This value comes from the homeserver's `/sync` response and reflects
+    /// the user's push rules. It counts events that would generate a notification,
+    /// excluding state events like name or avatar changes (unless the user has
+    /// customized their push rules to include them).
+    public var notificationCount: UInt
 
-    /// The number of unread messages that mention the current user.
-    public var unreadMentions: UInt
+    /// The server-side highlight count for this room.
+    ///
+    /// Counts unread events that triggered a highlight (mention or keyword match)
+    /// according to the user's push rules.
+    public var highlightCount: UInt
 
     /// Whether this room is a direct message (one-to-one) conversation.
     public var isDirect: Bool
@@ -98,22 +106,15 @@ public final class RoomSummary: Identifiable {
     /// in a dedicated "Pinned" section at the top of the room list sidebar.
     public var isFavourite: Bool
 
-    /// Whether this room has an unread message that matched a notification keyword.
-    ///
-    /// The SDK's `highlightCount` may not include keyword push-rule matches, so this
-    /// flag is set by client-side keyword matching in the room list manager. It is
-    /// cleared when the room is marked as read.
-    public var hasKeywordHighlight: Bool = false
-
     /// Whether unread counts were optimistically cleared by ``markAsRead``.
     ///
     /// When `true`, the room list manager should not overwrite the cleared counts
     /// with stale SDK values. The flag is reset when the SDK itself reports zero
-    /// unread messages, confirming the server has processed the read receipt.
+    /// notifications, confirming the server has processed the read receipt.
     public var isOptimisticallyCleared: Bool = false
 
-    /// The SDK's ``numUnreadMessages`` at the moment the room was optimistically
-    /// marked as read. If the SDK later reports a count *higher* than this value,
+    /// The server's ``notificationCount`` at the moment the room was optimistically
+    /// marked as read. If the server later reports a count *higher* than this value,
     /// new messages arrived after the read receipt was sent and the count should
     /// be accepted rather than suppressed.
     public var optimisticClearedBaseline: UInt = 0
@@ -153,8 +154,8 @@ public final class RoomSummary: Identifiable {
     ///   - avatarURL: The `mxc://` URL for the room avatar.
     ///   - lastMessage: A rich text preview of the most recent message.
     ///   - lastMessageTimestamp: The timestamp of the most recent message.
-    ///   - unreadCount: The number of unread messages.
-    ///   - unreadMentions: The number of unread mentions.
+    ///   - notificationCount: The server-side unread notification count.
+    ///   - highlightCount: The server-side highlight (mention/keyword) count.
     ///   - isDirect: Whether this is a direct message conversation.
     ///   - canonicalAlias: The canonical alias for the room.
     ///   - pinnedEventIds: The event IDs of pinned messages in this room.
@@ -173,8 +174,8 @@ public final class RoomSummary: Identifiable {
         lastAuthor: String? = nil,
         lastMessage: AttributedString? = nil,
         lastMessageTimestamp: Date? = nil,
-        unreadCount: UInt = 0,
-        unreadMentions: UInt = 0,
+        notificationCount: UInt = 0,
+        highlightCount: UInt = 0,
         isDirect: Bool = false,
         canonicalAlias: String? = nil,
         pinnedEventIds: [String] = [],
@@ -193,8 +194,8 @@ public final class RoomSummary: Identifiable {
         self.lastAuthor = lastAuthor
         self.lastMessage = lastMessage
         self.lastMessageTimestamp = lastMessageTimestamp
-        self.unreadMessages = unreadCount
-        self.unreadMentions = unreadMentions
+        self.notificationCount = notificationCount
+        self.highlightCount = highlightCount
         self.isDirect = isDirect
         self.canonicalAlias = canonicalAlias
         self.pinnedEventIds = pinnedEventIds

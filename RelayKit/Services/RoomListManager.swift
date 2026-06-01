@@ -80,10 +80,9 @@ final class RoomListManager {
 
     /// The user's notification keywords, used for client-side keyword matching.
     ///
-    /// The Matrix Rust SDK's `highlightCount` and `numUnreadMentions` may not
-    /// reliably include keyword push-rule matches. Room entries check the latest
-    /// message body against these keywords to determine whether a new message
-    /// should be treated as a mention for notification and unread indicator purposes.
+    /// Used by room entries to detect keyword matches in new messages for
+    /// system notification banners. The server-side `highlightCount` is the
+    /// authoritative source for badge display.
     var notificationKeywords: [String] = []
 
     /// Callback invoked after the room summaries list is rebuilt.
@@ -464,7 +463,7 @@ private final class RoomEntry: Identifiable {
     }
 
     private func applyRoomInfo(_ info: RoomInfo) {
-        let previousUnread = summary.unreadMessages
+        let previousNotifications = summary.notificationCount
         summary.name = info.displayName ?? room.displayName() ?? id
         summary.topic = info.topic
         // For DM rooms without an explicit room avatar, fall back to the
@@ -477,45 +476,32 @@ private final class RoomEntry: Identifiable {
             summary.avatarURL = nil
         }
 
-        // When the room was optimistically marked as read, the SDK may still
-        // report stale non-zero unread counts until the server processes the
-        // read receipt. Skip overwriting the cleared values in that case.
-        // Once the SDK itself reports zero, clear the optimistic flag.
+        // Use the server-side notification and highlight counts from /sync.
+        // These respect the user's push rules and are the authoritative source
+        // of truth for unread badge state.
         //
-        // However, if the SDK reports a count *higher* than what was present
-        // when markAsRead was called, new messages arrived after the read
-        // receipt was sent and we should accept the SDK's value.
-        let sdkUnread = UInt(info.numUnreadMessages)
-        let sdkMentions = UInt(info.numUnreadMentions)
+        // When the room was optimistically marked as read, the server may still
+        // report stale non-zero counts until it processes the read receipt.
+        // Skip overwriting the cleared values in that case.
+        let serverNotifications = UInt(info.notificationCount)
+        let serverHighlights = UInt(info.highlightCount)
         if summary.isOptimisticallyCleared {
-            if sdkUnread == 0 && sdkMentions == 0 {
+            if serverNotifications == 0 && serverHighlights == 0 {
                 // Server confirmed — safe to clear the guard.
                 summary.isOptimisticallyCleared = false
-                summary.unreadMentions = 0
-                summary.hasKeywordHighlight = false
-            } else if sdkUnread > summary.optimisticClearedBaseline {
+                summary.highlightCount = 0
+            } else if serverNotifications > summary.optimisticClearedBaseline {
                 // New messages arrived after the read receipt was sent.
-                // Accept the SDK's values and clear the optimistic flag.
+                // Accept the server's values and clear the optimistic flag.
                 summary.isOptimisticallyCleared = false
-                summary.unreadMessages = sdkUnread
-                if sdkMentions > summary.unreadMentions {
-                    summary.unreadMentions = sdkMentions
-                }
+                summary.notificationCount = serverNotifications
+                summary.highlightCount = serverHighlights
             }
-            // Otherwise keep the optimistically-cleared zeros — the SDK
+            // Otherwise keep the optimistically-cleared zeros — the server
             // is still echoing stale counts from before the read receipt.
         } else {
-            summary.unreadMessages = sdkUnread
-            // Use the SDK's mention count as a floor; our client-side detection
-            // may have already incremented unreadMentions higher than what the
-            // SDK reports (e.g. for keyword matches). When the SDK value drops
-            // to zero (room marked as read), reset our count too.
-            if sdkMentions == 0 && sdkUnread == 0 {
-                summary.unreadMentions = 0
-                summary.hasKeywordHighlight = false
-            } else if sdkMentions > summary.unreadMentions {
-                summary.unreadMentions = sdkMentions
-            }
+            summary.notificationCount = serverNotifications
+            summary.highlightCount = serverHighlights
         }
         summary.isDirect = info.isDirect
         summary.canonicalAlias = info.canonicalAlias
@@ -553,8 +539,8 @@ private final class RoomEntry: Identifiable {
             summary.notificationMode = nil
         }
 
-        // Log significant room info changes (unread count transitions).
-        if summary.unreadMessages != previousUnread {
+        // Log significant room info changes (notification count transitions).
+        if summary.notificationCount != previousNotifications {
             var meta = ["roomName": summary.name]
             if let alias = summary.canonicalAlias {
                 meta["roomAlias"] = alias
@@ -562,7 +548,7 @@ private final class RoomEntry: Identifiable {
             activityLog?.log(
                 category: .roomList, severity: .debug, source: "RoomEntry",
                 summary: "Room info updated: \(summary.canonicalAlias ?? summary.name)",
-                detail: "Unread: \(previousUnread) → \(summary.unreadMessages), mentions: \(summary.unreadMentions)",
+                detail: "Notifications: \(previousNotifications) → \(summary.notificationCount), highlights: \(summary.highlightCount)",
                 roomId: id,
                 metadata: meta
             )
@@ -649,11 +635,6 @@ private final class RoomEntry: Identifiable {
                     currentUserId: highlightContext?.userId,
                     keywords: highlightContext?.keywords ?? []
                 )
-            }
-
-            if isMention {
-                self.summary.unreadMentions += 1
-                self.summary.hasKeywordHighlight = true
             }
 
             self.onNotificationEvent?(RoomNotificationEvent(

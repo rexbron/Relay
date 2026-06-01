@@ -22,38 +22,32 @@ struct RoomListRow: View {
 
     /// Whether the room name should appear bold (has notification-worthy unread activity).
     private var hasVisibleUnread: Bool {
-        switch room.notificationMode {
-        case .mute:
-            return false
-        case .mentionsAndKeywordsOnly:
-            return room.unreadMentions > 0
-        case .allMessages, nil:
-            return room.unreadMessages > 0 || room.unreadMentions > 0
-        }
+        guard !room.isMuted else { return false }
+        return room.notificationCount > 0
     }
 
-    /// The color of the unread indicator dot.
+    /// Whether the trailing unread badge should be visible.
+    private var showBadge: Bool {
+        guard !room.isMuted else { return false }
+        return room.notificationCount > 0
+    }
+
+    /// The color of the unread notification badge.
     ///
-    /// - Red: unread mentions, keyword matches, or any unread messages in a DM
-    /// - Accent (blue): unread messages in group rooms
-    private var dotColor: Color {
-        if room.unreadMentions > 0 || room.isDirect || room.hasKeywordHighlight {
+    /// - Red: highlights (mentions/keywords) or any notifications in a DM
+    /// - Accent (blue): plain notifications in group rooms
+    private var badgeColor: Color {
+        if room.highlightCount > 0 || room.isDirect {
             return .red
         }
         return .accentColor
-    }
-
-    /// Whether any dot should be visible.
-    private var showDot: Bool {
-        guard !room.isMuted else { return false }
-        return room.unreadMessages > 0 || room.unreadMentions > 0
     }
 
     var body: some View {
         HStack(spacing: 10) {
             AvatarView(name: room.name, mxcURL: room.avatarURL, size: 48)
                 .overlay(alignment: .topTrailing) {
-                    badge
+                    muteIndicator
                 }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -73,13 +67,19 @@ struct RoomListRow: View {
                     }
                 }
 
-                if let msg = room.lastMessage {
-                    let author = RoomListRow.formatAuthor(room.lastAuthor)
-                    Text(author + msg.visualizeLinksOnly())
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                HStack {
+                    if let msg = room.lastMessage {
+                        let author = RoomListRow.formatAuthor(room.lastAuthor)
+                        Text(author + msg.visualizeLinksOnly())
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+
+                    Spacer()
+
+                    notificationBadge
                 }
             }
             .padding(4)
@@ -87,22 +87,28 @@ struct RoomListRow: View {
         .padding(.vertical, 8)
     }
 
-    /// Badge overlay on the top-trailing corner of the avatar.
-    ///
-    /// Shows a colored unread dot for rooms with unread activity, or a mute
-    /// icon for muted rooms.
+    /// A mute icon overlay on the avatar for muted rooms.
     @ViewBuilder
-    private var badge: some View {
+    private var muteIndicator: some View {
         if room.isMuted {
             Image(systemName: "bell.slash.fill")
                 .font(.system(size: 8))
                 .foregroundStyle(.white)
                 .frame(width: 14, height: 14)
-                .background(.gray, in: Circle())
-        } else if showDot {
-            Circle()
-                .fill(dotColor)
-                .frame(width: 14, height: 14)
+                .background(.gray, in: .circle)
+        }
+    }
+
+    /// A numeric badge at the trailing edge of the row showing the notification count.
+    @ViewBuilder
+    private var notificationBadge: some View {
+        if showBadge {
+            Text(room.notificationCount, format: .number)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 5)
+                .frame(minWidth: 18, minHeight: 18)
+                .background(badgeColor, in: .capsule)
         }
     }
 }
@@ -165,15 +171,15 @@ extension AttributedString {
 
 // MARK: - Previews
 
-#Preview("Unread Mentions") {
+#Preview("Highlights") {
     RoomListRow(room: RoomSummary(
         id: "!design:matrix.org",
         name: "Design Team",
         lastAuthor: "Alice",
         lastMessage: AttributedString("Let's finalize the mockups tomorrow"),
         lastMessageTimestamp: .now.addingTimeInterval(-300),
-        unreadCount: 3,
-        unreadMentions: 1
+        notificationCount: 3,
+        highlightCount: 1
     ))
     .frame(width: 300)
 }
@@ -185,33 +191,33 @@ extension AttributedString {
         lastAuthor: "Bob",
         lastMessage: AttributedString("General discussion"),
         lastMessageTimestamp: .now.addingTimeInterval(-7200),
-        unreadCount: 42,
+        notificationCount: 42,
         notificationMode: .mute
     ))
     .frame(width: 300)
 }
 
-#Preview("Mentions Only — Activity") {
+#Preview("Mentions Only — No Highlights") {
     RoomListRow(room: RoomSummary(
         id: "!dev:matrix.org",
         name: "Development",
         lastAuthor: "Alice",
         lastMessage: AttributedString("Merged the refactor PR"),
         lastMessageTimestamp: .now.addingTimeInterval(-600),
-        unreadCount: 5,
+        notificationCount: 5,
         notificationMode: .mentionsAndKeywordsOnly
     ))
     .frame(width: 300)
 }
 
-#Preview("Unread Messages") {
+#Preview("Notifications") {
     RoomListRow(room: RoomSummary(
         id: "!general:matrix.org",
         name: "General",
         lastAuthor: "Charlie",
         lastMessage: AttributedString("Has anyone tried the new build?"),
         lastMessageTimestamp: .now.addingTimeInterval(-1800),
-        unreadCount: 7
+        notificationCount: 7
     ))
     .frame(width: 300)
 }
@@ -223,7 +229,7 @@ extension AttributedString {
         lastAuthor: "Bob",
         lastMessage: AttributedString("Hey, are you free for a call?"),
         lastMessageTimestamp: .now.addingTimeInterval(-120),
-        unreadCount: 2,
+        notificationCount: 2,
         isDirect: true
     ))
     .frame(width: 300)

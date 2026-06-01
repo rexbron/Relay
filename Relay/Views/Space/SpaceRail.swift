@@ -168,7 +168,7 @@ struct SpaceRail: View {
     private func spaceHasUnread(_ space: RoomSummary) -> Bool {
         matrixService.rooms.contains { room in
             room.parentSpaceIds.contains(space.id)
-                && room.unreadMessages > 0
+                && room.notificationCount > 0
                 && !room.isMuted
         }
     }
@@ -192,11 +192,11 @@ struct SpaceRail: View {
         var hasHighPriority = false
 
         for room in matrixService.rooms where room.parentSpaceIds.contains(space.id) && !room.isMuted {
-            if room.unreadMentions > 0 || room.hasKeywordHighlight || (room.isDirect && room.unreadMessages > 0) {
+            if room.highlightCount > 0 || (room.isDirect && room.notificationCount > 0) {
                 hasHighPriority = true
                 break
             }
-            if room.unreadMessages > 0 {
+            if room.notificationCount > 0 {
                 hasUnread = true
             }
         }
