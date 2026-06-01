@@ -134,11 +134,6 @@ final class ComposeViewModel {
         mentionSelectedIndex = 0
     }
 
-    /// Removes a previously inserted mention.
-    func removeMention(_ mention: Mention) {
-        mentions.removeAll { $0.id == mention.id }
-    }
-
     // MARK: - Reply / Edit
 
     /// Cancels the current reply.
@@ -174,7 +169,11 @@ final class ComposeViewModel {
         let pendingAttachments = attachments
         guard !trimmedText.isEmpty || !pendingAttachments.isEmpty else { return }
 
-        let mentionedUserIds = mentions.map(\.userId)
+        // Filter out stale mentions whose pills were deleted from the text
+        // view, and deduplicate user IDs for the m.mentions event field.
+        let mentionedUserIds = Array(
+            Set(mentions.filter { text.contains($0.userId) }.map(\.userId))
+        )
         let messageText = markdownWithMentions().trimmingCharacters(in: .whitespacesAndNewlines)
 
         if let editing = editingMessage {
