@@ -277,6 +277,14 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     /// - Returns: A ``RoomDirectoryViewModelProtocol`` instance, or `nil` if not available.
     func makeRoomDirectoryViewModel() -> (any RoomDirectoryViewModelProtocol)?
 
+    /// Creates a service for performing full-text message search.
+    ///
+    /// The returned service queries the homeserver's search endpoint directly.
+    /// Encrypted rooms are excluded from results by the server.
+    ///
+    /// - Returns: A ``MessageSearchServiceProtocol`` instance, or `nil` if not available.
+    func makeMessageSearchService() -> (any MessageSearchServiceProtocol)?
+
     /// Creates a view model for previewing a room before joining.
     ///
     /// - Parameter roomId: The Matrix room identifier to preview.
@@ -800,6 +808,7 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func createRoom(options: CreateRoomOptions) async throws -> String { "" }
     func createDirectMessage(userId: String) async throws -> String { "" }
     func makeRoomDirectoryViewModel() -> (any RoomDirectoryViewModelProtocol)? { nil }
+    func makeMessageSearchService() -> (any MessageSearchServiceProtocol)? { nil }
     func makeRoomPreviewViewModel(roomId: String) -> (any RoomPreviewViewModelProtocol)? { nil }
     func makeSpaceHierarchyViewModel(spaceId: String) -> (any SpaceHierarchyViewModelProtocol)? { nil }
     func acceptInvite(roomId: String) async throws {}

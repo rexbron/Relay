@@ -113,6 +113,9 @@ public enum RelayError: LocalizedError, Sendable {
     /// A call could not be started.
     case callFailed(String)
 
+    /// A message search request failed.
+    case searchFailed(String)
+
     // MARK: LocalizedError
 
     public var errorDescription: String? {
@@ -167,6 +170,8 @@ public enum RelayError: LocalizedError, Sendable {
             "Could Not Open Conversation"
         case .callFailed:
             "Call Failed"
+        case .searchFailed:
+            "Search Failed"
         }
     }
 
@@ -221,6 +226,8 @@ public enum RelayError: LocalizedError, Sendable {
         case .dmCreationFailed(let reason):
             reason
         case .callFailed(let reason):
+            reason
+        case .searchFailed(let reason):
             reason
         }
     }

@@ -24,7 +24,6 @@ struct RoomListView: View {
     @Environment(\.errorReporter) private var errorReporter
     @Environment(AppActions.self) private var appActions
     @Binding var selectedRoomId: String?
-    @Binding var searchText: String
     @Binding var selectedSpaceId: String?
     @AppStorage("roomSortOrder") private var sortOrder: RoomSortOrder = .lastMessage
     @AppStorage("roomSortDirection") private var sortDirection: RoomSortDirection = .descending
@@ -35,7 +34,6 @@ struct RoomListView: View {
     @Binding var previewingInvite: RoomSummary?
     @State private var inviteToDecline: RoomSummary?
     @State private var showDeclineConfirmation = false
-    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         // Compute filtered results once per body evaluation to avoid
@@ -117,14 +115,6 @@ struct RoomListView: View {
         .animation(.default, value: unpinned.map(\.id))
         .animation(.default, value: invites.map(\.id))
         .focusSection()
-        .searchable(text: $searchText, placement: .sidebar, prompt: "Find Rooms…")
-        .searchFocused($isSearchFocused)
-        .onChange(of: appActions.focusSearch) { _, shouldFocus in
-            if shouldFocus {
-                appActions.focusSearch = false
-                isSearchFocused = true
-            }
-        }
         .toolbar {
             ToolbarItemGroup(placement: .automatic) {
                 sortMenu
@@ -289,13 +279,7 @@ extension RoomListView {
 extension RoomListView {
     /// Rooms with a pending invitation, shown at the top of the sidebar.
     fileprivate var pendingInvites: [RoomSummary] {
-        var invites = matrixService.rooms.filter { $0.isInvited }
-        if !searchText.isEmpty {
-            invites = invites.filter {
-                $0.name.localizedStandardContains(searchText)
-            }
-        }
-        return invites
+        matrixService.rooms.filter { $0.isInvited }
     }
 
     private static let perfSignposter = OSSignposter(
@@ -324,13 +308,6 @@ extension RoomListView {
             rooms = rooms.filter { !$0.isDirect }
         case .directMessages:
             rooms = rooms.filter { $0.isDirect }
-        }
-
-        // Apply search filter.
-        if !searchText.isEmpty {
-            rooms = rooms.filter {
-                $0.name.localizedStandardContains(searchText)
-            }
         }
 
         // Apply sort.
@@ -388,12 +365,10 @@ extension RoomListView {
 
 #Preview("Room Rows") {
     @Previewable @State var sel: String?
-    @Previewable @State var search = ""
     @Previewable @State var space: String?
     @Previewable @State var invite: RoomSummary?
     RoomListView(
         selectedRoomId: $sel,
-        searchText: $search,
         selectedSpaceId: $space,
         previewingInvite: $invite
     )
@@ -405,7 +380,6 @@ extension RoomListView {
 #Preview("Empty State") {
     RoomListView(
         selectedRoomId: .constant(nil),
-        searchText: .constant(""),
         selectedSpaceId: .constant(nil),
         previewingInvite: .constant(nil)
     )

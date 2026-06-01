@@ -67,6 +67,7 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func createRoom(options: CreateRoomOptions) async throws -> String { "!new:matrix.org" }
     func createDirectMessage(userId: String) async throws -> String { "!dm:matrix.org" }
     func makeRoomDirectoryViewModel() -> (any RoomDirectoryViewModelProtocol)? { PreviewRoomDirectoryViewModel() }
+    func makeMessageSearchService() -> (any MessageSearchServiceProtocol)? { nil }
     func makeRoomPreviewViewModel(roomId: String) -> (any RoomPreviewViewModelProtocol)? {
         PreviewRoomPreviewViewModel(roomId: roomId)
     }

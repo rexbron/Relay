@@ -15,23 +15,18 @@
 import RelayInterface
 import SwiftUI
 
-/// A browsable room directory rendered as a grouped list in the detail pane.
+/// A browsable room directory presented as a sheet.
 ///
 /// ``RoomDirectoryView`` loads popular rooms from the homeserver on appear and
-/// provides a search field for finding rooms by name or alias. Rooms are displayed
-/// as rows with avatars (circles for rooms, rounded rectangles for spaces).
-/// Clicking a row sets `previewingRoom` so that ``MainView`` can render the
-/// preview with the standard toolbar identity.
+/// provides a search field for finding rooms by name or alias. Joining a room
+/// dismisses the sheet and selects it in the sidebar.
 struct RoomDirectoryView: View {
     @Environment(\.matrixService) private var matrixService
     @Environment(\.errorReporter) private var errorReporter
+    @Environment(\.dismiss) private var dismiss
 
-    /// The room currently being previewed. Owned by ``MainView`` so it can
-    /// render the toolbar capsule and preview content at the top level.
-    @Binding var previewingRoom: DirectoryRoom?
-
-    /// Called after successfully joining a room, with the joined room's ID.
-    var onRoomJoined: ((String) -> Void)?
+    /// Bound to the sidebar's selected room ID. Set on successful join.
+    @Binding var selectedRoomId: String?
 
     @State private var viewModel: (any RoomDirectoryViewModelProtocol)?
     @State private var query = ""
@@ -40,21 +35,42 @@ struct RoomDirectoryView: View {
     @State private var joiningRoomId: String?
 
     var body: some View {
-        directoryContent
-            .navigationTitle("Room Directory")
-            .searchable(text: $query, prompt: "Search rooms by name or alias")
-            .onSubmit(of: .search) { performSearch() }
-            .onChange(of: query) { _, newValue in
-                debounceSearch(newValue)
+        VStack(spacing: 0) {
+            header
+            Divider()
+            directoryContent
+        }
+        .frame(width: 540, height: 500)
+        .onAppear {
+            if viewModel == nil {
+                viewModel = matrixService.makeRoomDirectoryViewModel()
             }
-            .onAppear {
-                if viewModel == nil {
-                    viewModel = matrixService.makeRoomDirectoryViewModel()
-                }
-                searchTask = Task {
-                    await viewModel?.search(query: nil)
-                }
+            searchTask = Task {
+                await viewModel?.search(query: nil)
             }
+        }
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        HStack {
+            Button("Cancel") { dismiss() }
+                .keyboardShortcut(.cancelAction)
+
+            Spacer()
+
+            Text("Room Directory")
+                .fontWeight(.semibold)
+
+            Spacer()
+
+            // Invisible spacer button to balance the header layout.
+            Button("Cancel") {}
+                .hidden()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
     }
 
     // MARK: - Directory Content
@@ -63,7 +79,7 @@ struct RoomDirectoryView: View {
     private var directoryContent: some View {
         if let viewModel {
             if viewModel.rooms.isEmpty && viewModel.isSearching {
-                ProgressView("Searching directory...")
+                ProgressView("Searching directory\u{2026}")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if viewModel.rooms.isEmpty && !viewModel.isSearching {
                 ContentUnavailableView(
@@ -94,17 +110,10 @@ struct RoomDirectoryView: View {
                     DirectoryRoomRow(
                         room: room,
                         isJoining: joiningRoomId == room.roomId,
-                        onJoin: { joinRoom(idOrAlias: room.alias ?? room.roomId) },
-                        onNavigate: { previewingRoom = room }
+                        onJoin: { joinRoom(room) }
                     )
                 }
 
-                // Pagination sentinel — hidden while a search is in
-                // progress so that onAppear only fires once the view
-                // model is ready to accept a loadMore() call. The .id
-                // modifier forces SwiftUI to treat this as a new view
-                // each time the room count changes, ensuring onAppear
-                // re-fires after each page load.
                 if !viewModel.rooms.isEmpty, !viewModel.isAtEnd, !viewModel.isSearching {
                     HStack {
                         Spacer()
@@ -124,6 +133,11 @@ struct RoomDirectoryView: View {
             }
         }
         .formStyle(.grouped)
+        .searchable(text: $query, prompt: "Search rooms by name or alias")
+        .onSubmit(of: .search) { performSearch() }
+        .onChange(of: query) { _, newValue in
+            debounceSearch(newValue)
+        }
     }
 
     // MARK: - Search Logic
@@ -147,23 +161,23 @@ struct RoomDirectoryView: View {
 
     // MARK: - Join
 
-    func joinRoom(idOrAlias: String) {
+    private func joinRoom(_ room: DirectoryRoom) {
         guard !isJoining else { return }
         isJoining = true
-        joiningRoomId = idOrAlias
+        joiningRoomId = room.alias ?? room.roomId
 
         Task {
             do {
+                let idOrAlias = room.alias ?? room.roomId
                 try await matrixService.joinRoom(idOrAlias: idOrAlias)
 
-                // Wait briefly for room list to sync, then find the room.
                 try? await Task.sleep(for: .milliseconds(500))
-                let rooms = matrixService.rooms
-                if let joined = rooms.first(where: {
-                    $0.id == idOrAlias || ($0.name.localizedCaseInsensitiveContains(query) && !query.isEmpty)
+                if let joined = matrixService.rooms.first(where: {
+                    $0.id == room.roomId || $0.canonicalAlias == room.alias
                 }) {
-                    onRoomJoined?(joined.id)
+                    selectedRoomId = joined.id
                 }
+                dismiss()
             } catch {
                 errorReporter.report(.roomJoinFailed(error.localizedDescription))
             }
@@ -175,37 +189,36 @@ struct RoomDirectoryView: View {
 
 // MARK: - Directory Room Row
 
-/// A single row in the directory list, styled to match ``SpaceChildRow``.
-///
-/// Spaces use a rounded-rectangle avatar, while regular rooms use a
-/// circular ``AvatarView``.
+/// A single row in the directory list showing the room avatar, name, topic,
+/// member count, and a join button.
 private struct DirectoryRoomRow: View {
     let room: DirectoryRoom
     var isJoining: Bool = false
     let onJoin: () -> Void
-    let onNavigate: () -> Void
 
     var body: some View {
-        Button(action: onNavigate) {
-            HStack(spacing: 12) {
-                avatar
+        HStack(spacing: 12) {
+            avatar
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(room.name ?? room.alias ?? room.roomId)
-                        .fontWeight(.medium)
-                        .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(room.name ?? room.alias ?? room.roomId)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
 
-                    subtitle
-                }
-
-                Spacer()
-
-                trailingContent
+                subtitle
             }
-            .padding(.vertical, 4)
-            .contentShape(.rect)
+
+            Spacer()
+
+            if room.memberCount > 0 {
+                Label("\(room.memberCount)", systemImage: "person.2")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
+            joinButton
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 4)
     }
 
     @ViewBuilder
@@ -232,8 +245,6 @@ private struct DirectoryRoomRow: View {
                 Text(topic)
             } else if let alias = room.alias {
                 Text(alias)
-            } else if room.memberCount > 0 {
-                Text("\(room.memberCount) members")
             }
         }
         .font(.subheadline)
@@ -242,14 +253,13 @@ private struct DirectoryRoomRow: View {
     }
 
     @ViewBuilder
-    private var trailingContent: some View {
+    private var joinButton: some View {
         if isJoining {
             ProgressView()
                 .controlSize(.small)
         } else {
-            Button("Join", systemImage: "plus", action: onJoin)
+            Button("Join", action: onJoin)
                 .buttonStyle(.bordered)
-                .tint(.accentColor)
                 .controlSize(.small)
         }
     }
@@ -258,15 +268,8 @@ private struct DirectoryRoomRow: View {
 // MARK: - Previews
 
 #Preview("Room Directory") {
-    NavigationSplitView {
-        List {
-            Text("Design Team")
-            Text("Alice")
-        }
-        .navigationSplitViewColumnWidth(260)
-    } detail: {
-        RoomDirectoryView(previewingRoom: .constant(nil))
-    }
-    .environment(\.matrixService, PreviewMatrixService())
-    .frame(width: 900, height: 600)
+    @Previewable @State var selected: String?
+
+    RoomDirectoryView(selectedRoomId: $selected)
+        .environment(\.matrixService, PreviewMatrixService())
 }

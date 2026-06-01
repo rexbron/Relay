@@ -54,7 +54,7 @@ struct RelayApp: App {
         .commands {
             FileMenuCommands(appActions: appActions)
             EditLastMessageCommand()
-            FindRoomCommand(appActions: appActions)
+            SearchCommand(appActions: appActions)
             SidebarCommands()
             CommandGroup(before: .appTermination) {
                 Button("Clear Cache…") {
@@ -405,23 +405,23 @@ struct EditLastMessageCommand: Commands {
     }
 }
 
-// MARK: - Find Room Command
+// MARK: - Search Command
 
-/// Adds a "Find Room…" item (⌘K) to the Edit menu.
+/// Adds a "Search…" item (⌘G) to the Edit menu.
 ///
 /// When pressed, the command sets ``AppActions/focusSearch`` to `true`.
-/// ``RoomListView`` observes this flag and moves keyboard focus to the
-/// sidebar search field.
-struct FindRoomCommand: Commands {
+/// ``MainView`` observes this flag and moves keyboard focus to the
+/// toolbar search field.
+struct SearchCommand: Commands {
     let appActions: AppActions
 
     var body: some Commands {
         CommandGroup(after: .pasteboard) {
             Divider()
-            Button("Find Rooms…") {
+            Button("Search\u{2026}") {
                 appActions.focusSearch = true
             }
-            .keyboardShortcut("k", modifiers: .command)
+            .keyboardShortcut("g", modifiers: .command)
         }
     }
 }

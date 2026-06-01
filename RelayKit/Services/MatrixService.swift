@@ -726,6 +726,11 @@ public final class MatrixService: MatrixServiceProtocol {
         return RoomDirectoryViewModel(client: client, errorReporter: errorReporter)
     }
 
+    public func makeMessageSearchService() -> (any MessageSearchServiceProtocol)? {
+        guard let client = currentClient else { return nil }
+        return MessageSearchService(client: client)
+    }
+
     public func makeRoomPreviewViewModel(roomId: String) -> (any RoomPreviewViewModelProtocol)? {
         guard let client = currentClient else { return nil }
         return RoomPreviewViewModel(roomId: roomId, client: client, errorReporter: errorReporter)
