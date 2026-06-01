@@ -55,6 +55,7 @@ struct RelayApp: App {
             FileMenuCommands(appActions: appActions)
             EditLastMessageCommand()
             SearchCommand(appActions: appActions)
+            QuickSwitchCommand(appActions: appActions)
             SidebarCommands()
             CommandGroup(before: .appTermination) {
                 Button("Clear Cache…") {
@@ -347,6 +348,7 @@ final class AppActions {
     var showJoinRoom = false
     var showRoomDirectory = false
     var focusSearch = false
+    var showQuickSwitch = false
 }
 
 // MARK: - File Menu Commands
@@ -422,6 +424,25 @@ struct SearchCommand: Commands {
                 appActions.focusSearch = true
             }
             .keyboardShortcut("g", modifiers: .command)
+        }
+    }
+}
+
+// MARK: - Quick Switch Command
+
+/// Adds a "Quick Switch…" item (⌘K) to the Edit menu.
+///
+/// When pressed, the command sets ``AppActions/showQuickSwitch`` to `true`.
+/// ``MainView`` observes this flag and presents the quick room switch overlay.
+struct QuickSwitchCommand: Commands {
+    let appActions: AppActions
+
+    var body: some Commands {
+        CommandGroup(after: .pasteboard) {
+            Button("Quick Switch\u{2026}") {
+                appActions.showQuickSwitch = true
+            }
+            .keyboardShortcut("k", modifiers: .command)
         }
     }
 }

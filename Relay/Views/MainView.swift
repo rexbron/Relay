@@ -65,12 +65,42 @@ struct MainView: View { // swiftlint:disable:this type_body_length
         }
     }
 
+    @State private var showQuickSwitch = false
+
     var body: some View {
         HStack(spacing: 0) {
             if !matrixService.spaces.isEmpty {
                 spaceRailView
             }
             navigationContent
+        }
+        .overlay {
+            if showQuickSwitch {
+                quickSwitchOverlay
+            }
+        }
+        .onChange(of: appActions.showQuickSwitch) { _, shouldShow in
+            if shouldShow {
+                appActions.showQuickSwitch = false
+                showQuickSwitch = true
+            }
+        }
+    }
+
+    private var quickSwitchOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+                .onTapGesture { showQuickSwitch = false }
+
+            VStack {
+                QuickRoomSwitchView(
+                    selectedRoomId: $selectedRoomId,
+                    isPresented: $showQuickSwitch
+                )
+                .padding(.top, 80)
+                Spacer()
+            }
         }
     }
 
