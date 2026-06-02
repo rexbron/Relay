@@ -646,12 +646,18 @@ final class TimelineTableViewController: NSViewController {
 
     private func handleSwipeDelta(row: Int, offset: CGFloat) {
         guard row >= 0, row < rows.count else { return }
-        // If the action bar is locked and a new swipe starts, dismiss first.
-        if swipeState.isLocked {
+        // If a different row was being swiped, reset its hosting view first.
+        let newID = rows[row].message.id
+        if let oldID = swipeState.swipingMessageId, oldID != newID,
+           let oldRow = rows.firstIndex(where: { $0.message.id == oldID }) {
+            swipeState.swipingMessageId = nil
+            swipeState.offset = 0
             swipeState.isLocked = false
+            updateSwipeRowView(at: oldRow)
         }
-        swipeState.swipingMessageId = rows[row].message.id
+        swipeState.swipingMessageId = newID
         swipeState.offset = offset
+        updateSwipeRowView(at: row)
     }
 
     private func handleSwipeEnd(row: Int) {
@@ -670,6 +676,7 @@ final class TimelineTableViewController: NSViewController {
                 withAnimation(.snappy(duration: 0.25)) {
                     swipeState.offset = lockOffset
                     swipeState.isLocked = true
+                    updateSwipeRowView(at: row)
                 }
             }
         } else {
@@ -679,13 +686,33 @@ final class TimelineTableViewController: NSViewController {
 
     /// Dismisses the swipe action bar with animation.
     func dismissSwipeActionBar() {
+        let row = rows.firstIndex(where: { $0.message.id == swipeState.swipingMessageId })
         withAnimation(.snappy(duration: 0.25)) {
             swipeState.offset = 0
             swipeState.isLocked = false
+            if let row { updateSwipeRowView(at: row) }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
             self?.swipeState.swipingMessageId = nil
         }
+    }
+
+    /// Pushes the current swipe offset and lock state to the live hosting
+    /// view for the given row. The data source closure only runs when a cell
+    /// is created or recycled, so swipe state changes during the gesture
+    /// must be pushed manually to the already-rendered `NSHostingView`.
+    private func updateSwipeRowView(at row: Int) {
+        guard row >= 0, row < rows.count,
+              let hostView = tableView.view(atColumn: 0, row: row, makeIfNecessary: false)
+                as? NSHostingView<TimelineRowView> else { return }
+        let messageRow = rows[row]
+        let offset: CGFloat = swipeState.swipingMessageId == messageRow.id ? swipeState.offset : 0
+        let locked = swipeState.swipingMessageId == messageRow.id && swipeState.isLocked
+        var rootView = hostView.rootView
+        rootView.swipeOffset = offset
+        rootView.swipeIsLocked = locked
+        hostView.rootView = rootView
     }
 
     // MARK: - Height Cache
