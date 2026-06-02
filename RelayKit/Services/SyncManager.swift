@@ -360,9 +360,10 @@ final class SyncManager {
         case (.active, .sdkState(.offline)):
             activityLog.log(
                 category: .sync, severity: .warning, source: "SyncManager",
-                summary: "SDK reported offline"
+                summary: "SDK reported offline — transitioning to offline + backoff retry"
             )
             await tearDownSyncForOffline()
+            scheduleReconnect()
 
         case (.active, .sdkState(.terminated)):
             activityLog.log(
