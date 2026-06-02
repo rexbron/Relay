@@ -724,13 +724,11 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
 
     /// Debounces fully-read receipt advancement as messages appear on screen.
     /// Only advances forward (to later messages in the timeline), never backward.
+    ///
+    /// This sends the `m.fully_read` receipt which tracks the user's read position
+    /// across devices. It is separate from `markAsRead` which sends `m.read` to
+    /// clear the room's unread badge.
     private func advanceFullyReadMarker(to eventId: String) {
-        guard !alwaysLoadNewest || !isNearBottom else {
-            // When "always load newest" is on and we're at the bottom,
-            // markAsRead already handles receipts via the bottom sentinel.
-            return
-        }
-
         // Only advance if this event is later in the timeline than the last marker
         if let lastId = lastFullyReadEventId,
            let lastIndex = viewModel.messages.firstIndex(where: { $0.eventID == lastId }),
