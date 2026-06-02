@@ -342,12 +342,12 @@ extension RoomListView {
                     // swiftlint:disable:next identifier_name
                     case (.some(let l), .some(let r)):
                         result = l < r ? .orderedAscending : (l > r ? .orderedDescending : .orderedSame)
-                    case (.some, .none):
-                        result = .orderedDescending
-                    case (.none, .some):
-                        result = .orderedAscending
-                    case (.none, .none):
-                        result = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+                    default:
+                        // When one or both rooms lack a cached timestamp,
+                        // preserve the SDK's sliding-sync order (which is
+                        // recency-based). Swift's sort is stable, so
+                        // returning .orderedSame keeps the original position.
+                        result = .orderedSame
                     }
                 }
             case .name:

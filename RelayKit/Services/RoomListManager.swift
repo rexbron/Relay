@@ -345,24 +345,17 @@ final class RoomListManager {
             PerformanceSignposts.RoomListName.rebuildSummaries,
             "\(entryCount) entries"
         )
-        rooms = roomEntries.map(\.summary).sorted { lhs, rhs in
-            switch (lhs.lastMessageTimestamp, rhs.lastMessageTimestamp) {
-            // swiftlint:disable:next identifier_name
-            case (.some(let l), .some(let r)):
-                return l > r
-            case (.some, .none):
-                return true
-            case (.none, .some):
-                return false
-            case (.none, .none):
-                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-            }
-        }
+        // Preserve the SDK's entry order — sliding sync delivers rooms
+        // sorted by recency.  The view layer applies its own sort using
+        // lastMessageTimestamp when available, but this baseline order
+        // ensures rooms without cached event data still appear in a
+        // sensible position rather than being pushed to the bottom.
+        rooms = roomEntries.map(\.summary)
         let roomCount = rooms.count
         PerformanceSignposts.roomList.endInterval(
             PerformanceSignposts.RoomListName.rebuildSummaries,
             state,
-            "\(roomCount) rooms sorted"
+            "\(roomCount) rooms"
         )
         activityLog?.log(
             category: .roomList, severity: .debug, source: "RoomListManager",
@@ -444,7 +437,12 @@ private final class RoomEntry: Identifiable {
 
     private func fetchAndApplyRoomInfo() async {
         guard let info = try? await room.roomInfo() else { return }
-        applyRoomInfo(info)
+        applyRoomInfo(info, isInitialFetch: true)
+        // Await the latest event inline so the timestamp and preview are
+        // populated before we trigger the first resort.  This avoids the
+        // race where the initial rebuildRoomSummaries() runs while all
+        // rooms still have nil timestamps, causing incorrect sort order.
+        await fetchAndApplyLatestEvent(checkNotification: false)
     }
 
     private func listenToRoomInfo() {
@@ -462,7 +460,7 @@ private final class RoomEntry: Identifiable {
         }
     }
 
-    private func applyRoomInfo(_ info: RoomInfo) {
+    private func applyRoomInfo(_ info: RoomInfo, isInitialFetch: Bool = false) {
         let previousNotifications = summary.notificationCount
         summary.name = info.displayName ?? room.displayName() ?? id
         summary.topic = info.topic
@@ -557,6 +555,11 @@ private final class RoomEntry: Identifiable {
         let shouldCheckNotification = hasReceivedInitialInfo
         hasReceivedInitialInfo = true
 
+        // During the initial fetch, fetchAndApplyRoomInfo() awaits the
+        // latest event inline so the timestamp is ready before the first
+        // resort.  Skip the detached Task here to avoid a duplicate fetch.
+        guard !isInitialFetch else { return }
+
         // Fetch the latest event, update the message preview, and check
         // for new notification-worthy events in a single task.
         //
@@ -567,86 +570,95 @@ private final class RoomEntry: Identifiable {
         // give the SDK time to flush the event into its cache.
         Task { [weak self] in
             guard let self else { return }
+            await self.fetchAndApplyLatestEvent(checkNotification: shouldCheckNotification)
+        }
+    }
 
-            var latest = await self.room.latestEvent()
-            var eventInfo = Self.extractEventInfo(from: latest)
+    /// Fetches the room's latest event, updates the message preview, and
+    /// optionally checks for notification-worthy activity.
+    ///
+    /// Called inline during the initial room info fetch (so the timestamp
+    /// is available before the first sort) and from a detached Task during
+    /// live room info updates.
+    private func fetchAndApplyLatestEvent(checkNotification: Bool) async {
+        var latest = await room.latestEvent()
+        var eventInfo = Self.extractEventInfo(from: latest)
 
-            // Retry if the event looks stale (same timestamp as what we
-            // already processed).  Two short retries cover the common
-            // case where the event cache lags by a few milliseconds.
-            if shouldCheckNotification,
-               let ts = eventInfo?.timestamp,
-               ts <= self.lastNotifiedEventTimestamp {
-                for _ in 0 ..< 2 {
-                    try? await Task.sleep(for: .milliseconds(50))
-                    guard !Task.isCancelled else { return }
-                    latest = await self.room.latestEvent()
-                    eventInfo = Self.extractEventInfo(from: latest)
-                    if let newTs = eventInfo?.timestamp, newTs > self.lastNotifiedEventTimestamp {
-                        break
-                    }
+        // Retry if the event looks stale (same timestamp as what we
+        // already processed).  Two short retries cover the common
+        // case where the event cache lags by a few milliseconds.
+        if checkNotification,
+           let ts = eventInfo?.timestamp,
+           ts <= lastNotifiedEventTimestamp {
+            for _ in 0 ..< 2 {
+                try? await Task.sleep(for: .milliseconds(50))
+                guard !Task.isCancelled else { return }
+                latest = await room.latestEvent()
+                eventInfo = Self.extractEventInfo(from: latest)
+                if let newTs = eventInfo?.timestamp, newTs > lastNotifiedEventTimestamp {
+                    break
                 }
             }
-            let preview = Self.extractPreview(from: latest)
-
-            // Update message preview for the room list.
-            self.summary.lastAuthor = eventInfo?.author
-            self.summary.lastMessage = preview.text
-            self.summary.lastMessageTimestamp = preview.date
-            self.onInfoUpdated?()
-
-            guard let eventInfo else { return }
-
-            // On the first info fetch, just record the baseline.
-            guard shouldCheckNotification else {
-                self.lastNotifiedEventTimestamp = eventInfo.timestamp
-                return
-            }
-
-            // Only process events we haven't seen before.
-            guard eventInfo.timestamp > self.lastNotifiedEventTimestamp else { return }
-            self.lastNotifiedEventTimestamp = eventInfo.timestamp
-
-            // Only notify for actual messages, not state events
-            // (joins, name changes, topic changes, etc.).
-            guard eventInfo.body != nil else { return }
-
-            let roomName = self.summary.name
-            let roomId = self.id
-            let isDirect = self.summary.isDirect
-            let mode = self.summary.notificationMode
-            let highlightContext = self.highlightContextProvider?()
-
-            // Don't notify for our own messages.
-            if let userId = highlightContext?.userId,
-               eventInfo.senderId == userId {
-                return
-            }
-
-            // Determine whether this message is a mention or keyword match.
-            var isMention = false
-            if let mentions = eventInfo.mentions,
-               let userId = highlightContext?.userId {
-                isMention = mentions.userIds.contains(userId) || mentions.room
-            }
-            if !isMention {
-                isMention = HighlightMatcher.bodyMatchesHighlightRules(
-                    eventInfo.body ?? "",
-                    currentUserId: highlightContext?.userId,
-                    keywords: highlightContext?.keywords ?? []
-                )
-            }
-
-            self.onNotificationEvent?(RoomNotificationEvent(
-                roomId: roomId,
-                roomName: roomName,
-                messageAuthor: eventInfo.author,
-                messageBody: eventInfo.body,
-                isMention: isMention,
-                isDirect: isDirect,
-                notificationMode: mode
-            ))
         }
+        let preview = Self.extractPreview(from: latest)
+
+        // Update message preview for the room list.
+        summary.lastAuthor = eventInfo?.author
+        summary.lastMessage = preview.text
+        summary.lastMessageTimestamp = preview.date
+        onInfoUpdated?()
+
+        guard let eventInfo else { return }
+
+        // On the first info fetch, just record the baseline.
+        guard checkNotification else {
+            lastNotifiedEventTimestamp = eventInfo.timestamp
+            return
+        }
+
+        // Only process events we haven't seen before.
+        guard eventInfo.timestamp > lastNotifiedEventTimestamp else { return }
+        lastNotifiedEventTimestamp = eventInfo.timestamp
+
+        // Only notify for actual messages, not state events
+        // (joins, name changes, topic changes, etc.).
+        guard eventInfo.body != nil else { return }
+
+        let roomName = summary.name
+        let roomId = id
+        let isDirect = summary.isDirect
+        let mode = summary.notificationMode
+        let highlightContext = highlightContextProvider?()
+
+        // Don't notify for our own messages.
+        if let userId = highlightContext?.userId,
+           eventInfo.senderId == userId {
+            return
+        }
+
+        // Determine whether this message is a mention or keyword match.
+        var isMention = false
+        if let mentions = eventInfo.mentions,
+           let userId = highlightContext?.userId {
+            isMention = mentions.userIds.contains(userId) || mentions.room
+        }
+        if !isMention {
+            isMention = HighlightMatcher.bodyMatchesHighlightRules(
+                eventInfo.body ?? "",
+                currentUserId: highlightContext?.userId,
+                keywords: highlightContext?.keywords ?? []
+            )
+        }
+
+        onNotificationEvent?(RoomNotificationEvent(
+            roomId: roomId,
+            roomName: roomName,
+            messageAuthor: eventInfo.author,
+            messageBody: eventInfo.body,
+            isMention: isMention,
+            isDirect: isDirect,
+            notificationMode: mode
+        ))
     }
 
     /// Information extracted from the latest event for notification purposes.
