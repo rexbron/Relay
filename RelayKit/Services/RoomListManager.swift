@@ -251,26 +251,41 @@ final class RoomListManager {
             PerformanceSignposts.RoomListName.applyEntryUpdates,
             "\(updates.count) updates, \(entryCountBefore) entries"
         )
+
+        // Track whether any operation structurally changed the room list
+        // (entries added, removed, or replaced with a different room).
+        // Pure in-place updates (.set with the same room ID) don't need
+        // an immediate rebuild — the debounced scheduleResort() path
+        // handles those once the room info and latest event are updated.
+        var structurallyChanged = false
+
         for update in updates {
             switch update {
             case .append(let values):
                 let entries = values.map { makeEntry(room: $0) }
                 roomEntries.append(contentsOf: entries)
+                structurallyChanged = true
             case .clear:
                 roomEntries.removeAll()
+                structurallyChanged = true
             case .pushFront(let value):
                 roomEntries.insert(makeEntry(room: value), at: 0)
+                structurallyChanged = true
             case .pushBack(let value):
                 roomEntries.append(makeEntry(room: value))
+                structurallyChanged = true
             case .popFront:
                 if !roomEntries.isEmpty { roomEntries.removeFirst() }
+                structurallyChanged = true
             case .popBack:
                 if !roomEntries.isEmpty { roomEntries.removeLast() }
+                structurallyChanged = true
             case .insert(let index, let value):
                 // swiftlint:disable:next identifier_name
                 let i = Int(index)
                 if i <= roomEntries.count {
                     roomEntries.insert(makeEntry(room: value), at: i)
+                    structurallyChanged = true
                 }
             case .set(let index, let value):
                 // swiftlint:disable:next identifier_name
@@ -278,9 +293,12 @@ final class RoomListManager {
                 if i < roomEntries.count {
                     let existing = roomEntries[i]
                     if existing.id == value.id() {
+                        // Same room — update in place. The room info
+                        // subscription will trigger scheduleResort().
                         existing.updateRoom(value)
                     } else {
                         roomEntries[i] = makeEntry(room: value)
+                        structurallyChanged = true
                     }
                 }
             case .remove(let index):
@@ -288,25 +306,32 @@ final class RoomListManager {
                 let i = Int(index)
                 if i < roomEntries.count {
                     roomEntries.remove(at: i)
+                    structurallyChanged = true
                 }
             case .truncate(let length):
                 let len = Int(length)
                 if len < roomEntries.count {
                     roomEntries.removeSubrange(len..<roomEntries.count)
+                    structurallyChanged = true
                 }
             case .reset(let values):
                 let existingById = Dictionary(roomEntries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                var hasNewRooms = false
                 roomEntries = values.map { room in
                     if let existing = existingById[room.id()] {
                         existing.updateRoom(room)
                         return existing
                     }
+                    hasNewRooms = true
                     return makeEntry(room: room)
+                }
+                // A reset is structural if the count changed or new rooms appeared.
+                if hasNewRooms || roomEntries.count != entryCountBefore {
+                    structurallyChanged = true
                 }
             }
         }
 
-        // Rebuild the sorted room summaries from room entries
         let entryCountAfter = roomEntries.count
         PerformanceSignposts.roomList.endInterval(
             PerformanceSignposts.RoomListName.applyEntryUpdates,
@@ -336,7 +361,9 @@ final class RoomListManager {
             detail: diffSummary
         )
 
-        rebuildRoomSummaries()
+        if structurallyChanged {
+            rebuildRoomSummaries()
+        }
     }
 
     private func rebuildRoomSummaries() {
