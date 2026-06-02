@@ -135,6 +135,7 @@ struct SpaceRail: View {
         }
         .overlay(alignment: .topTrailing) {
             spaceUnreadBadge(for: space)
+                .offset(x: -2, y: 2)
         }
         .contextMenu {
             Button("Leave Space", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
@@ -155,6 +156,7 @@ struct SpaceRail: View {
         }
         .overlay(alignment: .topTrailing) {
             spaceUnreadBadge(for: space)
+                .offset(x: -2, y: 2)
         }
         .contextMenu {
             Button("Leave Space", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
@@ -217,23 +219,15 @@ struct SpaceRailButton<Label: View>: View {
     var body: some View {
         Button(action: action) {
             label
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(.tint, lineWidth: isSelected ? 2 : 0)
-                        .animation(.easeInOut(duration: 0.15), value: isSelected)
+                .scaleEffect(isSelected ? 1.08 : 1.0)
+                .padding(4)
+                .background {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(isSelected ? AnyShapeStyle(.tint.opacity(0.5)) : AnyShapeStyle(.clear))
                 }
-                .scaleEffect(isSelected ? 1.0 : 0.92)
                 .animation(.easeInOut(duration: 0.15), value: isSelected)
         }
         .buttonStyle(.plain)
-        .overlay(alignment: .leading) {
-            Capsule()
-                .fill(.primary)
-                .frame(width: 3, height: isSelected ? 20 : (hasUnread ? 8 : 0))
-                .offset(x: -4)
-                .animation(.easeInOut(duration: 0.15), value: isSelected)
-                .animation(.easeInOut(duration: 0.15), value: hasUnread)
-        }
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
