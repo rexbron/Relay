@@ -474,32 +474,34 @@ private final class RoomEntry: Identifiable {
             summary.avatarURL = nil
         }
 
-        // Use the server-side notification and highlight counts from /sync.
-        // These respect the user's push rules and are the authoritative source
-        // of truth for unread badge state.
+        // Use the SDK's client-side unread counts. The server-side
+        // notificationCount/highlightCount from /sync are not reliably
+        // populated under sliding sync, so we use numUnreadMessages (which
+        // counts "interesting" messages independently of push rules) and
+        // numUnreadMentions (which counts mention/highlight events).
         //
-        // When the room was optimistically marked as read, the server may still
+        // When the room was optimistically marked as read, the SDK may still
         // report stale non-zero counts until it processes the read receipt.
         // Skip overwriting the cleared values in that case.
-        let serverNotifications = UInt(info.notificationCount)
-        let serverHighlights = UInt(info.highlightCount)
+        let sdkNotifications = UInt(info.numUnreadMessages)
+        let sdkHighlights = UInt(info.numUnreadMentions)
         if summary.isOptimisticallyCleared {
-            if serverNotifications == 0 && serverHighlights == 0 {
+            if sdkNotifications == 0 && sdkHighlights == 0 {
                 // Server confirmed — safe to clear the guard.
                 summary.isOptimisticallyCleared = false
                 summary.highlightCount = 0
-            } else if serverNotifications > summary.optimisticClearedBaseline {
+            } else if sdkNotifications > summary.optimisticClearedBaseline {
                 // New messages arrived after the read receipt was sent.
-                // Accept the server's values and clear the optimistic flag.
+                // Accept the SDK's values and clear the optimistic flag.
                 summary.isOptimisticallyCleared = false
-                summary.notificationCount = serverNotifications
-                summary.highlightCount = serverHighlights
+                summary.notificationCount = sdkNotifications
+                summary.highlightCount = sdkHighlights
             }
-            // Otherwise keep the optimistically-cleared zeros — the server
+            // Otherwise keep the optimistically-cleared zeros — the SDK
             // is still echoing stale counts from before the read receipt.
         } else {
-            summary.notificationCount = serverNotifications
-            summary.highlightCount = serverHighlights
+            summary.notificationCount = sdkNotifications
+            summary.highlightCount = sdkHighlights
         }
         summary.isDirect = info.isDirect
         summary.canonicalAlias = info.canonicalAlias

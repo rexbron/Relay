@@ -61,18 +61,17 @@ public final class RoomSummary: Identifiable {
     /// The timestamp of the most recent message, used for sorting the room list.
     public var lastMessageTimestamp: Date?
 
-    /// The server-side unread notification count for this room.
+    /// The number of unread notifications in this room.
     ///
-    /// This value comes from the homeserver's `/sync` response and reflects
-    /// the user's push rules. It counts events that would generate a notification,
-    /// excluding state events like name or avatar changes (unless the user has
-    /// customized their push rules to include them).
+    /// Sourced from the SDK's `numUnreadMessages` count, which tracks
+    /// "interesting" messages (excluding state events) independently of
+    /// push rules. The server-side notification count is not reliably
+    /// populated under sliding sync.
     public var notificationCount: UInt
 
-    /// The server-side highlight count for this room.
+    /// The number of unread highlights (mentions/keywords) in this room.
     ///
-    /// Counts unread events that triggered a highlight (mention or keyword match)
-    /// according to the user's push rules.
+    /// Sourced from the SDK's `numUnreadMentions` count.
     public var highlightCount: UInt
 
     /// Whether this room is a direct message (one-to-one) conversation.
@@ -113,10 +112,10 @@ public final class RoomSummary: Identifiable {
     /// notifications, confirming the server has processed the read receipt.
     public var isOptimisticallyCleared: Bool = false
 
-    /// The server's ``notificationCount`` at the moment the room was optimistically
-    /// marked as read. If the server later reports a count *higher* than this value,
-    /// new messages arrived after the read receipt was sent and the count should
-    /// be accepted rather than suppressed.
+    /// The ``notificationCount`` at the moment the room was optimistically marked
+    /// as read. If the SDK later reports a count *higher* than this value, new
+    /// messages arrived after the read receipt was sent and the count should be
+    /// accepted rather than suppressed.
     public var optimisticClearedBaseline: UInt = 0
 
     /// The user's current membership state in this room.
