@@ -72,3 +72,11 @@ struct SettingsView: View {
 #Preview("Verification — Idle") {
     VerificationSheet(viewModel: PreviewSessionVerificationViewModel())
 }
+
+#Preview("Verification — No Other Devices") {
+    VerificationSheet(viewModel: PreviewSessionVerificationViewModel(hasOtherDevices: false))
+}
+
+#Preview("Verification — Recovery Key") {
+    VerificationSheet(viewModel: PreviewSessionVerificationViewModel(state: .enteringRecoveryKey))
+}

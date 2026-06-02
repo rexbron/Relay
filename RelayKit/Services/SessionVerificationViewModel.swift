@@ -41,17 +41,30 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
     /// The SAS emoji to display for comparison during the `.showingEmojis` state.
     public private(set) var emojis: [RelayInterface.VerificationEmoji] = []
 
+    /// Whether other verified devices exist for interactive (SAS) verification.
+    public private(set) var hasOtherDevices: Bool = true
+
     @ObservationIgnored private let controller: any SessionVerificationControllerProxyProtocol
+    @ObservationIgnored private let service: any MatrixServiceProtocol
     @ObservationIgnored private var observationTask: Task<Void, Never>?
     private let errorReporter: ErrorReporter
 
-    /// - Parameter controller: A proxy wrapping the SDK's verification controller.
-    ///   The proxy must outlive any individual verification flow so that state
-    ///   updates continue to arrive.
-    public init(controller: any SessionVerificationControllerProxyProtocol, errorReporter: ErrorReporter) {
+    /// - Parameters:
+    ///   - controller: A proxy wrapping the SDK's verification controller.
+    ///     The proxy must outlive any individual verification flow so that state
+    ///     updates continue to arrive.
+    ///   - service: The Matrix service used for recovery key verification and
+    ///     checking whether other verified devices exist.
+    public init(
+        controller: any SessionVerificationControllerProxyProtocol,
+        service: any MatrixServiceProtocol,
+        errorReporter: ErrorReporter
+    ) {
         self.controller = controller
+        self.service = service
         self.errorReporter = errorReporter
         observationTask = Task { [weak self] in
+            await self?.checkForOtherDevices()
             await self?.observeFlowState()
         }
     }
@@ -125,6 +138,43 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
             logger.error("Failed to cancel verification: \(error)")
             state = .failed(error.localizedDescription)
             errorReporter.report(.verificationFailed(error.localizedDescription))
+        }
+    }
+
+    /// Resets the flow back to idle.
+    public func resetToIdle() {
+        state = .idle
+    }
+
+    /// Transitions to the recovery key entry state.
+    public func startRecoveryKeyEntry() {
+        state = .enteringRecoveryKey
+    }
+
+    /// Submits a recovery key to verify the session via secret storage.
+    public func submitRecoveryKey(_ key: String) async {
+        state = .recoveringWithKey
+        do {
+            try await service.recoverWithKey(key)
+            logger.info("Session verified via recovery key")
+            state = .verified
+        } catch {
+            logger.error("Recovery key verification failed: \(error)")
+            state = .failed("Invalid recovery key. Check the key and try again.")
+            errorReporter.report(.verificationFailed(error.localizedDescription))
+        }
+    }
+
+    // MARK: - Device Check
+
+    /// Checks whether other verified devices exist for interactive verification.
+    private func checkForOtherDevices() async {
+        do {
+            let result = try await service.hasDevicesToVerifyAgainst()
+            hasOtherDevices = result
+        } catch {
+            logger.warning("Failed to check for other devices: \(error)")
+            // Default to true so SAS remains available as a fallback.
         }
     }
 

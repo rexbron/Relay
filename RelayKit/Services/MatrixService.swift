@@ -1435,7 +1435,7 @@ public final class MatrixService: MatrixServiceProtocol {
         guard let controller = verificationController else { return nil }
         controller.resetFlowState()
         isVerificationFlowActive = true
-        let viewModel = SessionVerificationViewModel(controller: controller, errorReporter: errorReporter)
+        let viewModel = SessionVerificationViewModel(controller: controller, service: self, errorReporter: errorReporter)
         // Reset the flag when the view model is deallocated (sheet dismissed).
         Task { [weak self, weak viewModel] in
             // Wait until the view model is released.
@@ -1523,6 +1523,16 @@ public final class MatrixService: MatrixServiceProtocol {
             backupEnabled: encryption.backupState() == .enabled,
             recoveryEnabled: encryption.recoveryState() == .enabled
         )
+    }
+
+    public func hasDevicesToVerifyAgainst() async throws -> Bool {
+        let client = try requireClient()
+        return try await client.encryption().hasDevicesToVerifyAgainst()
+    }
+
+    public func recoverWithKey(_ recoveryKey: String) async throws {
+        let client = try requireClient()
+        try await client.encryption().recover(recoveryKey: recoveryKey)
     }
 
     // MARK: - Devices

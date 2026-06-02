@@ -33,12 +33,15 @@ public struct VerificationEmoji: Identifiable, Sendable {
 
 /// Tracks progress through the interactive session-verification flow.
 ///
-/// The typical happy-path progression is:
+/// The typical happy-path progression for SAS (emoji) verification is:
 /// `idle` -> `requesting` -> `waitingForOtherDevice` -> `sasStarted` -> `showingEmojis` -> `verified`
 ///
 /// When Relay is the *approver* (another device initiated), the flow skips `requesting`
 /// and moves directly from `idle` to `waitingForOtherDevice` once the incoming request
 /// is acknowledged.
+///
+/// The recovery key path is:
+/// `idle` -> `enteringRecoveryKey` -> `recoveringWithKey` -> `verified`
 public enum VerificationState: Sendable {
     /// No verification in progress.
     case idle
@@ -52,6 +55,10 @@ public enum VerificationState: Sendable {
     case showingEmojis
     /// The user confirmed the emoji match; waiting for the other device to confirm.
     case waitingForApproval
+    /// The user is entering their recovery key (security key).
+    case enteringRecoveryKey
+    /// Recovery key submission is in progress.
+    case recoveringWithKey
     /// The user confirmed the emoji match and verification succeeded.
     case verified
     /// Either side cancelled the verification.
@@ -86,6 +93,11 @@ public protocol SessionVerificationViewModelProtocol: AnyObject, Observable {
     var state: VerificationState { get }
     /// The SAS emoji to display. Non-empty only when ``state`` is ``VerificationState/showingEmojis``.
     var emojis: [VerificationEmoji] { get }
+    /// Whether other verified devices exist for interactive (SAS) verification.
+    ///
+    /// When `false`, recovery key entry is the primary verification option.
+    /// Set asynchronously after initialization; defaults to `true` until checked.
+    var hasOtherDevices: Bool { get }
     /// Sends an outgoing verification request to other sessions.
     func requestVerification() async
     /// Confirms that the displayed emoji match the other device.
@@ -94,4 +106,10 @@ public protocol SessionVerificationViewModelProtocol: AnyObject, Observable {
     func declineVerification() async
     /// Cancels the verification flow at any point.
     func cancelVerification() async
+    /// Resets the flow back to the idle state (e.g. when navigating back from recovery key entry).
+    func resetToIdle()
+    /// Transitions to the recovery key entry state.
+    func startRecoveryKeyEntry()
+    /// Submits a recovery key to verify the session via secret storage.
+    func submitRecoveryKey(_ key: String) async
 }

@@ -477,6 +477,21 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     /// Returns the current encryption, key backup, and recovery state.
     func encryptionState() async -> EncryptionStatus
 
+    /// Whether other verified devices exist that this device can verify against interactively.
+    ///
+    /// Returns `false` when this is the user's only device or no other devices have been
+    /// cross-signing verified, meaning recovery key verification is the only option.
+    func hasDevicesToVerifyAgainst() async throws -> Bool
+
+    /// Verifies this session by recovering cross-signing keys from secret storage
+    /// using the user's recovery key (also called "security key").
+    ///
+    /// On success the SDK imports the cross-signing private keys, which transitions
+    /// the session's verification state to `.verified`.
+    ///
+    /// - Parameter recoveryKey: The user's recovery key string.
+    func recoverWithKey(_ recoveryKey: String) async throws
+
     /// Creates a view model for performing interactive session verification (SAS emoji comparison).
     ///
     /// - Returns: A ``SessionVerificationViewModelProtocol`` instance, or `nil` if the
@@ -832,6 +847,8 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func getDevices() async throws -> [DeviceInfo] { [] }
     func isCurrentSessionVerified() async -> Bool { false }
     func encryptionState() async -> EncryptionStatus { EncryptionStatus() }
+    func hasDevicesToVerifyAgainst() async throws -> Bool { false }
+    func recoverWithKey(_ recoveryKey: String) async throws {}
     func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)? { nil }
     func makeCallViewModel(roomId: String) async -> (any CallViewModelProtocol)? { nil }
     func callCredentials(for roomId: String) async throws -> (livekitURL: String, token: String, sfuServiceURL: String) {

@@ -105,10 +105,10 @@ struct SettingsSessionsTab: View {
                                 }
                             }
                         } label: {
-                            Label("Verify with Another Device", systemImage: "checkmark.shield")
+                            Label("Verify Session", systemImage: "checkmark.shield")
                         }
                     } footer: {
-                        Text("Compare emoji on both devices to confirm your identity.")
+                        Text("Verify using another device or your security key.")
                     }
                 }
 
