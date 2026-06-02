@@ -49,6 +49,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     @State private var inspectorSelectedProfile: UserProfile?
     @State private var inspectorInitialTab: InspectorTab?
     @State private var isPreparingCall = false
+    @State private var showCallConfirmation = false
     @State private var messageSearchTask: Task<Void, Never>?
     @FocusState private var isSearchFocused: Bool
     @Namespace private var toolbarNamespace
@@ -359,12 +360,26 @@ struct MainView: View { // swiftlint:disable:this type_body_length
 
     private func startCallButton(roomId: String) -> some View {
         Button {
-            startCall(roomId: roomId)
+            showCallConfirmation = true
         } label: {
             Label("Start Call", systemImage: "phone.fill")
         }
         .help("Start Call")
         .disabled(callManager.hasActiveCall)
+        .confirmationDialog(
+            "Start Call",
+            isPresented: $showCallConfirmation
+        ) {
+            Button("Call") {
+                startCall(roomId: roomId)
+            }
+        } message: {
+            if let name = currentRoom?.name {
+                Text("Start a call in \(name)?")
+            } else {
+                Text("Start a call in this room?")
+            }
+        }
     }
 
     private var toolbarTitleCapsule: some View {
