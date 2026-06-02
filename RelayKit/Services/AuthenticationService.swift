@@ -113,6 +113,12 @@ final class AuthenticationService {
         try? fm.removeItem(at: cacheDirectory)
     }
 
+    /// Deletes only the rebuildable cache directory (sync state, timeline events),
+    /// preserving the data directory (crypto store, device identity).
+    static func resetCacheData() {
+        try? FileManager.default.removeItem(at: cacheDirectory)
+    }
+
     /// The active session delegate, scoped to the current client lifecycle.
     ///
     /// A new delegate is created for each login/restore so that stale

@@ -245,11 +245,13 @@ public final class MatrixService: MatrixServiceProtocol {
     public func clearLocalData() async {
         await teardown()
 
-        // Delete the on-disk data and cache directories.
-        AuthenticationService.resetLocalSessionData()
+        // Delete only the rebuildable cache (sync state, timeline events).
+        // The data directory (crypto store, device identity) is preserved
+        // so the session remains verified after restart.
+        AuthenticationService.resetCacheData()
 
         // Restore the session from the keychain, rebuilding the client
-        // with a fresh data store, then restart sync.
+        // with the existing crypto store, then restart sync.
         await restoreSession()
         startSyncIfNeeded()
     }
