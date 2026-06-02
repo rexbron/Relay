@@ -1431,6 +1431,7 @@ public final class MatrixService: MatrixServiceProtocol {
 
     public func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)? {
         guard let controller = verificationController else { return nil }
+        controller.resetFlowState()
         isVerificationFlowActive = true
         let viewModel = SessionVerificationViewModel(controller: controller, errorReporter: errorReporter)
         // Reset the flag when the view model is deallocated (sheet dismissed).
