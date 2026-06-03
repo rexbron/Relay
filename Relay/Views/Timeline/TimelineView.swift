@@ -414,10 +414,11 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             }
             .onChange(of: viewModel.messages.last?.id) {
                 guard viewModel.timelineFocus == .live else { return }
-                guard !viewModel.isLoadingMore else { return }
-                if isNearBottom || pendingScrollToBottom {
-                    pendingScrollToBottom = false
-                    scrollToBottom()
+                if !viewModel.isLoadingMore {
+                    if isNearBottom || pendingScrollToBottom {
+                        pendingScrollToBottom = false
+                        scrollToBottom()
+                    }
                 }
                 if isNearBottom, NSApp.isActive {
                     Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
@@ -426,6 +427,17 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             .onChange(of: viewModel.timelineFocus) {
                 if viewModel.timelineFocus == .live, NSApp.isActive {
                     pendingScrollToBottom = true
+                    Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
+                }
+            }
+            .onChange(of: viewModel.isLoadingMore) {
+                // After back-pagination settles, re-check whether a read
+                // receipt is needed. During pagination the scroll geometry
+                // may report nearBottom = false due to content size changes,
+                // causing markAsRead calls to be skipped. Once loading
+                // finishes and the scroll settles back at the bottom, this
+                // handler ensures the room is marked as read.
+                if !viewModel.isLoadingMore, isNearBottom, NSApp.isActive {
                     Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
                 }
             }
@@ -503,6 +515,27 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
         { Task { await viewModel.loadMoreFuture() } }
     }
 
+    /// LazyVStack-only callback: advances the fully-read marker to the newest
+    /// message in the visible set, as reported by `onScrollTargetVisibilityChange`.
+    private var rendererOnVisibleMessagesChanged: ([String]) -> Void {
+        { visibleIDs in
+            guard let newestVisibleID = visibleIDs.last,
+                  let row = cachedMessageRows.first(where: { $0.id == newestVisibleID })
+            else { return }
+            advanceFullyReadMarker(to: row.message.eventID)
+        }
+    }
+
+    /// LazyVStack-only callback: re-evaluates read receipt state when the
+    /// scroll view settles to idle after scrolling or programmatic animation.
+    private var rendererOnScrollSettled: () -> Void {
+        {
+            if isNearBottom, NSApp.isActive {
+                Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
+            }
+        }
+    }
+
     @ViewBuilder
     private var timelineRenderer: some View {
         if timelineUseLazyVStack {
@@ -513,10 +546,12 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 highlightedMessageId: highlightedMessageId,
                 showURLPreviews: showURLPreviews,
                 actions: timelineActionsRef,
-                onAppear: rendererOnAppear,
                 onNearBottomChanged: rendererOnNearBottomChanged,
                 onPaginateBackward: rendererOnPaginateBackward,
                 onPaginateForward: rendererOnPaginateForward,
+                onVisibleMessagesChanged: rendererOnVisibleMessagesChanged,
+                onScrollSettled: rendererOnScrollSettled,
+                isLoadingMore: viewModel.isLoadingMore,
                 hasReachedEnd: viewModel.hasReachedEnd,
                 isLive: viewModel.timelineFocus == .live,
                 bottomContentMargin: composeBarHeight + 4,

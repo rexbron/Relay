@@ -19,9 +19,18 @@ import SwiftUI
 /// SwiftUI-native timeline renderer used by the Labs LazyVStack experiment.
 ///
 /// Messages are rendered in natural order (oldest first) inside a `LazyVStack`
-/// with `.defaultScrollAnchor(.bottom)` so the scroll view starts at the
-/// newest messages. A `ScrollPosition` binding enables programmatic
+/// with role-specific scroll anchors: `.initialOffset(.bottom)` positions the
+/// viewport at the newest messages on first load, and `.sizeChanges(.bottom)`
+/// keeps the bottom edge pinned when content size changes (back-pagination or
+/// new messages). A `ScrollPosition` binding enables programmatic
 /// scroll-to-bottom and scroll-to-row from the parent ``TimelineView``.
+///
+/// Read receipt advancement uses `onScrollTargetVisibilityChange` to track
+/// which messages are actually visible, rather than per-row `.onAppear`
+/// callbacks which fire during cell creation and may not reflect true
+/// visibility.  Back-pagination is gated on `onScrollPhaseChange` so it only
+/// triggers during active user scrolling, preventing runaway re-triggers
+/// from content-size geometry updates.
 struct TimelineLazyVStackView: View {
     let rows: [MessageRow]
 
@@ -33,13 +42,26 @@ struct TimelineLazyVStackView: View {
     /// The consolidated timeline interaction callbacks.
     let actions: TimelineActions
 
-    /// Called when a row appears on screen (for read receipt advancement).
-    var onAppear: (MessageRow) -> Void
-
     // Renderer-level callbacks (not part of TimelineActions).
     var onNearBottomChanged: (Bool) -> Void
     var onPaginateBackward: () -> Void
     var onPaginateForward: () -> Void = {}
+
+    /// Called when the set of visible message IDs changes, as reported by
+    /// `onScrollTargetVisibilityChange`. Used for fully-read marker
+    /// advancement instead of per-row `.onAppear` callbacks, which fire
+    /// during cell creation rather than true visibility.
+    var onVisibleMessagesChanged: ([String]) -> Void = { _ in }
+
+    /// Called when the scroll view transitions to the `.idle` phase after
+    /// scrolling or a programmatic animation completes. Used to re-evaluate
+    /// read receipt state after pagination-induced geometry changes settle.
+    var onScrollSettled: () -> Void = {}
+
+    /// Whether the view model is currently loading more history. Used to
+    /// prevent the scroll geometry handler from re-triggering backward
+    /// pagination while the SDK is still processing a previous request.
+    var isLoadingMore: Bool = false
 
     /// Whether the timeline has loaded all future messages. When `false`,
     /// scrolling near the bottom triggers forward pagination.
@@ -58,7 +80,7 @@ struct TimelineLazyVStackView: View {
 
     @State private var swipeState = TimelineSwipeState()
     @State private var swipeHandler = SwipeScrollHandler()
-    @State private var paginatingBackward = false
+    @State private var isUserScrolling = false
     @State private var previousLastRowID: String?
     @State private var initialLoadComplete = false
 
@@ -77,7 +99,7 @@ struct TimelineLazyVStackView: View {
                         firstUnreadMessageId: firstUnreadMessageId,
                         highlightedMessageId: highlightedMessageId,
                         showURLPreviews: showURLPreviews,
-                        onAppear: onAppear,
+                        onAppear: { _ in },
                         swipeOffset: swipeState.swipingMessageId == row.id ? swipeState.offset : 0,
                         swipeIsLocked: swipeState.swipingMessageId == row.id && swipeState.isLocked
                     )
@@ -92,7 +114,8 @@ struct TimelineLazyVStackView: View {
             }
             .scrollTargetLayout()
         }
-        .defaultScrollAnchor(.bottom)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .environment(\.timelineActions, actions)
         .onTapGesture {
             if swipeState.isLocked { dismissSwipeActionBar() }
@@ -118,15 +141,25 @@ struct TimelineLazyVStackView: View {
             if old.nearBottom != new.nearBottom {
                 onNearBottomChanged(new.nearBottom)
             }
-            if new.offsetY < 600, !rows.isEmpty, !paginatingBackward {
-                paginatingBackward = true
+            // Only trigger backward pagination when the user is actively
+            // scrolling and the SDK isn't already loading. This prevents
+            // runaway re-triggers from content-size-change geometry
+            // updates during pagination bursts.
+            if new.offsetY < 600, !rows.isEmpty, !isLoadingMore, isUserScrolling {
                 onPaginateBackward()
-            } else if new.offsetY >= 600 {
-                paginatingBackward = false
             }
             if !hasReachedEnd, new.distanceFromContent < 50 {
                 onPaginateForward()
             }
+        }
+        .onScrollPhaseChange { _, newPhase in
+            isUserScrolling = newPhase == .interacting || newPhase == .decelerating
+            if newPhase == .idle {
+                onScrollSettled()
+            }
+        }
+        .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.5) { visibleIDs in
+            onVisibleMessagesChanged(visibleIDs)
         }
         .onAppear {
             installSwipeMonitor()

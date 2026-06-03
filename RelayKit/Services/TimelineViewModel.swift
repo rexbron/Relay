@@ -681,18 +681,14 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 needsRebuild = true
 
                 // If no rebuild is in progress and no coalesce timer is
-                // pending, rebuild immediately.
+                // pending, rebuild immediately — unless the batch emptied
+                // the timeline (e.g. a clear diff). In that case, defer
+                // the rebuild to give the SDK time to deliver follow-up
+                // content diffs, preventing a momentary empty-state flash.
                 if !isRebuilding && coalesceTask == nil {
-                    isRebuilding = true
-                    needsRebuild = false
-                    await self.rebuildMessages()
-                    isRebuilding = false
-
-                    // After the rebuild, if more diffs arrived during the
-                    // background mapping pass, start a short coalesce timer
-                    // to batch any further rapid-fire diffs before the next
-                    // rebuild.
-                    if needsRebuild && coalesceTask == nil {
+                    if self.timelineItems.isEmpty && !self.messages.isEmpty {
+                        // Destructive diff with no replacement content yet.
+                        // Defer the rebuild so we don't flash an empty view.
                         coalesceTask = Task { [weak self] in
                             try? await Task.sleep(for: Self.diffCoalesceInterval)
                             guard !Task.isCancelled, let self else { return }
@@ -701,6 +697,27 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                                 await self.rebuildMessages()
                             }
                             coalesceTask = nil
+                        }
+                    } else {
+                        isRebuilding = true
+                        needsRebuild = false
+                        await self.rebuildMessages()
+                        isRebuilding = false
+
+                        // After the rebuild, if more diffs arrived during the
+                        // background mapping pass, start a short coalesce timer
+                        // to batch any further rapid-fire diffs before the next
+                        // rebuild.
+                        if needsRebuild && coalesceTask == nil {
+                            coalesceTask = Task { [weak self] in
+                                try? await Task.sleep(for: Self.diffCoalesceInterval)
+                                guard !Task.isCancelled, let self else { return }
+                                while needsRebuild {
+                                    needsRebuild = false
+                                    await self.rebuildMessages()
+                                }
+                                coalesceTask = nil
+                            }
                         }
                     }
                 }
@@ -748,7 +765,12 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                     // non-message items but zero actual messages.
                     let msgLikeCount = self.countMsgLikeItems()
                     if !hitStart && msgLikeCount < 20 && !self.paginationPermanentlyFailed {
-                        let succeeded = await self.paginateBackwardsWithRetry(tl)
+                        // Fetch only enough events to fill the viewport.
+                        // The threshold is 20 msgLike items, so request
+                        // slightly more to account for non-message events
+                        // (state changes, date dividers) that don't count.
+                        let needed = UInt16(max(20 - msgLikeCount, 5))
+                        let succeeded = await self.paginateBackwardsWithRetry(tl, numEvents: needed)
                         if !succeeded {
                             self.paginationPermanentlyFailed = true
                         }
@@ -798,12 +820,14 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
     /// - Returns: `true` if pagination succeeded, `false` if it failed
     ///   permanently (non-transient error or retries exhausted).
     @discardableResult
-    private func paginateBackwardsWithRetry(_ timeline: Timeline) async -> Bool {
+    private func paginateBackwardsWithRetry(_ timeline: Timeline, numEvents: UInt16 = 100) async -> Bool {
         for attempt in 0 ..< Self.maxPaginationRetries {
             do {
-                try await Task.sleep(for: .milliseconds(500))
-                guard !Task.isCancelled else { return false }
-                _ = try await timeline.paginateBackwards(numEvents: 100)
+                if attempt > 0 {
+                    try await Task.sleep(for: .milliseconds(500))
+                    guard !Task.isCancelled else { return false }
+                }
+                _ = try await timeline.paginateBackwards(numEvents: numEvents)
                 return true
             } catch is CancellationError {
                 return false
