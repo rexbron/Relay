@@ -470,6 +470,40 @@ private struct HTMLBubblePreview: View {
     }
 }
 
+#Preview("HTML Tables") {
+    ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+            HTMLBubblePreview(
+                html: """
+                <table><tr><td>A</td><td>B</td><td>C</td></tr>\
+                <tr><td>1</td><td>2</td><td>3</td></tr>\
+                <tr><td>X</td><td>Y</td><td>Z</td></tr></table>
+                """,
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: """
+                <table>\
+                <caption>Server Status</caption>\
+                <thead><tr><th>Host</th><th>Status</th><th>Uptime</th></tr></thead>\
+                <tbody>\
+                <tr><td>alpha</td><td>OK</td><td>99.9%</td></tr>\
+                <tr><td>beta</td><td>WARN</td><td>98.1%</td></tr>\
+                <tr><td>gamma</td><td>DOWN</td><td>0%</td></tr>\
+                </tbody></table>
+                """,
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: "<p>Here is a table:</p><table><tr><th>Name</th><th>Value</th></tr><tr><td>foo</td><td>42</td></tr></table><p>End of table.</p>",
+                isOutgoing: true
+            )
+        }
+        .padding()
+        .frame(width: 500)
+    }
+}
+
 #Preview("HTML Nested Blockquotes") {
     ScrollView {
         VStack(alignment: .leading, spacing: 12) {
@@ -551,6 +585,39 @@ private struct HTMLBubblePreview: View {
                 </blockquote>
                 Which product is that?
                 </blockquote>
+                """,
+                isOutgoing: true
+            )
+        }
+        .padding()
+        .frame(width: 500)
+    }
+}
+
+#Preview("HTML Paragraph Spacing") {
+    ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+            HTMLBubblePreview(
+                html: """
+                <p>Testing quote behaviour</p>\
+                <blockquote><p>I am a quote. Cool.</p></blockquote>\
+                <p>I am not a quote</p>\
+                <blockquote><p>I'm another quote and this time I'm many many many many \
+                many many many many many many many many many many many lines</p></blockquote>\
+                <p>I am no longer a quote and I, too am many many many many many many many \
+                many many many many many many many many many many many many lines</p>
+                """,
+                isOutgoing: false
+            )
+            HTMLBubblePreview(
+                html: """
+                <p>Testing quote behaviour</p>\
+                <blockquote><p>I am a quote. Cool.</p></blockquote>\
+                <p>I am not a quote</p>\
+                <blockquote><p>I'm another quote and this time I'm many many many many \
+                many many many many many many many many many many many lines</p></blockquote>\
+                <p>I am no longer a quote and I, too am many many many many many many many \
+                many many many many many many many many many many many many lines</p>
                 """,
                 isOutgoing: true
             )
