@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import AppKit
 import RelayInterface
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The root view for the Activity Log window.
 ///
@@ -222,6 +224,15 @@ struct ActivityLogView: View {
         }
 
         ToolbarItem(placement: .automatic) {
+            Button("Export", systemImage: "square.and.arrow.up") {
+                exportEvents()
+            }
+            .disabled(filteredEvents.isEmpty)
+            .help("Export filtered events as JSON")
+            .keyboardShortcut("s", modifiers: .command)
+        }
+
+        ToolbarItem(placement: .automatic) {
             Button {
                 withAnimation {
                     showingInspector.toggle()
@@ -231,6 +242,24 @@ struct ActivityLogView: View {
             }
             .help(showingInspector ? "Hide inspector" : "Show inspector")
         }
+    }
+    // MARK: - Export
+
+    /// Encodes the currently filtered events as JSON and presents a save panel.
+    private func exportEvents() {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+
+        guard let data = try? encoder.encode(filteredEvents) else { return }
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "relay-activity-log.json"
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? data.write(to: url)
     }
 }
 

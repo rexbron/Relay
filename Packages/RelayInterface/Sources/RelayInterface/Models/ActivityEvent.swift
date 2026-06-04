@@ -19,9 +19,9 @@ import Foundation
 /// ``ActivityEvent`` provides an "under the hood" view into the sync pipeline, room
 /// list management, timeline diff processing, and network state. Events are stored
 /// in a ring buffer by ``ActivityLogProtocol`` and displayed in the Activity Log window.
-public struct ActivityEvent: Identifiable, Sendable {
+public struct ActivityEvent: Identifiable, Sendable, Codable {
     /// The subsystem that produced the event.
-    public enum Category: String, Sendable, CaseIterable, Identifiable {
+    public enum Category: String, Sendable, CaseIterable, Identifiable, Codable {
         case sync
         case roomList
         case timeline
@@ -60,7 +60,7 @@ public struct ActivityEvent: Identifiable, Sendable {
     }
 
     /// The severity level of the event.
-    public enum Severity: String, Sendable, CaseIterable, Identifiable, Comparable {
+    public enum Severity: String, Sendable, CaseIterable, Identifiable, Comparable, Codable {
         case debug
         case info
         case warning
