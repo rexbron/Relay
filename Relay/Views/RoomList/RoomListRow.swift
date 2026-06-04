@@ -85,6 +85,7 @@ struct RoomListRow: View {
             .padding(4)
         }
         .padding(.vertical, 8)
+        .opacity(room.successorRoomId != nil ? 0.5 : 1)
     }
 
     /// A mute icon overlay on the avatar for muted rooms.

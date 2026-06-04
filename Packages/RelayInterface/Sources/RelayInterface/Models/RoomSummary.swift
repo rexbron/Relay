@@ -137,6 +137,14 @@ public final class RoomSummary: Identifiable {
     /// shows children rooms and space metadata.
     public var isSpace: Bool
 
+    /// The room ID of this room's successor, if the room has been upgraded.
+    ///
+    /// Populated from the SDK's `RoomInfo.successorRoom` when a
+    /// `m.room.tombstone` state event marks this room as replaced. When
+    /// non-nil, the user should be seamlessly redirected to the successor
+    /// room.
+    public var successorRoomId: String?
+
     /// The IDs of spaces that this room belongs to.
     ///
     /// Populated from the space graph maintained by the SDK's ``SpaceService``.

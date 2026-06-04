@@ -121,7 +121,7 @@ final class RoomListManager {
         }
         let allRooms = try await rls.allRooms()
         let handle = allRooms.entriesWithDynamicAdapters(pageSize: 100, listener: entriesListener)
-        _ = handle.controller().setFilter(kind: .all(filters: [.nonLeft, .nonSpace, .deduplicateVersions]))
+        _ = handle.controller().setFilter(kind: .all(filters: [.nonLeft, .nonSpace]))
         entriesHandle = handle
 
         hasLoadedRooms = true
@@ -175,7 +175,7 @@ final class RoomListManager {
         }
         let allRooms = try await rls.allRooms()
         let handle = allRooms.entriesWithDynamicAdapters(pageSize: 100, listener: entriesListener)
-        _ = handle.controller().setFilter(kind: .all(filters: [.nonLeft, .nonSpace, .deduplicateVersions]))
+        _ = handle.controller().setFilter(kind: .all(filters: [.nonLeft, .nonSpace]))
         entriesHandle = handle
 
         entriesTask = Task { [weak self] in
@@ -534,6 +534,7 @@ private final class RoomEntry: Identifiable {
         summary.canonicalAlias = info.canonicalAlias
         summary.pinnedEventIds = info.pinnedEventIds
         summary.isFavourite = info.isFavourite
+        summary.successorRoomId = info.successorRoom?.roomId
 
         // Map SDK membership to RelayInterface type
         switch info.membership {

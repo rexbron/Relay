@@ -79,6 +79,8 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     @State private var cachedMessageRows: [MessageRow]
     @State private var isTimelineDropTargeted = false
     @State private var timelineActionsRef = TimelineActions()
+    @State private var successorRoomId: String?
+    @State private var isJoiningSuccessor = false
 
     init(
         roomId: String,
@@ -152,6 +154,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
 
     var body: some View {
         messageList
+            .opacity(successorRoomId != nil ? 0.5 : 1)
             .environment(\.mediaAutoReveal, shouldAutoRevealMedia)
             .environment(\.gifAnimationOverride, roomOverrides.animateGIFs)
             .overlay {
@@ -179,7 +182,9 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 }
             }
             .overlay(alignment: .bottom) {
-                if !readOnly, roomPermissions?.canSendMessages ?? true {
+                if successorRoomId != nil {
+                    roomUpgradedBanner
+                } else if !readOnly, roomPermissions?.canSendMessages ?? true {
                     composeBarSection
                 }
             }
@@ -233,8 +238,10 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             // lifetime of this view.
             configureTimelineActions()
 
-            // Cache isDirect once — avoids O(n) room scan on every body evaluation.
-            isDirectRoom = matrixService.rooms.first(where: { $0.id == roomId })?.isDirect ?? false
+            // Cache room summary properties — avoids O(n) room scan on every body evaluation.
+            let roomSummary = matrixService.rooms.first(where: { $0.id == roomId })
+            isDirectRoom = roomSummary?.isDirect ?? false
+            successorRoomId = roomSummary?.successorRoomId
 
             // Fetch room permissions to determine moderator capabilities.
             let details = await matrixService.roomDetails(roomId: roomId)
@@ -305,6 +312,9 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             }
             memberRefreshTask?.cancel()
             unreadMarkerDismissTask?.cancel()
+        }
+        .onChange(of: matrixService.rooms.first(where: { $0.id == roomId })?.successorRoomId) { _, newValue in
+            successorRoomId = newValue
         }
         .onChange(of: viewModel.firstUnreadMessageId) { oldValue, newValue in
             // When the unread marker position is first computed (nil -> value),
@@ -610,6 +620,57 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             .padding(.bottom, 56)
             .padding(.trailing, 16)
             .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    // MARK: - Room Upgraded Banner
+
+    private var roomUpgradedBanner: some View {
+        VStack(spacing: 6) {
+            Text("This room has been upgraded.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Button {
+                guard let successorRoomId, !isJoiningSuccessor else { return }
+                isJoiningSuccessor = true
+                Task {
+                    defer { isJoiningSuccessor = false }
+                    do {
+                        try await matrixService.joinRoom(idOrAlias: successorRoomId)
+                        // Wait briefly for the room list to sync so the
+                        // successor appears in the sidebar before we navigate.
+                        try? await Task.sleep(for: .milliseconds(500))
+                        onRoomTap?(successorRoomId)
+                    } catch {
+                        errorReporter.report(.roomJoinFailed(error.localizedDescription))
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    if isJoiningSuccessor {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Text("Continue the conversation")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isJoiningSuccessor)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .background(.bar)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            composeBarHeight = height
+            if !timelineUseLazyVStack {
+                tableProxy.setContentInsets(NSEdgeInsets(
+                    top: 0, left: 0, bottom: height + 4, right: 0
+                ))
+            }
         }
     }
 

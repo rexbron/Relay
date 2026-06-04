@@ -28,6 +28,7 @@ struct RoomListView: View {
     @AppStorage("roomSortOrder") private var sortOrder: RoomSortOrder = .lastMessage
     @AppStorage("roomSortDirection") private var sortDirection: RoomSortDirection = .descending
     @AppStorage("roomTypeFilter") private var typeFilter: RoomTypeFilter = .all
+    @AppStorage("showArchivedRooms") private var showArchivedRooms = false
     @State private var roomToLeave: RoomSummary?
     @State private var showLeaveConfirmation = false
     @State private var verificationItem: VerificationItem?
@@ -205,6 +206,12 @@ struct RoomListView: View {
                     }
                 }
             }
+
+            Section {
+                Toggle(isOn: $showArchivedRooms.animation()) {
+                    Label("Archived Rooms", systemImage: "archivebox")
+                }
+            }
         } label: {
             Label("Sort and Filter", systemImage: "line.3.horizontal.decrease")
         }
@@ -308,6 +315,12 @@ extension RoomListView {
             rooms = rooms.filter { !$0.isDirect }
         case .directMessages:
             rooms = rooms.filter { $0.isDirect }
+        }
+
+        // Exclude tombstoned (upgraded) rooms unless the user has opted
+        // to see archived rooms.
+        if !showArchivedRooms {
+            rooms = rooms.filter { $0.successorRoomId == nil }
         }
 
         // Apply sort.
