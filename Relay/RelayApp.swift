@@ -87,6 +87,7 @@ struct RelayApp: App {
 
         Window("Activity Log", id: "activity-log") {
             ActivityLogView()
+                .environment(\.matrixService, matrixService)
                 .environment(\.activityLog, matrixService.activityLog)
                 .preferredColorScheme(appearanceMode.colorScheme)
         }

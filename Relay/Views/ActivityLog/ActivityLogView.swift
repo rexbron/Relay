@@ -24,6 +24,7 @@ import UniformTypeIdentifiers
 /// Selecting an event reveals its full detail and metadata in a trailing inspector panel.
 struct ActivityLogView: View {
     @Environment(\.activityLog) private var activityLog
+    @Environment(\.matrixService) private var matrixService
 
     @State private var selectedEventId: UUID?
     @State private var showingInspector = false
@@ -41,8 +42,9 @@ struct ActivityLogView: View {
                 return false
             }
             if !searchText.isEmpty {
-                let haystack = "\(event.summary) \(event.detail ?? "") \(event.source) \(event.roomId ?? "")"
-                if !haystack.localizedCaseInsensitiveContains(searchText) {
+                let roomDisplay = event.roomId.flatMap { roomName(for: $0) } ?? event.roomId ?? ""
+                let haystack = "\(event.summary) \(event.detail ?? "") \(event.source) \(roomDisplay)"
+                if !haystack.localizedStandardContains(searchText) {
                     return false
                 }
             }
@@ -50,9 +52,15 @@ struct ActivityLogView: View {
         }
     }
 
-    /// Unique room IDs present in the current event buffer, for the room filter menu.
+    /// Unique room IDs present in the current event buffer, sorted by display name.
     private var availableRoomIds: [String] {
-        Array(Set(activityLog.events.compactMap(\.roomId))).sorted()
+        Array(Set(activityLog.events.compactMap(\.roomId)))
+            .sorted { roomName(for: $0) ?? $0 < roomName(for: $1) ?? $1 }
+    }
+
+    /// Returns the display name for a room ID, or `nil` if the room is unknown.
+    private func roomName(for roomId: String) -> String? {
+        matrixService.rooms.first { $0.id == roomId }?.name
     }
 
     private var selectedEvent: ActivityEvent? {
@@ -83,7 +91,7 @@ struct ActivityLogView: View {
     private var eventTable: some View {
         ScrollViewReader { proxy in
             List(filteredEvents, selection: $selectedEventId) { event in
-                ActivityLogRow(event: event)
+                ActivityLogRow(event: event, roomName: event.roomId.flatMap { roomName(for: $0) })
                     .tag(event.id)
             }
             .listStyle(.inset(alternatesRowBackgrounds: true))
@@ -120,9 +128,14 @@ struct ActivityLogView: View {
 
                 if let roomId = event.roomId {
                     Section("Room") {
-                        Text(roomId)
-                            .font(.system(.body, design: .monospaced))
-                            .textSelection(.enabled)
+                        if let name = roomName(for: roomId) {
+                            LabeledContent("Name", value: name)
+                        }
+                        LabeledContent("ID") {
+                            Text(roomId)
+                                .font(.system(.body, design: .monospaced))
+                                .textSelection(.enabled)
+                        }
                     }
                 }
 
@@ -208,7 +221,7 @@ struct ActivityLogView: View {
                 if !availableRoomIds.isEmpty {
                     Divider()
                     ForEach(availableRoomIds, id: \.self) { roomId in
-                        Text(roomId).tag(String?.some(roomId))
+                        Text(roomName(for: roomId) ?? roomId).tag(String?.some(roomId))
                     }
                 }
             }
@@ -268,6 +281,7 @@ struct ActivityLogView: View {
 /// A single row in the activity log event table.
 private struct ActivityLogRow: View {
     let event: ActivityEvent
+    var roomName: String?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -296,9 +310,9 @@ private struct ActivityLogRow: View {
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            if let roomId = event.roomId {
-                Text(roomId)
-                    .font(.system(.caption2, design: .monospaced))
+            if event.roomId != nil {
+                Text(roomName ?? event.roomId!)
+                    .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -326,5 +340,6 @@ private struct ActivityLogRow: View {
 
 #Preview("Activity Log") {
     ActivityLogView()
+        .environment(\.matrixService, PreviewMatrixService())
         .frame(width: 900, height: 600)
 }
