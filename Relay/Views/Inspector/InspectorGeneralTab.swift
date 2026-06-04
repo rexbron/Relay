@@ -194,6 +194,20 @@ struct InspectorGeneralTab: View {
 
             statusTiles(details)
         }
+        .overlay(alignment: .topTrailing) {
+            if !isEditing {
+                ShareLink(
+                    item: matrixToURL(for: details),
+                    preview: SharePreview(details.name)
+                ) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Share \(entityName)")
+            }
+        }
         .padding(.horizontal)
     }
 
@@ -255,6 +269,18 @@ struct InspectorGeneralTab: View {
 
 
         }
+    }
+
+    // MARK: - Share URL
+
+    /// Builds a `https://matrix.to` URL for the room or space, preferring the
+    /// canonical alias (human-readable) and falling back to the room ID.
+    private func matrixToURL(for details: RoomDetails) -> URL {
+        let identifier = details.canonicalAlias ?? details.id
+        let encoded = identifier.addingPercentEncoding(
+            withAllowedCharacters: .urlFragmentAllowed
+        )!
+        return URL(string: "https://matrix.to/#/\(encoded)")!
     }
 
     // MARK: - Status Tiles
