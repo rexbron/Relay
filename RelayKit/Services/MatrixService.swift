@@ -107,6 +107,7 @@ public final class MatrixService: MatrixServiceProtocol {
     /// attempt automatic sign-in from a previously saved keychain session.
     public init() {
         auth = AuthenticationService(networkMonitor: networkMonitor)
+        auth.activityLog = _activityLog
         syncManager = SyncManager(networkMonitor: networkMonitor, activityLog: _activityLog)
         networkMonitor.activityLog = _activityLog
         roomListManager.activityLog = _activityLog
@@ -1435,7 +1436,10 @@ public final class MatrixService: MatrixServiceProtocol {
         guard let controller = verificationController else { return nil }
         controller.resetFlowState()
         isVerificationFlowActive = true
-        let viewModel = SessionVerificationViewModel(controller: controller, service: self, errorReporter: errorReporter)
+        let viewModel = SessionVerificationViewModel(
+            controller: controller, service: self,
+            errorReporter: errorReporter, activityLog: _activityLog
+        )
         // Reset the flag when the view model is deallocated (sheet dismissed).
         Task { [weak self, weak viewModel] in
             // Wait until the view model is released.
