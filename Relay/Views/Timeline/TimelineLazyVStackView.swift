@@ -187,7 +187,9 @@ struct TimelineLazyVStackView: View {
 
     private func installSwipeMonitor() {
         swipeHandler.swipeState = swipeState
-        swipeHandler.onReply = actions.reply
+        swipeHandler.onReply = { [actions] message in
+            actions.reply(message)
+        }
         swipeHandler.onDismiss = { dismissSwipeActionBar() }
         swipeHandler.startMonitoring()
     }
@@ -215,12 +217,18 @@ private struct ScrollMetrics: Equatable {
     var distanceFromContent: CGFloat
 }
 
-// MARK: - Scroll Wheel Event Handler
+// MARK: - Swipe Scroll Handler
 
 /// Monitors local scroll wheel events for horizontal two-finger swipe
 /// gestures. When a horizontal swipe is detected, it drives the
 /// ``TimelineSwipeState`` for swipe-to-reply; vertical scrolls are ignored
 /// (passed through to the underlying `ScrollView`).
+///
+/// When the handler locks onto a horizontal gesture, it synthesizes a
+/// `.cancelled` scroll wheel event and dispatches it to the window's
+/// first responder so the underlying `NSScrollView` cleanly exits its
+/// tracking loop. Subsequent horizontal events are consumed (returned
+/// as `nil` from the monitor) so they never reach the scroll view.
 @MainActor
 final class SwipeScrollHandler {
     var swipeState = TimelineSwipeState()
@@ -240,16 +248,16 @@ final class SwipeScrollHandler {
     private var swipingMessageID: String?
 
     private let axisLockThreshold: CGFloat = 4
-    private let triggerThreshold: CGFloat = 40
-    private let maxOffset: CGFloat = 220
+    private let lockThreshold: CGFloat = 60
+    private let triggerThreshold: CGFloat = 100
+    private let maxOffset: CGFloat = 120
 
     func startMonitoring() {
         guard scrollMonitor == nil else { return }
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self else { return event }
-            return self.handleScrollWheel(event) ? nil : event
+            return self.handleScrollWheel(event)
         }
-
     }
 
     func stopMonitoring() {
@@ -265,58 +273,94 @@ final class SwipeScrollHandler {
         }
     }
 
-    private func handleScrollWheel(_ event: NSEvent) -> Bool {
+    /// Returns `nil` to consume the event, or the event itself to pass it through.
+    private func handleScrollWheel(_ event: NSEvent) -> NSEvent? {
         switch event.phase {
         case .began:
             gestureAxis = .undecided
-            accumulatedDeltaX = 0
             swipingMessageID = hoveredRowID
+            // If the row is already locked, seed the accumulated delta from
+            // the current offset so the swipe resumes rather than snapping
+            // back to zero.
+            if swipeState.isLocked, swipingMessageID == swipeState.swipingMessageId {
+                accumulatedDeltaX = swipeState.offset
+            } else {
+                accumulatedDeltaX = 0
+            }
+            return event
 
         case .changed:
-            guard swipingMessageID != nil else { return false }
+            guard swipingMessageID != nil else { return event }
 
             switch gestureAxis {
             case .undecided:
                 let absX = abs(event.scrollingDeltaX)
                 let absY = abs(event.scrollingDeltaY)
-                guard absX + absY >= axisLockThreshold else { return false }
+                guard absX + absY >= axisLockThreshold else { return event }
 
                 let locked = swipeState.isLocked
                 if absX > absY && (event.scrollingDeltaX > 0 || locked) {
                     gestureAxis = .horizontal
-                    accumulatedDeltaX = max(0, event.scrollingDeltaX)
+                    accumulatedDeltaX = max(0, accumulatedDeltaX + event.scrollingDeltaX)
                     if locked && event.scrollingDeltaX < 0 {
                         onDismiss()
                         gestureAxis = .undecided
-                        return true
+                        return nil
                     }
                     applyDelta()
-                    return true
+                    // Cancel the ScrollView's active tracking so it doesn't
+                    // fight with our horizontal gesture.
+                    sendCancellation(for: event)
+                    return nil
                 } else {
                     gestureAxis = .vertical
-                    return false
+                    return event
                 }
 
             case .horizontal:
                 accumulatedDeltaX += event.scrollingDeltaX
                 accumulatedDeltaX = max(0, accumulatedDeltaX)
                 applyDelta()
-                return true
+                return nil
 
             case .vertical:
-                return false
+                return event
             }
 
         case .ended, .cancelled:
             let wasHorizontal = gestureAxis == .horizontal
             if wasHorizontal { handleSwipeEnd() }
             resetGesture()
-            return wasHorizontal
+            if wasHorizontal {
+                // Send a cancellation so the ScrollView doesn't linger in
+                // an active tracking state.
+                sendCancellation(for: event)
+                return nil
+            }
+            return event
 
         default:
-            return false
+            return event
         }
-        return false
+    }
+
+    /// Synthesizes a `.cancelled` scroll wheel event with zeroed deltas and
+    /// dispatches it directly to the key window so the underlying
+    /// `NSScrollView` cleanly exits any active scroll tracking.
+    private func sendCancellation(for original: NSEvent) {
+        guard let cgEvent = original.cgEvent?.copy(),
+              let window = original.window else { return }
+        // Phase 4 = kCGScrollPhaseCancelled.
+        cgEvent.setIntegerValueField(.scrollWheelEventScrollPhase, value: 4)
+        cgEvent.setDoubleValueField(.scrollWheelEventDeltaAxis1, value: 0)
+        cgEvent.setDoubleValueField(.scrollWheelEventDeltaAxis2, value: 0)
+        cgEvent.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: 0)
+        cgEvent.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: 0)
+        cgEvent.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: 0)
+        cgEvent.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: 0)
+        if let cancelEvent = NSEvent(cgEvent: cgEvent) {
+            window.sendEvent(cancelEvent)
+        }
     }
 
     private func applyDelta() {
@@ -341,16 +385,13 @@ final class SwipeScrollHandler {
             onDismiss()
             return
         }
-
-        let lockOffset: CGFloat = 100
-        let longSwipeThreshold: CGFloat = 180
-
-        if swipeState.offset >= longSwipeThreshold {
+        if swipeState.offset >= triggerThreshold {
             onDismiss()
             onReply(row.message)
-        } else if swipeState.offset >= triggerThreshold {
-            withAnimation(.snappy(duration: 0.25)) {
-                swipeState.offset = lockOffset
+        } else if swipeState.offset >= lockThreshold {
+            // Lock the action bar in place so the user can tap it.
+            withAnimation(.snappy(duration: 0.2)) {
+                swipeState.offset = lockThreshold
                 swipeState.isLocked = true
             }
         } else {

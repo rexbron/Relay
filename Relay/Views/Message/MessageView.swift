@@ -38,9 +38,25 @@ struct MessageView: View {
     @AppStorage("appearance.coloredBubbles") private var coloredBubbles = false
     @Environment(\.timelineActions) private var actions
     @Environment(\.swipeOffset) private var swipeOffset
+    @Environment(\.swipeIsLocked) private var swipeIsLocked
     @State private var showEmojiPicker = false
 
     var body: some View {
+        bubbleContent
+            .offset(x: swipeOffset)
+            .frame(maxWidth: .infinity, alignment: message.isOutgoing ? .trailing : .leading)
+            .onChange(of: triggerReactionPickerFromParent.wrappedValue) {
+                guard triggerReactionPickerFromParent.wrappedValue else { return }
+                showEmojiPicker = true
+                triggerReactionPickerFromParent.wrappedValue = false
+            }
+    }
+
+    // MARK: - Bubble Content
+
+    /// The avatar, sender name, and message bubble — everything that slides
+    /// right during a swipe-to-reply gesture.
+    private var bubbleContent: some View {
         VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 2) {
             HStack(alignment: .bottom, spacing: 6) {
                 if !message.isOutgoing {
@@ -83,6 +99,16 @@ struct MessageView: View {
                             message: message,
                             onPresentReactionPicker: { showEmojiPicker = true }
                         )
+                        .overlay(alignment: .leading) {
+                            // Reply arrow revealed during swipe. Counter-offset
+                            // keeps the arrow stationary at the bubble's leading
+                            // edge while the bubble slides right.
+                            if swipeOffset > 0 {
+                                swipeActionBar
+                                    .opacity(min(swipeOffset / 60, 1.0))
+                                    .offset(x: -swipeOffset)
+                            }
+                        }
                         .overlay(alignment: .topTrailing) {
                             if message.isHighlighted {
                                 highlightBadge
@@ -90,32 +116,30 @@ struct MessageView: View {
                             }
                         }
                         .padding(.top, message.isHighlighted && !showSenderName ? 4 : 0)
-                            .padding(message.replyDetail != nil ? 2 : 0)
-                            .background {
-                                if message.replyDetail != nil {
-                                    BubbleStyle.replyWrapperShape
-                                        .fill(Color(nsColor: .windowBackgroundColor))
-                                }
+                        .padding(message.replyDetail != nil ? 2 : 0)
+                        .background {
+                            if message.replyDetail != nil {
+                                BubbleStyle.replyWrapperShape
+                                    .fill(Color(nsColor: .windowBackgroundColor))
                             }
-                            .onLongPressGesture {
-                                showEmojiPicker = true
+                        }
+                        .onLongPressGesture {
+                            showEmojiPicker = true
+                        }
+                        .popover(
+                            isPresented: $showEmojiPicker,
+                            attachmentAnchor: .point(message.isOutgoing ? .topLeading : .topTrailing),
+                            arrowEdge: .top
+                        ) {
+                            EmojiPickerPopover { emoji in
+                                actions.toggleReaction(message.eventID, emoji)
+                                showEmojiPicker = false
                             }
-                            .popover(
-                                isPresented: $showEmojiPicker,
-                                attachmentAnchor: .point(message.isOutgoing ? .topLeading : .topTrailing),
-                                arrowEdge: .top
-                            ) {
-                                EmojiPickerPopover { emoji in
-                                    actions.toggleReaction(message.eventID, emoji)
-                                    showEmojiPicker = false
-                                }
-                            }
+                        }
                     }
                 }
                 .frame(maxWidth: 500, alignment: message.isOutgoing ? .trailing : .leading)
-
             }
-            .frame(maxWidth: .infinity, alignment: message.isOutgoing ? .trailing : .leading)
 
             if !message.reactions.isEmpty {
                 ReactionsView(
@@ -125,12 +149,26 @@ struct MessageView: View {
                 .padding(.leading, message.isOutgoing ? 0 : 34)
             }
         }
-        .onChange(of: triggerReactionPickerFromParent.wrappedValue) {
-            guard triggerReactionPickerFromParent.wrappedValue else { return }
-            showEmojiPicker = true
-            triggerReactionPickerFromParent.wrappedValue = false
-        }
+    }
 
+    // MARK: - Swipe Action Bar
+
+    /// Reply button revealed behind the bubble during a swipe-to-reply gesture.
+    /// Placed as an overlay on `MessageBubbleContent` so the arrow aligns with
+    /// the bubble's actual leading edge regardless of message width.
+    private var swipeActionBar: some View {
+        let longSwipeProgress = max(0, min((swipeOffset - 100) / 20, 1.0))
+        let replyScale = 1.0 + longSwipeProgress * 0.8
+
+        return Button("Reply", systemImage: "arrowshape.turn.up.left.fill") {
+            actions.reply(message)
+        }
+        .labelStyle(.iconOnly)
+        .scaleEffect(replyScale)
+        .font(.title3)
+        .foregroundStyle(longSwipeProgress > 0 ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+        .buttonStyle(.plain)
+        .allowsHitTesting(swipeIsLocked)
     }
 
     // MARK: - Message Badges

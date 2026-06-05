@@ -106,44 +106,23 @@ struct TimelineRowView: View, Equatable {
     private var shouldAnimate: Bool { isNewlyAppended && !didAppear }
 
     var body: some View {
-        rowContent
-            .padding(.horizontal, 16)
-            .environment(\.timelineActions, injectedActions ?? environmentActions)
-            .environment(\.swipeOffset, swipeOffset)
-            .environment(\.swipeIsLocked, swipeIsLocked)
-            .offset(x: swipeOffset)
-            .opacity(shouldAnimate ? 0 : 1)
-            .animation(
-                isNewlyAppended ? .easeOut(duration: 0.1) : nil,
-                value: didAppear
-            )
-            .onAppear {
-                if isNewlyAppended && !didAppear {
-                    didAppear = true
-                }
-            }
-    }
-
-    // MARK: - Swipe Action Bar
-
-    /// Action bar with reply and thread buttons, slides in from the left
-    /// while the row slides right. Rendered as a background so it stays
-    /// stationary while the row content shifts.
-    private var swipeActionBar: some View {
-        // Scale the reply button when swiping past the lock threshold (100pt)
-        // to hint that a long swipe (140pt+) triggers reply directly.
-        let longSwipeProgress = max(0, min((swipeOffset - 100) / 80, 1.0))
-        let replyScale = 1.0 + longSwipeProgress * 0.8
-
-        return Button("Reply", systemImage: "arrowshape.turn.up.left.fill") {
-            actions.reply(message)
+        VStack(spacing: 0) {
+            rowContent
         }
-        .labelStyle(.iconOnly)
-        .scaleEffect(replyScale)
-        .font(.title3)
-        .foregroundStyle(longSwipeProgress > 0 ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-        .buttonStyle(.plain)
-        .allowsHitTesting(swipeIsLocked)
+        .padding(.horizontal, 16)
+        .environment(\.timelineActions, injectedActions ?? environmentActions)
+        .environment(\.swipeOffset, swipeOffset)
+        .environment(\.swipeIsLocked, swipeIsLocked)
+        .opacity(shouldAnimate ? 0 : 1)
+        .animation(
+            isNewlyAppended ? .easeOut(duration: 0.1) : nil,
+            value: didAppear
+        )
+        .onAppear {
+            if isNewlyAppended && !didAppear {
+                didAppear = true
+            }
+        }
     }
 
     @ViewBuilder
@@ -174,22 +153,12 @@ struct TimelineRowView: View, Equatable {
                     actions.highlightDismissed()
                 }
         } else {
-            ZStack(alignment: .leading) {
-                // Action bar sits behind the message, revealed as the row slides right
-                if swipeOffset > 0 {
-                    swipeActionBar
-                        .opacity(min(swipeOffset / 60, 1.0))
-                        .offset(x: message.isOutgoing ? 88 : -64,
-                                y: message.isOutgoing ? 0 : 8)
-                }
-
-                MessageView(
-                    message: message,
-                    isLastInGroup: info.isLastInGroup,
-                    showSenderName: info.showSenderName,
-                    triggerReactionPickerFromParent: $triggerReactionPicker
-                )
-            }
+            MessageView(
+                message: message,
+                isLastInGroup: info.isLastInGroup,
+                showSenderName: info.showSenderName,
+                triggerReactionPickerFromParent: $triggerReactionPicker
+            )
             .id(message.id)
             .help(message.formattedTime)
             .onAppear { onAppear(row) }
@@ -420,4 +389,62 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
     }
     .environment(\.timelineActions, TimelineActions(currentUserID: "@me:matrix.org"))
     .frame(width: 500, height: 500)
+}
+
+#Preview("Swipe Action Bar") {
+    VStack(spacing: 16) {
+        TimelineRowView(
+            row: .init(
+                message: .init(id: "1", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
+                      body: "Incoming message with swipe",
+                      timestamp: .now, isOutgoing: false),
+                info: .init(isLastInGroup: true, showSenderName: true),
+                isPaginationTrigger: false
+            ),
+            isNewlyAppended: false,
+            showUnreadMarker: false,
+            firstUnreadMessageId: nil,
+            highlightedMessageId: nil,
+            showURLPreviews: true,
+            onAppear: { _ in },
+            swipeOffset: 80
+        )
+
+        TimelineRowView(
+            row: .init(
+                message: .init(id: "2", senderID: "@me:matrix.org",
+                      body: "Outgoing message with swipe",
+                      timestamp: .now, isOutgoing: true),
+                info: .init(isLastInGroup: true),
+                isPaginationTrigger: false
+            ),
+            isNewlyAppended: false,
+            showUnreadMarker: false,
+            firstUnreadMessageId: nil,
+            highlightedMessageId: nil,
+            showURLPreviews: true,
+            onAppear: { _ in },
+            swipeOffset: 80
+        )
+
+        TimelineRowView(
+            row: .init(
+                message: .init(id: "3", senderID: "@me:matrix.org",
+                      body: "Short",
+                      timestamp: .now, isOutgoing: true),
+                info: .init(isLastInGroup: true),
+                isPaginationTrigger: false
+            ),
+            isNewlyAppended: false,
+            showUnreadMarker: false,
+            firstUnreadMessageId: nil,
+            highlightedMessageId: nil,
+            showURLPreviews: true,
+            onAppear: { _ in },
+            swipeOffset: 80
+        )
+    }
+    .environment(\.timelineActions, TimelineActions(currentUserID: "@me:matrix.org"))
+    .padding()
+    .frame(width: 500)
 }

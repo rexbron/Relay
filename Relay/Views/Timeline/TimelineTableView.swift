@@ -91,23 +91,32 @@ final class BottomAnchoredTableView: NSTableView {
     var onDismissActionBar: (() -> Void)?
     /// Whether the action bar is currently locked open (checked for left-swipe dismiss).
     var isActionBarLocked: (() -> Bool)?
+    /// The current swipe offset when the action bar is locked.
+    var lockedOffset: (() -> CGFloat)?
 
     private enum GestureAxis { case undecided, horizontal, vertical }
     private var gestureAxis: GestureAxis = .undecided
     private var accumulatedDeltaX: CGFloat = 0
     private var swipingRow: Int = -1
     private let axisLockThreshold: CGFloat = 4
-    private let triggerThreshold: CGFloat = 40
-    private let maxOffset: CGFloat = 220
+    private let triggerThreshold: CGFloat = 100
+    private let maxOffset: CGFloat = 120
 
     override func scrollWheel(with event: NSEvent) {
         switch event.phase {
         case .began:
             gestureAxis = .undecided
-            accumulatedDeltaX = 0
             // Determine which row the cursor is over.
             let location = convert(event.locationInWindow, from: nil)
             swipingRow = row(at: location)
+            // If the row is already locked, seed the accumulated delta from
+            // the current offset so the swipe resumes rather than snapping
+            // back to zero.
+            if isActionBarLocked?() == true {
+                accumulatedDeltaX = lockedOffset?() ?? 0
+            } else {
+                accumulatedDeltaX = 0
+            }
 
         case .changed:
             guard swipingRow >= 0 else {
@@ -123,7 +132,7 @@ final class BottomAnchoredTableView: NSTableView {
                     let locked = isActionBarLocked?() ?? false
                     if absX > absY && (event.scrollingDeltaX > 0 || locked) {
                         gestureAxis = .horizontal
-                        accumulatedDeltaX = max(0, event.scrollingDeltaX)
+                        accumulatedDeltaX = max(0, accumulatedDeltaX + event.scrollingDeltaX)
                         if locked && event.scrollingDeltaX < 0 {
                             // Swiping left while locked — dismiss.
                             onDismissActionBar?()
@@ -334,6 +343,9 @@ final class TimelineTableViewController: NSViewController {
         }
         tableView.isActionBarLocked = { [weak self] in
             self?.swipeState.isLocked ?? false
+        }
+        tableView.lockedOffset = { [weak self] in
+            self?.swipeState.offset ?? 0
         }
 
         scrollView.documentView = tableView
@@ -661,24 +673,24 @@ final class TimelineTableViewController: NSViewController {
     }
 
     private func handleSwipeEnd(row: Int) {
-        let triggerThreshold: CGFloat = 40
-        let lockOffset: CGFloat = 100
-        let longSwipeThreshold: CGFloat = 180
-        let triggered = swipeState.offset >= triggerThreshold
+        let lockThreshold: CGFloat = 60
+        let triggerThreshold: CGFloat = 100
 
-        if triggered, row >= 0, row < rows.count, !rows[row].message.isSystemEvent {
-            if swipeState.offset >= longSwipeThreshold {
-                // Long swipe triggers reply directly.
-                dismissSwipeActionBar()
-                callbacks.onSwipeReply(rows[row])
-            } else {
-                // Short swipe locks the action bar open.
-                withAnimation(.snappy(duration: 0.25)) {
-                    swipeState.offset = lockOffset
-                    swipeState.isLocked = true
-                    updateSwipeRowView(at: row)
-                }
+        guard row >= 0, row < rows.count, !rows[row].message.isSystemEvent else {
+            dismissSwipeActionBar()
+            return
+        }
+
+        if swipeState.offset >= triggerThreshold {
+            dismissSwipeActionBar()
+            callbacks.onSwipeReply(rows[row])
+        } else if swipeState.offset >= lockThreshold {
+            // Lock the action bar in place so the user can tap it.
+            withAnimation(.snappy(duration: 0.2)) {
+                swipeState.offset = lockThreshold
+                swipeState.isLocked = true
             }
+            updateSwipeRowView(at: row)
         } else {
             dismissSwipeActionBar()
         }
