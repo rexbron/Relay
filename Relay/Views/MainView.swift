@@ -50,6 +50,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     @State private var inspectorInitialTab: InspectorTab?
     @State private var isPreparingCall = false
     @State private var showCallConfirmation = false
+    @State private var showPermissionDeniedAlert = false
     @State private var messageSearchTask: Task<Void, Never>?
     @FocusState private var isSearchFocused: Bool
     @Namespace private var toolbarNamespace
@@ -182,6 +183,19 @@ struct MainView: View { // swiftlint:disable:this type_body_length
             if let deepLink = matrixService.pendingDeepLink {
                 handleDeepLink(deepLink)
             }
+        }
+        .alert(
+            "Microphone & Camera Access",
+            isPresented: $showPermissionDeniedAlert
+        ) {
+            Button("Open System Settings") {
+                NSWorkspace.shared.open(
+                    URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!
+                )
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Relay needs microphone and camera access to make calls. Grant access in System Settings \u{203A} Privacy & Security.")
         }
     }
 
@@ -465,10 +479,19 @@ struct MainView: View { // swiftlint:disable:this type_body_length
 
     private func startCall(roomId: String) {
         guard !callManager.hasActiveCall else { return }
-        callManager.isPreparingCredentials = true
-        callManager.callRoomId = roomId
 
         Task {
+            // If the user has previously denied microphone or camera access,
+            // show an alert directing them to System Settings rather than
+            // starting a call that will immediately fail.
+            if MediaPermissions.isDenied {
+                showPermissionDeniedAlert = true
+                return
+            }
+
+            callManager.isPreparingCredentials = true
+            callManager.callRoomId = roomId
+
             guard let viewModel = await matrixService.makeCallViewModel(roomId: roomId) else {
                 callManager.isPreparingCredentials = false
                 callManager.callRoomId = nil

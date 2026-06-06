@@ -397,7 +397,19 @@ public final class CallViewModel: CallViewModelProtocol {
             )
         } catch {
             logger.error("[RTC]Connect failed: \(error.localizedDescription, privacy: .private)")
-            state = .failed(error.localizedDescription)
+
+            // The native WebRTC audio engine returns -9000
+            // (kAudioEngineErrorInsufficientDevicePermission) when
+            // microphone access is denied. The LiveKit SDK wraps this in a
+            // generic message, so surface a clearer description instead.
+            let message: String
+            if error.localizedDescription.contains("-9000") {
+                message = "Microphone access was denied. Grant access in System Settings \u{203A} Privacy & Security."
+            } else {
+                message = error.localizedDescription
+            }
+
+            state = .failed(message)
             activityLog?.log(
                 category: .call, severity: .error, source: "CallViewModel",
                 summary: "Call connection failed",
