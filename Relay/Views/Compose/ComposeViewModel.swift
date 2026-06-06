@@ -71,9 +71,13 @@ final class ComposeViewModel {
 
     // MARK: - Text View Bridge
 
-    /// Closure set by ``ComposeBar`` to insert a mention pill into the text view.
+    /// Closure set by ``ComposeTextView`` to insert a mention pill into the text view.
     /// Called by ``selectMention(_:)`` to bridge from the view model to the
     /// `ComposeTextView.Coordinator`.
+    ///
+    /// Excluded from observation because this is a callback bridge, not
+    /// display state. Writing it must not invalidate the view graph.
+    @ObservationIgnored
     var insertMentionHandler: ((_ userId: String, _ displayName: String) -> Void)?
 
     // MARK: - Supported Types

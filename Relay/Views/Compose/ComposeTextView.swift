@@ -80,14 +80,15 @@ struct ComposeTextView: NSViewRepresentable {
         context.coordinator.textView = textView
 
         // Expose the mention insertion closure to the parent view.
-        // Deferred to next main actor turn to avoid modifying state during view update.
+        // Safe to assign synchronously because `insertMentionHandler` is
+        // @ObservationIgnored, so this write cannot invalidate the view graph.
         let coordinator = context.coordinator
+        self.insertMentionHandler = { [weak coordinator] userId, displayName in
+            coordinator?.insertMention(userId: userId, displayName: displayName)
+        }
         let heightCallback = onHeightChange
         let initialHeight = textView.cachedHeight
         Task { @MainActor in
-            self.insertMentionHandler = { [weak coordinator] userId, displayName in
-                coordinator?.insertMention(userId: userId, displayName: displayName)
-            }
             heightCallback?(initialHeight)
         }
 
@@ -114,12 +115,12 @@ struct ComposeTextView: NSViewRepresentable {
         //  2. The user switched away and back; the draft store keeps
         //     the old ComposeViewModel whose handler holds a dead weak
         //     reference to the previous (deallocated) coordinator.
-        // Deferred to avoid modifying state during a view update.
+        // Safe to assign synchronously because `insertMentionHandler`
+        // is @ObservationIgnored, so this write cannot invalidate the
+        // view graph.
         let coordinator = context.coordinator
-        Task { @MainActor in
-            self.insertMentionHandler = { [weak coordinator] userId, displayName in
-                coordinator?.insertMention(userId: userId, displayName: displayName)
-            }
+        self.insertMentionHandler = { [weak coordinator] userId, displayName in
+            coordinator?.insertMention(userId: userId, displayName: displayName)
         }
 
         guard let textView = scrollView.linkedTextView else { return }
