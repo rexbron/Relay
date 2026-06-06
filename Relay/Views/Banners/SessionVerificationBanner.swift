@@ -119,7 +119,7 @@ struct SessionVerificationBanner: View {
             Button {
                 Task {
                     // swiftlint:disable:next identifier_name
-                    if let vm = try? await matrixService.makeSessionVerificationViewModel() {
+                    if let vm = try? await matrixService.makeSessionVerificationViewModel(acceptingIncomingRequest: true) {
                         matrixService.pendingVerificationRequest = nil
                         verificationItem = VerificationItem(viewModel: vm)
                     }
@@ -145,7 +145,7 @@ struct SessionVerificationBanner: View {
             Button("Approve", systemImage: "checkmark") {
                 Task {
                     // swiftlint:disable:next identifier_name
-                    if let vm = try? await matrixService.makeSessionVerificationViewModel() {
+                    if let vm = try? await matrixService.makeSessionVerificationViewModel(acceptingIncomingRequest: true) {
                         matrixService.pendingVerificationRequest = nil
                         verificationItem = VerificationItem(viewModel: vm)
                     }

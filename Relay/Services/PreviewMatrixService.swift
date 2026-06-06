@@ -220,7 +220,7 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func addChildToSpace(childId: String, spaceId: String) async throws {}
     func removeChildFromSpace(childId: String, spaceId: String) async throws {}
 
-    func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)? {
+    func makeSessionVerificationViewModel(acceptingIncomingRequest: Bool) async throws -> (any SessionVerificationViewModelProtocol)? {
         PreviewSessionVerificationViewModel()
     }
 

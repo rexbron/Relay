@@ -710,7 +710,7 @@ private struct SheetModifiers: ViewModifier {
                 matrixService.shouldPresentVerificationSheet = false
                 Task {
                     // swiftlint:disable:next identifier_name
-                    if let vm = try? await matrixService.makeSessionVerificationViewModel() {
+                    if let vm = try? await matrixService.makeSessionVerificationViewModel(acceptingIncomingRequest: true) {
                         matrixService.pendingVerificationRequest = nil
                         incomingVerificationItem = VerificationItem(viewModel: vm)
                     }

@@ -54,18 +54,30 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
     ///   - service: The Matrix service used for recovery key verification and
     ///     checking whether other verified devices exist.
     ///   - activityLog: Optional activity log for reporting verification events.
+    ///   - acceptingIncomingRequest: When `true`, the view model starts in the
+    ///     waiting state and immediately accepts the pending incoming request
+    ///     from the controller, skipping the idle choice view.
     public init(
         controller: any SessionVerificationControllerProxyProtocol,
         service: any MatrixServiceProtocol,
         errorReporter: ErrorReporter,
-        activityLog: ActivityLog? = nil
+        activityLog: ActivityLog? = nil,
+        acceptingIncomingRequest: Bool = false
     ) {
         self.controller = controller
         self.service = service
         self.errorReporter = errorReporter
         self.activityLog = activityLog
+
+        if acceptingIncomingRequest {
+            state = .waitingForOtherDevice
+        }
+
         observationTask = Task { [weak self] in
             await self?.checkForOtherDevices()
+            if acceptingIncomingRequest {
+                await self?.acceptPendingIncomingRequest()
+            }
             await self?.observeFlowState()
         }
     }
@@ -311,6 +323,18 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
 
     // MARK: - Flow State Handlers
 
+    /// Accepts the pending incoming request currently on the controller.
+    ///
+    /// Called once during init when `acceptingIncomingRequest` is `true`. The
+    /// controller's flow state is expected to be `.receivedRequest` because
+    /// `resetFlowState()` was skipped. If the state is something else, this
+    /// method falls through silently and lets `observeFlowState()` handle it.
+    @MainActor
+    private func acceptPendingIncomingRequest() async {
+        guard case .receivedRequest(let details) = controller.flowState else { return }
+        await handleIncomingRequest(details)
+    }
+
     /// Handles an incoming verification request from another device.
     ///
     /// Accepts the request automatically when the current state is idle
@@ -325,7 +349,10 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
             metadata: ["deviceId": details.deviceId]
         )
 
-        guard case .idle = state else { return }
+        switch state {
+        case .idle, .waitingForOtherDevice: break
+        default: return
+        }
 
         state = .waitingForOtherDevice
         do {

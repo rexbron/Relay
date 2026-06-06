@@ -494,9 +494,11 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
 
     /// Creates a view model for performing interactive session verification (SAS emoji comparison).
     ///
+    /// - Parameter acceptingIncomingRequest: When `true`, the view model skips the idle choice
+    ///   view and immediately begins accepting the pending incoming verification request.
     /// - Returns: A ``SessionVerificationViewModelProtocol`` instance, or `nil` if the
     ///   verification controller is not available.
-    func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)?
+    func makeSessionVerificationViewModel(acceptingIncomingRequest: Bool) async throws -> (any SessionVerificationViewModelProtocol)?
 
     /// Creates a view model for joining or managing a LiveKit audio/video call in a Matrix room.
     ///
@@ -771,6 +773,13 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     func removeChildFromSpace(childId: String, spaceId: String) async throws
 }
 
+public extension MatrixServiceProtocol {
+    /// Convenience overload that defaults to a fresh verification flow (not accepting an incoming request).
+    func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)? {
+        try await makeSessionVerificationViewModel(acceptingIncomingRequest: false)
+    }
+}
+
 // MARK: - Environment Key
 
 private struct MatrixServiceKey: @preconcurrency EnvironmentKey {
@@ -849,7 +858,7 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func encryptionState() async -> EncryptionStatus { EncryptionStatus() }
     func hasDevicesToVerifyAgainst() async throws -> Bool { false }
     func recoverWithKey(_ recoveryKey: String) async throws {}
-    func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)? { nil }
+    func makeSessionVerificationViewModel(acceptingIncomingRequest: Bool) async throws -> (any SessionVerificationViewModelProtocol)? { nil }
     func makeCallViewModel(roomId: String) async -> (any CallViewModelProtocol)? { nil }
     func callCredentials(for roomId: String) async throws -> (livekitURL: String, token: String, sfuServiceURL: String) {
         throw PlaceholderError()

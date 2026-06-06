@@ -1432,13 +1432,16 @@ public final class MatrixService: MatrixServiceProtocol {
 
     // MARK: - Session Verification
 
-    public func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)? {
+    public func makeSessionVerificationViewModel(acceptingIncomingRequest: Bool = false) async throws -> (any SessionVerificationViewModelProtocol)? {
         guard let controller = verificationController else { return nil }
-        controller.resetFlowState()
+        if !acceptingIncomingRequest {
+            controller.resetFlowState()
+        }
         isVerificationFlowActive = true
         let viewModel = SessionVerificationViewModel(
             controller: controller, service: self,
-            errorReporter: errorReporter, activityLog: _activityLog
+            errorReporter: errorReporter, activityLog: _activityLog,
+            acceptingIncomingRequest: acceptingIncomingRequest
         )
         // Reset the flag when the view model is deallocated (sheet dismissed).
         Task { [weak self, weak viewModel] in
