@@ -19,19 +19,6 @@ import SwiftUI
 
 private let logger = Logger(subsystem: "Relay", category: "TimelineTableView")
 
-/// Observable state for the swipe-to-reply gesture on the table view.
-/// The table view controller updates this during the gesture; each
-/// `TimelineRowView` reads its own message ID to check if it's being swiped.
-@Observable
-final class TimelineSwipeState {
-    /// The message ID of the row currently being swiped, or `nil`.
-    var swipingMessageId: String?
-    /// The current horizontal offset of the swipe gesture.
-    var offset: CGFloat = 0
-    /// When `true`, the action bar is locked open and awaiting a button tap.
-    var isLocked = false
-}
-
 /// A proxy that holds a reference to the ``TimelineTableViewController``
 /// and exposes scroll actions. Used by the SwiftUI layer to trigger scrolls
 /// without needing a direct reference to the view controller.
@@ -98,9 +85,6 @@ final class BottomAnchoredTableView: NSTableView {
     private var gestureAxis: GestureAxis = .undecided
     private var accumulatedDeltaX: CGFloat = 0
     private var swipingRow: Int = -1
-    private let axisLockThreshold: CGFloat = 4
-    private let triggerThreshold: CGFloat = 100
-    private let maxOffset: CGFloat = 120
 
     override func scrollWheel(with event: NSEvent) {
         switch event.phase {
@@ -128,7 +112,7 @@ final class BottomAnchoredTableView: NSTableView {
             case .undecided:
                 let absX = abs(event.scrollingDeltaX)
                 let absY = abs(event.scrollingDeltaY)
-                if absX + absY >= axisLockThreshold {
+                if absX + absY >= TimelineSwipeController.axisLockThreshold {
                     let locked = isActionBarLocked?() ?? false
                     if absX > absY && (event.scrollingDeltaX > 0 || locked) {
                         gestureAxis = .horizontal
@@ -138,7 +122,7 @@ final class BottomAnchoredTableView: NSTableView {
                             onDismissActionBar?()
                             gestureAxis = .undecided
                         } else {
-                            onSwipeDelta?(swipingRow, clampedOffset(accumulatedDeltaX))
+                            onSwipeDelta?(swipingRow, TimelineSwipeController.clampedOffset(accumulatedDeltaX))
                         }
                     } else {
                         gestureAxis = .vertical
@@ -149,7 +133,7 @@ final class BottomAnchoredTableView: NSTableView {
             case .horizontal:
                 accumulatedDeltaX += event.scrollingDeltaX
                 accumulatedDeltaX = max(0, accumulatedDeltaX)
-                onSwipeDelta?(swipingRow, clampedOffset(accumulatedDeltaX))
+                onSwipeDelta?(swipingRow, TimelineSwipeController.clampedOffset(accumulatedDeltaX))
 
             case .vertical:
                 super.scrollWheel(with: event)
@@ -175,13 +159,6 @@ final class BottomAnchoredTableView: NSTableView {
         super.mouseDown(with: event)
     }
 
-    private func clampedOffset(_ delta: CGFloat) -> CGFloat {
-        if delta <= triggerThreshold {
-            return delta
-        }
-        let excess = delta - triggerThreshold
-        return min(triggerThreshold + excess * 0.3, maxOffset)
-    }
 }
 
 // MARK: - Timeline Table View Controller
@@ -673,25 +650,22 @@ final class TimelineTableViewController: NSViewController {
     }
 
     private func handleSwipeEnd(row: Int) {
-        let lockThreshold: CGFloat = 60
-        let triggerThreshold: CGFloat = 100
-
         guard row >= 0, row < rows.count, !rows[row].message.isSystemEvent else {
             dismissSwipeActionBar()
             return
         }
 
-        if swipeState.offset >= triggerThreshold {
+        switch TimelineSwipeController.evaluateSwipeEnd(offset: swipeState.offset) {
+        case .reply:
             dismissSwipeActionBar()
             callbacks.onSwipeReply(rows[row])
-        } else if swipeState.offset >= lockThreshold {
-            // Lock the action bar in place so the user can tap it.
+        case .lock:
             withAnimation(.snappy(duration: 0.2)) {
-                swipeState.offset = lockThreshold
+                swipeState.offset = TimelineSwipeController.lockThreshold
                 swipeState.isLocked = true
             }
             updateSwipeRowView(at: row)
-        } else {
+        case .dismiss:
             dismissSwipeActionBar()
         }
     }
@@ -699,6 +673,8 @@ final class TimelineTableViewController: NSViewController {
     /// Dismisses the swipe action bar with animation.
     func dismissSwipeActionBar() {
         let row = rows.firstIndex(where: { $0.message.id == swipeState.swipingMessageId })
+        // Update the hosting view inside the animation block so the
+        // offset change is visible before the state is cleared.
         withAnimation(.snappy(duration: 0.25)) {
             swipeState.offset = 0
             swipeState.isLocked = false

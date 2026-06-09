@@ -248,14 +248,7 @@ struct TimelineLazyVStackView: View {
     }
 
     private func dismissSwipeActionBar() {
-        withAnimation(.snappy(duration: 0.25)) {
-            swipeState.offset = 0
-            swipeState.isLocked = false
-        }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(250))
-            swipeState.swipingMessageId = nil
-        }
+        TimelineSwipeController.dismissActionBar(swipeState)
     }
 }
 
@@ -299,11 +292,6 @@ final class SwipeScrollHandler {
     private var gestureAxis: GestureAxis = .undecided
     private var accumulatedDeltaX: CGFloat = 0
     private var swipingMessageID: String?
-
-    private let axisLockThreshold: CGFloat = 4
-    private let lockThreshold: CGFloat = 60
-    private let triggerThreshold: CGFloat = 100
-    private let maxOffset: CGFloat = 120
 
     func startMonitoring() {
         guard scrollMonitor == nil else { return }
@@ -349,7 +337,7 @@ final class SwipeScrollHandler {
             case .undecided:
                 let absX = abs(event.scrollingDeltaX)
                 let absY = abs(event.scrollingDeltaY)
-                guard absX + absY >= axisLockThreshold else { return event }
+                guard absX + absY >= TimelineSwipeController.axisLockThreshold else { return event }
 
                 let locked = swipeState.isLocked
                 if absX > absY && (event.scrollingDeltaX > 0 || locked) {
@@ -425,7 +413,7 @@ final class SwipeScrollHandler {
             swipeState.isLocked = false
         }
         swipeState.swipingMessageId = id
-        swipeState.offset = clampedOffset(accumulatedDeltaX)
+        swipeState.offset = TimelineSwipeController.clampedOffset(accumulatedDeltaX)
     }
 
     private func handleSwipeEnd() {
@@ -438,26 +426,19 @@ final class SwipeScrollHandler {
             onDismiss()
             return
         }
-        if swipeState.offset >= triggerThreshold {
+
+        switch TimelineSwipeController.evaluateSwipeEnd(offset: swipeState.offset) {
+        case .reply:
             onDismiss()
             onReply(row.message)
-        } else if swipeState.offset >= lockThreshold {
-            // Lock the action bar in place so the user can tap it.
+        case .lock:
             withAnimation(.snappy(duration: 0.2)) {
-                swipeState.offset = lockThreshold
+                swipeState.offset = TimelineSwipeController.lockThreshold
                 swipeState.isLocked = true
             }
-        } else {
+        case .dismiss:
             onDismiss()
         }
-    }
-
-    private func clampedOffset(_ delta: CGFloat) -> CGFloat {
-        if delta <= triggerThreshold {
-            return delta
-        }
-        let excess = delta - triggerThreshold
-        return min(triggerThreshold + excess * 0.3, maxOffset)
     }
 
     private func resetGesture() {
