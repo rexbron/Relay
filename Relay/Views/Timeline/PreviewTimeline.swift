@@ -30,7 +30,7 @@ struct PreviewTimeline: View {
     }
 
     var body: some View {
-        let rows = TimelineView.buildRows(for: viewModel.messages, hasReachedStart: true)
+        let rows = MessageRowBuilder.buildRows(for: viewModel.messages, hasReachedStart: true)
         ScrollView {
             LazyVStack(spacing: 2) {
                 ForEach(rows) { row in

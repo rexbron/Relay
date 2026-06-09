@@ -18,7 +18,7 @@ import RelayInterface
 // MARK: - Grouping Info
 
 /// Precomputed layout metadata for a single message within the timeline.
-/// Built once per body evaluation by ``TimelineView/buildRows(for:hasReachedStart:)``
+/// Built once per body evaluation by ``MessageRowBuilder/buildRows(for:hasReachedStart:)``
 /// so the `ForEach` body doesn't need index-based lookups.
 struct MessageGroupInfo: Equatable, Sendable {
     var isFirst = false
@@ -70,7 +70,8 @@ struct MessageRow: Identifiable, Equatable {
 
 // MARK: - Row Builder
 
-extension TimelineView {
+/// Namespace for timeline row construction and system event collapsing.
+enum MessageRowBuilder {
     /// The minimum number of consecutive system events required to collapse
     /// them into an expandable group.
     static let systemEventCollapseThreshold = 4

@@ -107,7 +107,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
         // created before .task has a chance to call rebuildCachedRows().
         // The messages are passed unfiltered; .task applies the full
         // filter (membership/state event preferences) immediately after.
-        _cachedMessageRows = State(initialValue: Self.buildRows(
+        _cachedMessageRows = State(initialValue: MessageRowBuilder.buildRows(
             for: viewModel.messages,
             hasReachedStart: viewModel.hasReachedStart
         ))
@@ -396,7 +396,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     /// `filteredMessages` + `buildRows` pipeline only runs when the underlying
     /// data actually changes, not on every `body` evaluation.
     private func rebuildCachedRows() {
-        cachedMessageRows = Self.buildRows(
+        cachedMessageRows = MessageRowBuilder.buildRows(
             for: filteredMessages,
             hasReachedStart: viewModel.hasReachedStart
         )

@@ -291,7 +291,7 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
 
 #Preview("Conversation") {
     let messages = PreviewTimelineViewModel.sampleMessages
-    let rows = TimelineView.buildRows(for: messages, hasReachedStart: true)
+    let rows = MessageRowBuilder.buildRows(for: messages, hasReachedStart: true)
 
     ScrollView {
         VStack(spacing: 2) {
@@ -376,7 +376,7 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
 
 #Preview("Unread Marker") {
     let messages = Array(PreviewTimelineViewModel.sampleMessages.prefix(5))
-    let rows = TimelineView.buildRows(for: messages, hasReachedStart: true)
+    let rows = MessageRowBuilder.buildRows(for: messages, hasReachedStart: true)
 
     ScrollView {
         VStack(spacing: 2) {
