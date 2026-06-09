@@ -80,8 +80,6 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     @State private var isTimelineDropTargeted = false
     @State private var timelineActionsRef = TimelineActions()
     @State private var successorRoomId: String?
-    @State private var isJoiningSuccessor = false
-
     init(
         roomId: String,
         roomName: String,
@@ -182,10 +180,23 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 }
             }
             .overlay(alignment: .bottom) {
-                if successorRoomId != nil {
-                    roomUpgradedBanner
-                } else if !readOnly, roomPermissions?.canSendMessages ?? true {
-                    composeBarSection
+                if successorRoomId != nil || (!readOnly && (roomPermissions?.canSendMessages ?? true)) {
+                    TimelineBottomBar(
+                        compose: compose,
+                        viewModel: viewModel,
+                        roomId: roomId,
+                        successorRoomId: successorRoomId,
+                        onRoomTap: onRoomTap,
+                        onSendWillScroll: { pendingScrollToBottom = true },
+                        onHeightChanged: { height in
+                            composeBarHeight = height
+                            if !timelineUseLazyVStack {
+                                tableProxy.setContentInsets(NSEdgeInsets(
+                                    top: 0, left: 0, bottom: height + 4, right: 0
+                                ))
+                            }
+                        }
+                    )
                 }
             }
             .onDrop(
@@ -502,43 +513,6 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
         actions.currentUserID = matrixService.userId()
     }
 
-    /// Renderer-level callbacks shared by both timeline renderers.
-    private var rendererOnAppear: (MessageRow) -> Void {
-        { row in advanceFullyReadMarker(to: row.message.eventID) }
-    }
-    private var rendererOnNearBottomChanged: (Bool) -> Void {
-        { nearBottom in
-            isNearBottom = nearBottom
-            markAsReadIfNeeded()
-        }
-    }
-    private var rendererOnPaginateBackward: () -> Void {
-        {
-            guard !viewModel.isLoadingMore, !viewModel.hasReachedStart else { return }
-            Task { await viewModel.loadMoreHistory() }
-        }
-    }
-    private var rendererOnPaginateForward: () -> Void {
-        { Task { await viewModel.loadMoreFuture() } }
-    }
-
-    /// LazyVStack-only callback: advances the fully-read marker to the newest
-    /// message in the visible set, as reported by `onScrollTargetVisibilityChange`.
-    private var rendererOnVisibleMessagesChanged: ([String]) -> Void {
-        { visibleIDs in
-            guard let newestVisibleID = visibleIDs.last,
-                  let row = cachedMessageRows.first(where: { $0.id == newestVisibleID })
-            else { return }
-            advanceFullyReadMarker(to: row.message.eventID)
-        }
-    }
-
-    /// LazyVStack-only callback: re-evaluates read receipt state when the
-    /// scroll view settles to idle after scrolling or programmatic animation.
-    private var rendererOnScrollSettled: () -> Void {
-        { markAsReadIfNeeded() }
-    }
-
     /// Marks the room as read when the user can see the latest messages.
     /// Guards on near-bottom, app-active, and non-read-only state.
     private func markAsReadIfNeeded() {
@@ -556,11 +530,22 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 highlightedMessageId: highlightedMessageId,
                 showURLPreviews: showURLPreviews,
                 actions: timelineActionsRef,
-                onNearBottomChanged: rendererOnNearBottomChanged,
-                onPaginateBackward: rendererOnPaginateBackward,
-                onPaginateForward: rendererOnPaginateForward,
-                onVisibleMessagesChanged: rendererOnVisibleMessagesChanged,
-                onScrollSettled: rendererOnScrollSettled,
+                onNearBottomChanged: { nearBottom in
+                    isNearBottom = nearBottom
+                    markAsReadIfNeeded()
+                },
+                onPaginateBackward: {
+                    guard !viewModel.isLoadingMore, !viewModel.hasReachedStart else { return }
+                    Task { await viewModel.loadMoreHistory() }
+                },
+                onPaginateForward: { Task { await viewModel.loadMoreFuture() } },
+                onVisibleMessagesChanged: { visibleIDs in
+                    guard let newestVisibleID = visibleIDs.last,
+                          let row = cachedMessageRows.first(where: { $0.id == newestVisibleID })
+                    else { return }
+                    advanceFullyReadMarker(to: row.message.eventID)
+                },
+                onScrollSettled: { markAsReadIfNeeded() },
                 isLoadingMore: viewModel.isLoadingMore,
                 hasReachedEnd: viewModel.hasReachedEnd,
                 isLive: viewModel.timelineFocus == .live,
@@ -577,10 +562,16 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 highlightedMessageId: highlightedMessageId,
                 showURLPreviews: showURLPreviews,
                 actions: timelineActionsRef,
-                onAppear: rendererOnAppear,
-                onNearBottomChanged: rendererOnNearBottomChanged,
-                onPaginateBackward: rendererOnPaginateBackward,
-                onPaginateForward: rendererOnPaginateForward,
+                onAppear: { row in advanceFullyReadMarker(to: row.message.eventID) },
+                onNearBottomChanged: { nearBottom in
+                    isNearBottom = nearBottom
+                    markAsReadIfNeeded()
+                },
+                onPaginateBackward: {
+                    guard !viewModel.isLoadingMore, !viewModel.hasReachedStart else { return }
+                    Task { await viewModel.loadMoreHistory() }
+                },
+                onPaginateForward: { Task { await viewModel.loadMoreFuture() } },
                 scrollProxy: tableProxy
             )
             .ignoresSafeArea()
@@ -620,104 +611,6 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             .padding(.bottom, 56)
             .padding(.trailing, 16)
             .transition(.move(edge: .bottom).combined(with: .opacity))
-        }
-    }
-
-    // MARK: - Room Upgraded Banner
-
-    private var roomUpgradedBanner: some View {
-        VStack(spacing: 6) {
-            Text("This room has been upgraded.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            Button {
-                guard let successorRoomId, !isJoiningSuccessor else { return }
-                isJoiningSuccessor = true
-                Task {
-                    defer { isJoiningSuccessor = false }
-                    do {
-                        try await matrixService.joinRoom(idOrAlias: successorRoomId)
-                        // Wait briefly for the room list to sync so the
-                        // successor appears in the sidebar before we navigate.
-                        try? await Task.sleep(for: .milliseconds(500))
-                        onRoomTap?(successorRoomId)
-                    } catch {
-                        errorReporter.report(.roomJoinFailed(error.localizedDescription))
-                    }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    if isJoiningSuccessor {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                    Text("Continue the conversation")
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(isJoiningSuccessor)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .padding(.horizontal, 16)
-        .background(.bar)
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { height in
-            composeBarHeight = height
-            if !timelineUseLazyVStack {
-                tableProxy.setContentInsets(NSEdgeInsets(
-                    top: 0, left: 0, bottom: height + 4, right: 0
-                ))
-            }
-        }
-    }
-
-    // MARK: - Compose Bar
-
-    private var composeBarSection: some View {
-        VStack(spacing: 0) {
-            TypingIndicatorOverlay(viewModel: viewModel)
-
-            ComposeBar(
-                compose: compose,
-                onSend: {
-                    compose.send(
-                        using: viewModel,
-                        matrixService: matrixService,
-                        roomId: roomId,
-                        sendTypingNotifications: sendTypingNotifications
-                    ) {
-                        pendingScrollToBottom = true
-                    }
-                },
-                onAttach: { urls in
-                    compose.stageAttachments(urls, errorReporter: errorReporter)
-                },
-                onGIFSelected: { gif in
-                    compose.sendGIF(
-                        gif,
-                        using: viewModel,
-                        gifSearchService: gifSearchService,
-                        errorReporter: errorReporter
-                    ) {
-                        pendingScrollToBottom = true
-                    }
-                }
-            )
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-        }
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { height in
-            composeBarHeight = height
-            if !timelineUseLazyVStack {
-                tableProxy.setContentInsets(NSEdgeInsets(
-                    top: 0, left: 0, bottom: height + 4, right: 0
-                ))
-            }
         }
     }
 
