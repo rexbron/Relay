@@ -46,21 +46,43 @@ struct MessageRow: Identifiable, Equatable {
     let info: MessageGroupInfo
     let isPaginationTrigger: Bool
 
+    /// When non-nil, this row represents a collapsed group of consecutive
+    /// system events. The ``message`` field holds the first event in the
+    /// run (used for ID stability and date header computation).
+    let collapsedSystemEvents: [TimelineMessage]?
+
+    init(message: TimelineMessage, info: MessageGroupInfo, isPaginationTrigger: Bool, collapsedSystemEvents: [TimelineMessage]? = nil) {
+        self.message = message
+        self.info = info
+        self.isPaginationTrigger = isPaginationTrigger
+        self.collapsedSystemEvents = collapsedSystemEvents
+    }
+
     var id: String { message.id }
 
     nonisolated static func == (lhs: MessageRow, rhs: MessageRow) -> Bool {
         lhs.message == rhs.message
             && lhs.info == rhs.info
             && lhs.isPaginationTrigger == rhs.isPaginationTrigger
+            && lhs.collapsedSystemEvents == rhs.collapsedSystemEvents
     }
 }
 
 // MARK: - Row Builder
 
 extension TimelineView {
+    /// The minimum number of consecutive system events required to collapse
+    /// them into an expandable group.
+    static let systemEventCollapseThreshold = 4
+
     /// Builds an array of ``MessageRow`` values, pairing each message with its
     /// precomputed grouping metadata. The result is passed to the table view
     /// representable so each cell receives its own lightweight `MessageRow`.
+    ///
+    /// Consecutive runs of system events that meet or exceed
+    /// ``systemEventCollapseThreshold`` are merged into a single row with
+    /// ``MessageRow/collapsedSystemEvents`` populated. Date boundaries split
+    /// runs so that each collapsed group stays within a single date section.
     static func buildRows(
         for messages: [TimelineMessage],
         hasReachedStart: Bool
@@ -132,6 +154,51 @@ extension TimelineView {
                 isPaginationTrigger: false
             ))
         }
-        return result
+
+        return collapseSystemEventRuns(in: result)
+    }
+
+    /// Scans the row array for consecutive runs of system events and replaces
+    /// runs that meet or exceed ``systemEventCollapseThreshold`` with a single
+    /// collapsed row. Shorter runs pass through unchanged. Runs span across
+    /// date boundaries so that long stretches of system events in quiet rooms
+    /// collapse into a single expandable group.
+    private static func collapseSystemEventRuns(in rows: [MessageRow]) -> [MessageRow] {
+        var collapsed = [MessageRow]()
+        collapsed.reserveCapacity(rows.count)
+
+        var i = 0
+        while i < rows.count {
+            guard rows[i].message.isSystemEvent else {
+                collapsed.append(rows[i])
+                i += 1
+                continue
+            }
+
+            // Found a system event — scan ahead for the full consecutive run,
+            // ignoring date header boundaries.
+            var runEnd = i + 1
+            while runEnd < rows.count, rows[runEnd].message.isSystemEvent {
+                runEnd += 1
+            }
+
+            let runLength = runEnd - i
+            if runLength >= systemEventCollapseThreshold {
+                let firstRow = rows[i]
+                let events = rows[i..<runEnd].map(\.message)
+                collapsed.append(MessageRow(
+                    message: firstRow.message,
+                    info: firstRow.info,
+                    isPaginationTrigger: firstRow.isPaginationTrigger,
+                    collapsedSystemEvents: events
+                ))
+            } else {
+                collapsed.append(contentsOf: rows[i..<runEnd])
+            }
+
+            i = runEnd
+        }
+
+        return collapsed
     }
 }

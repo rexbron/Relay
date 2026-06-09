@@ -144,7 +144,15 @@ struct TimelineRowView: View, Equatable {
             Spacer().frame(height: 8)
         }
 
-        if message.isSystemEvent {
+        if let collapsedEvents = row.collapsedSystemEvents {
+            CollapsedSystemEventsView(
+                messages: collapsedEvents,
+                groupID: message.id,
+                expandedGroups: actions.expandedGroups
+            )
+            .id(message.id)
+            .onAppear { onAppear(row) }
+        } else if message.isSystemEvent {
             SystemEventView(message: message)
                 .id(message.id)
                 .help(message.formattedTime)
@@ -246,23 +254,26 @@ struct TimelineRowView: View, Equatable {
         .transition(.opacity)
     }
 
-    // MARK: - Date Labels
+}
 
-    private func dateSectionLabel(for date: Date) -> String {
-        let calendar = Calendar.current
-        let now = Date.now
+// MARK: - Date Labels
 
-        if calendar.isDateInToday(date) {
-            return date.formatted(date: .omitted, time: .shortened)
-        } else if calendar.isDateInYesterday(date) {
-            return "Yesterday \(date.formatted(date: .omitted, time: .shortened))"
-        } else if calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) {
-            return date.formatted(.dateTime.weekday(.wide).hour().minute())
-        } else if calendar.isDate(date, equalTo: now, toGranularity: .year) {
-            return date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
-        } else {
-            return date.formatted(.dateTime.year().month(.abbreviated).day().hour().minute())
-        }
+/// Formats a date into a human-readable section label for timeline date headers.
+/// Used by ``TimelineRowView`` and ``CollapsedSystemEventsView``.
+func dateSectionLabel(for date: Date) -> String {
+    let calendar = Calendar.current
+    let now = Date.now
+
+    if calendar.isDateInToday(date) {
+        return date.formatted(date: .omitted, time: .shortened)
+    } else if calendar.isDateInYesterday(date) {
+        return "Yesterday \(date.formatted(date: .omitted, time: .shortened))"
+    } else if calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) {
+        return date.formatted(.dateTime.weekday(.wide).hour().minute())
+    } else if calendar.isDate(date, equalTo: now, toGranularity: .year) {
+        return date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+    } else {
+        return date.formatted(.dateTime.year().month(.abbreviated).day().hour().minute())
     }
 }
 

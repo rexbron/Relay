@@ -15,6 +15,27 @@
 import RelayInterface
 import SwiftUI
 
+/// Tracks which collapsed system event groups the user has expanded.
+/// Separated into its own `@Observable` class so that ``CollapsedSystemEventsView``
+/// can observe expansion state changes without making all of ``TimelineActions``
+/// observable (which would invalidate every visible row on any mutation).
+@Observable
+final class ExpandedGroupsState {
+    var expandedIDs: Set<String> = []
+
+    func isExpanded(_ groupID: String) -> Bool {
+        expandedIDs.contains(groupID)
+    }
+
+    func toggle(_ groupID: String) {
+        if expandedIDs.contains(groupID) {
+            expandedIDs.remove(groupID)
+        } else {
+            expandedIDs.insert(groupID)
+        }
+    }
+}
+
 /// Consolidates timeline interaction callbacks into a single environment value,
 /// eliminating prop-drilling of closures through ``TimelineRowView``,
 /// ``MessageView``, ``MessageBubbleContent``, and ``ReplyPreviewBubble``.
@@ -62,6 +83,10 @@ final class TimelineActions: Equatable {
     /// The Matrix user ID of the signed-in user. Used to determine whether
     /// replied-to messages are outgoing.
     var currentUserID: String?
+
+    /// Observable state tracking which collapsed system event groups the user
+    /// has expanded. Keyed by the first message's ID in each collapsed group.
+    let expandedGroups = ExpandedGroupsState()
 
     /// Creates a ``TimelineActions`` with default (no-op) callbacks.
     init(currentUserID: String? = nil) {
