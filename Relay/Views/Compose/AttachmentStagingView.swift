@@ -15,18 +15,18 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// A horizontal row of attachment capsules shown above the compose text field.
+/// A horizontal row of attachment thumbnails shown above the compose text field.
 ///
-/// Each capsule displays a thumbnail or file-type icon, the filename, a remove button,
-/// and an inline alt-text editing field.
+/// Each thumbnail displays a preview image or file-type icon with an overlaid remove
+/// button. Image attachments include an inline alt-text editing field below the thumbnail.
 struct AttachmentStagingView: View {
     @Bindable var compose: ComposeViewModel
 
     var body: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 6) {
+            HStack(spacing: 10) {
                 ForEach(compose.attachments) { attachment in
-                    AttachmentCapsule(
+                    AttachmentThumbnail(
                         attachment: attachment,
                         isEditingCaption: compose.editingCaptionId == attachment.id,
                         onEditCaption: {
@@ -52,16 +52,22 @@ struct AttachmentStagingView: View {
                     )
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
         }
         .scrollIndicators(.hidden)
+
+        Divider()
+            .padding(.horizontal, 14)
     }
 }
 
-/// An individual attachment capsule with thumbnail, filename, caption, and remove button.
-struct AttachmentCapsule: View {
+/// An individual attachment thumbnail with an overlaid remove button.
+///
+/// Image attachments display a crop-filled preview with an alt-text field below.
+/// Non-image attachments display a file-type icon and filename.
+struct AttachmentThumbnail: View {
     let attachment: StagedAttachment
     let isEditingCaption: Bool
     var onEditCaption: () -> Void
@@ -71,58 +77,73 @@ struct AttachmentCapsule: View {
 
     @State private var captionText = ""
 
+    private var isImage: Bool { attachment.thumbnail != nil }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                thumbnailOrIcon
-                Text(attachment.filename)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Button("Remove attachment", systemImage: "xmark", action: onRemove)
+            ZStack(alignment: .topTrailing) {
+                thumbnailContent
+
+                Button("Remove", systemImage: "xmark.circle.fill", action: onRemove)
                     .labelStyle(.iconOnly)
-                    .foregroundStyle(.secondary)
                     .buttonStyle(.plain)
+                    .imageScale(.large)
+                    .foregroundStyle(.white, .black.opacity(0.6))
+                    .offset(x: 6, y: -6)
             }
 
-            if isEditingCaption {
-                TextField("Alt text", text: $captionText)
-                    .textFieldStyle(.plain)
-                    .font(.caption)
-                    .frame(maxWidth: 140)
-                    .onSubmit { onFinishCaption() }
-                    .onAppear { captionText = attachment.caption }
-                    .onChange(of: captionText) { _, newValue in
-                        onUpdateCaption(newValue)
-                    }
+            if isImage {
+                captionArea
             } else {
-                Button(action: onEditCaption) {
-                    Text(attachment.caption.isEmpty ? "Add alt text" : attachment.caption)
-                        .font(.caption)
-                        .foregroundStyle(attachment.caption.isEmpty ? .tertiary : .secondary)
-                        .lineLimit(1)
-                }
-                .buttonStyle(.plain)
+                Text(attachment.filename)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(Color(.systemGray).opacity(0.1))
-        .clipShape(.rect(cornerRadius: 8))
+        .frame(width: 80)
     }
 
     @ViewBuilder
-    private var thumbnailOrIcon: some View {
+    private var thumbnailContent: some View {
         if let thumbnail = attachment.thumbnail {
             Image(nsImage: thumbnail)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
-                .frame(width: 28, height: 28)
-                .clipShape(.rect(cornerRadius: 4))
+                .frame(width: 80, height: 80)
+                .clipShape(.rect(cornerRadius: 8))
         } else {
-            Image(systemName: ComposeViewModel.iconName(for: attachment.url))
-                .font(.system(size: 14))
-                .foregroundStyle(.secondary)
-                .frame(width: 28, height: 28)
+            Label(
+                attachment.filename,
+                systemImage: ComposeViewModel.iconName(for: attachment.url)
+            )
+            .font(.caption)
+            .lineLimit(2)
+            .frame(width: 80, height: 80)
+            .background(.quaternary, in: .rect(cornerRadius: 8))
+        }
+    }
+
+    @ViewBuilder
+    private var captionArea: some View {
+        if isEditingCaption {
+            TextField("Alt text", text: $captionText, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.caption)
+                .lineLimit(1...4)
+                .onSubmit { onFinishCaption() }
+                .onAppear { captionText = attachment.caption }
+                .onChange(of: captionText) { _, newValue in
+                    onUpdateCaption(newValue)
+                }
+        } else {
+            Button(action: onEditCaption) {
+                Text(attachment.caption.isEmpty ? "Alt text" : attachment.caption)
+                    .font(.caption)
+                    .foregroundStyle(attachment.caption.isEmpty ? .tertiary : .secondary)
+                    .lineLimit(1...2)
+            }
+            .buttonStyle(.plain)
         }
     }
 }

@@ -421,7 +421,7 @@ final class ComposeViewModel {
         let utType = UTType(filenameExtension: url.pathExtension) ?? .data
         guard utType.conforms(to: .image) else { return nil }
         guard let image = NSImage(contentsOf: url) else { return nil }
-        let maxDimension: CGFloat = 56
+        let maxDimension: CGFloat = 160
         let size = image.size
         let scale = min(maxDimension / size.width, maxDimension / size.height, 1.0)
         let targetSize = NSSize(width: size.width * scale, height: size.height * scale)
