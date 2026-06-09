@@ -52,9 +52,8 @@ extension EnvironmentValues {
 struct TimelineRowView: View, Equatable {
     let row: MessageRow
     let isNewlyAppended: Bool
-    let showUnreadMarker: Bool
-    let firstUnreadMessageId: String?
-    let highlightedMessageId: String?
+    let isHighlighted: Bool
+    let isUnreadDivider: Bool
     let showURLPreviews: Bool
 
     /// Called when this row appears on screen (for read receipt advancement).
@@ -93,9 +92,8 @@ struct TimelineRowView: View, Equatable {
             && lhs.isNewlyAppended == rhs.isNewlyAppended
             && lhs.swipeOffset == rhs.swipeOffset
             && lhs.swipeIsLocked == rhs.swipeIsLocked
-            && lhs.showUnreadMarker == rhs.showUnreadMarker
-            && lhs.firstUnreadMessageId == rhs.firstUnreadMessageId
-            && lhs.highlightedMessageId == rhs.highlightedMessageId
+            && lhs.isHighlighted == rhs.isHighlighted
+            && lhs.isUnreadDivider == rhs.isUnreadDivider
             && lhs.showURLPreviews == rhs.showURLPreviews
     }
 
@@ -127,7 +125,7 @@ struct TimelineRowView: View, Equatable {
 
     @ViewBuilder
     private var rowContent: some View {
-        if showUnreadMarker && message.id == firstUnreadMessageId {
+        if isUnreadDivider {
             unreadMarker
         }
 
@@ -157,7 +155,7 @@ struct TimelineRowView: View, Equatable {
                 .id(message.id)
                 .help(message.formattedTime)
                 .onAppear { onAppear(row) }
-                .messageHighlight(highlightedMessageId == message.eventID) {
+                .messageHighlight(isHighlighted) {
                     actions.highlightDismissed()
                 }
         } else {
@@ -173,7 +171,7 @@ struct TimelineRowView: View, Equatable {
             .contextMenu {
                 contextMenu
             }
-            .messageHighlight(highlightedMessageId == message.eventID) {
+            .messageHighlight(isHighlighted) {
                 actions.highlightDismissed()
             }
 
@@ -283,9 +281,8 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
     TimelineRowView(
         row: .init(message: message, info: info, isPaginationTrigger: false),
         isNewlyAppended: false,
-        showUnreadMarker: false,
-        firstUnreadMessageId: nil,
-        highlightedMessageId: nil,
+        isHighlighted: false,
+        isUnreadDivider: false,
         showURLPreviews: true,
         onAppear: { _ in }
     )
@@ -302,9 +299,8 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
                 TimelineRowView(
                     row: row,
                     isNewlyAppended: false,
-                    showUnreadMarker: false,
-                    firstUnreadMessageId: nil,
-                    highlightedMessageId: nil,
+                    isHighlighted: false,
+                    isUnreadDivider: false,
                     showURLPreviews: true,
                     onAppear: { _ in }
                 )
@@ -388,9 +384,8 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
                 TimelineRowView(
                     row: row,
                     isNewlyAppended: false,
-                    showUnreadMarker: true,
-                    firstUnreadMessageId: "5",
-                    highlightedMessageId: nil,
+                    isHighlighted: false,
+                    isUnreadDivider: row.message.id == "5",
                     showURLPreviews: true,
                     onAppear: { _ in }
                 )
@@ -413,9 +408,8 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
                 isPaginationTrigger: false
             ),
             isNewlyAppended: false,
-            showUnreadMarker: false,
-            firstUnreadMessageId: nil,
-            highlightedMessageId: nil,
+            isHighlighted: false,
+            isUnreadDivider: false,
             showURLPreviews: true,
             onAppear: { _ in },
             swipeOffset: 80
@@ -430,9 +424,8 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
                 isPaginationTrigger: false
             ),
             isNewlyAppended: false,
-            showUnreadMarker: false,
-            firstUnreadMessageId: nil,
-            highlightedMessageId: nil,
+            isHighlighted: false,
+            isUnreadDivider: false,
             showURLPreviews: true,
             onAppear: { _ in },
             swipeOffset: 80
@@ -447,9 +440,8 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
                 isPaginationTrigger: false
             ),
             isNewlyAppended: false,
-            showUnreadMarker: false,
-            firstUnreadMessageId: nil,
-            highlightedMessageId: nil,
+            isHighlighted: false,
+            isUnreadDivider: false,
             showURLPreviews: true,
             onAppear: { _ in },
             swipeOffset: 80

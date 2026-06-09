@@ -411,7 +411,24 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .top) { loadingMoreOverlay }
             .onChange(of: viewModel.messagesVersion) {
+                let previousLastID = cachedMessageRows.last?.id
                 rebuildCachedRows()
+
+                // Scroll-to-bottom: check if the last message changed
+                // *after* rebuilding rows so the target row already
+                // exists in the renderer's data source.
+                let newLastID = cachedMessageRows.last?.id
+                if newLastID != previousLastID {
+                    if viewModel.timelineFocus == .live, !viewModel.isLoadingMore {
+                        if isNearBottom || pendingScrollToBottom {
+                            pendingScrollToBottom = false
+                            scrollToBottom()
+                        }
+                    }
+                    if isNearBottom, NSApp.isActive {
+                        Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
+                    }
+                }
             }
             .onChange(of: viewModel.hasReachedStart) {
                 rebuildCachedRows()
@@ -421,18 +438,6 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             }
             .onChange(of: showStateEvents) {
                 rebuildCachedRows()
-            }
-            .onChange(of: viewModel.messages.last?.id) {
-                guard viewModel.timelineFocus == .live else { return }
-                if !viewModel.isLoadingMore {
-                    if isNearBottom || pendingScrollToBottom {
-                        pendingScrollToBottom = false
-                        scrollToBottom()
-                    }
-                }
-                if isNearBottom, NSApp.isActive {
-                    Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
-                }
             }
             .onChange(of: viewModel.timelineFocus) {
                 if viewModel.timelineFocus == .live, NSApp.isActive {

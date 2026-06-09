@@ -77,9 +77,8 @@ struct TimelineTableViewRepresentable: NSViewControllerRepresentable {
                 TimelineRowView(
                     row: row,
                     isNewlyAppended: isNewlyAppended,
-                    showUnreadMarker: showUnreadMarker,
-                    firstUnreadMessageId: firstUnreadMessageId,
-                    highlightedMessageId: highlightedMessageId,
+                    isHighlighted: highlightedMessageId == row.message.eventID,
+                    isUnreadDivider: showUnreadMarker && row.message.id == firstUnreadMessageId,
                     showURLPreviews: showURLPreviews,
                     onAppear: onAppear,
                     swipeOffset: swipeOffset,

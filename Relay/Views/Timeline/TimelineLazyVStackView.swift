@@ -39,6 +39,21 @@ struct TimelineLazyVStackView: View {
     let highlightedMessageId: String?
     let showURLPreviews: Bool
 
+    // MARK: - Per-Row Bool Helpers
+
+    /// Whether this row should show the unread divider marker.
+    /// Pre-computed per-row so only the affected row's equality changes.
+    private func isUnreadDivider(for row: MessageRow) -> Bool {
+        showUnreadMarker && row.message.id == firstUnreadMessageId
+    }
+
+    /// Whether this row is currently highlighted (e.g. after scrolling to
+    /// a reply). Pre-computed per-row so only the highlighted row's
+    /// equality changes.
+    private func isHighlighted(for row: MessageRow) -> Bool {
+        highlightedMessageId == row.message.eventID
+    }
+
     /// The consolidated timeline interaction callbacks.
     let actions: TimelineActions
 
@@ -84,6 +99,18 @@ struct TimelineLazyVStackView: View {
     @State private var previousLastRowID: String?
     @State private var initialLoadComplete = false
 
+    /// The ID of the row currently playing an entry animation, or `nil`.
+    /// Set when a new message is appended and auto-cleared after the
+    /// animation duration so only the single new row is invalidated.
+    @State private var newlyAppendedID: String?
+
+    /// Sticky-bottom latch: once the user is near the bottom, stays
+    /// `true` until the user **actively** scrolls away. Content growth
+    /// (new messages, pagination) does not unlatch. This prevents
+    /// transient geometry changes during content insertion from
+    /// spoiling the near-bottom state and causing missed auto-scrolls.
+    @State private var isNearBottomLatched = true
+
     // MARK: - Body
 
     var body: some View {
@@ -92,12 +119,9 @@ struct TimelineLazyVStackView: View {
                 ForEach(rows) { row in
                     TimelineRowView(
                         row: row,
-                        isNewlyAppended: isLive && initialLoadComplete
-                            && row.id == rows.last?.id
-                            && row.id != previousLastRowID,
-                        showUnreadMarker: showUnreadMarker,
-                        firstUnreadMessageId: firstUnreadMessageId,
-                        highlightedMessageId: highlightedMessageId,
+                        isNewlyAppended: row.id == newlyAppendedID,
+                        isHighlighted: isHighlighted(for: row),
+                        isUnreadDivider: isUnreadDivider(for: row),
                         showURLPreviews: showURLPreviews,
                         onAppear: { _ in },
                         swipeOffset: swipeState.swipingMessageId == row.id ? swipeState.offset : 0,
@@ -138,9 +162,23 @@ struct TimelineLazyVStackView: View {
                 distanceFromContent: distanceFromContent
             )
         } action: { old, new in
-            if old.nearBottom != new.nearBottom {
-                onNearBottomChanged(new.nearBottom)
+            // Sticky-bottom latch: when the raw geometry says "near
+            // bottom", latch on. Only unlatch when the *user* actively
+            // scrolls away (not content-growth geometry shifts).
+            if new.nearBottom {
+                if !isNearBottomLatched {
+                    isNearBottomLatched = true
+                    onNearBottomChanged(true)
+                }
+            } else if isUserScrolling {
+                // User is actively scrolling away from bottom.
+                if isNearBottomLatched {
+                    isNearBottomLatched = false
+                    onNearBottomChanged(false)
+                }
             }
+            // Content growth while not scrolling: keep the latch as-is.
+
             // Only trigger backward pagination when the user is actively
             // scrolling and the SDK isn't already loading. This prevents
             // runaway re-triggers from content-size-change geometry
@@ -170,14 +208,29 @@ struct TimelineLazyVStackView: View {
             swipeHandler.rows = rows
         }
         .onChange(of: rows.last?.id) {
-            // Track the last row ID so the ForEach can determine whether
-            // a row is newly appended (its ID differs from the previous
-            // last). Deferred by one run-loop turn to avoid mutating
-            // @State during the same layout pass that triggered this
-            // onChange, which can cause AppKit constraint update issues
-            // with NSViewRepresentable rows.
+            // Deferred by one run-loop turn to avoid mutating @State
+            // during the same layout pass that triggered this onChange.
             Task { @MainActor in
-                previousLastRowID = rows.last?.id
+                let newLastID = rows.last?.id
+
+                // Determine if this is a genuinely new message appended
+                // to the end (not the initial load or a pagination).
+                if isLive, initialLoadComplete,
+                   let newLastID, newLastID != previousLastRowID {
+                    newlyAppendedID = newLastID
+
+                    // Auto-clear after the entry animation completes so
+                    // subsequent ForEach evaluations find nil and don't
+                    // invalidate this row again.
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(300))
+                        if newlyAppendedID == newLastID {
+                            newlyAppendedID = nil
+                        }
+                    }
+                }
+
+                previousLastRowID = newLastID
                 initialLoadComplete = true
             }
         }

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import RelayInterface
 import SwiftUI
 
 // MARK: - Preview Helpers
@@ -36,9 +37,8 @@ struct PreviewTimeline: View {
                     TimelineRowView(
                         row: row,
                         isNewlyAppended: false,
-                        showUnreadMarker: showUnreadMarker,
-                        firstUnreadMessageId: viewModel.firstUnreadMessageId,
-                        highlightedMessageId: nil,
+                        isHighlighted: false,
+                        isUnreadDivider: showUnreadMarker && row.message.id == viewModel.firstUnreadMessageId,
                         showURLPreviews: true,
                         onAppear: { _ in }
                     )
