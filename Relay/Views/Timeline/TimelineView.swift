@@ -289,9 +289,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             // Only mark as read when the user can see the latest messages.
             // If we restored to a saved scroll position mid-history, wait
             // until they scroll to the bottom (handled by onNearBottomChanged).
-            if isNearBottom {
-                await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts)
-            }
+            markAsReadIfNeeded()
 
             // Fetch room members for mention autocomplete
             compose.members = await matrixService.roomMembers(roomId: roomId)
@@ -425,9 +423,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                             scrollToBottom()
                         }
                     }
-                    if isNearBottom, NSApp.isActive {
-                        Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
-                    }
+                    markAsReadIfNeeded()
                 }
             }
             .onChange(of: viewModel.hasReachedStart) {
@@ -440,9 +436,9 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 rebuildCachedRows()
             }
             .onChange(of: viewModel.timelineFocus) {
-                if viewModel.timelineFocus == .live, NSApp.isActive {
+                if viewModel.timelineFocus == .live {
                     pendingScrollToBottom = true
-                    Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
+                    markAsReadIfNeeded()
                 }
             }
             .onChange(of: viewModel.isLoadingMore) {
@@ -452,14 +448,12 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 // causing markAsRead calls to be skipped. Once loading
                 // finishes and the scroll settles back at the bottom, this
                 // handler ensures the room is marked as read.
-                if !viewModel.isLoadingMore, isNearBottom, NSApp.isActive {
-                    Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
+                if !viewModel.isLoadingMore {
+                    markAsReadIfNeeded()
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-                if isNearBottom {
-                    Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
-                }
+                markAsReadIfNeeded()
             }
             .overlay(alignment: .bottomTrailing) { scrollToBottomButton }
             .overlay { loadingOrEmptyOverlay }
@@ -515,9 +509,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     private var rendererOnNearBottomChanged: (Bool) -> Void {
         { nearBottom in
             isNearBottom = nearBottom
-            if nearBottom, NSApp.isActive {
-                Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
-            }
+            markAsReadIfNeeded()
         }
     }
     private var rendererOnPaginateBackward: () -> Void {
@@ -544,11 +536,14 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     /// LazyVStack-only callback: re-evaluates read receipt state when the
     /// scroll view settles to idle after scrolling or programmatic animation.
     private var rendererOnScrollSettled: () -> Void {
-        {
-            if isNearBottom, NSApp.isActive {
-                Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
-            }
-        }
+        { markAsReadIfNeeded() }
+    }
+
+    /// Marks the room as read when the user can see the latest messages.
+    /// Guards on near-bottom, app-active, and non-read-only state.
+    private func markAsReadIfNeeded() {
+        guard !readOnly, isNearBottom, NSApp.isActive else { return }
+        Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
     }
 
     @ViewBuilder
