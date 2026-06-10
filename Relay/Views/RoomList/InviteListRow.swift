@@ -42,7 +42,6 @@ struct InviteListRow: View {
                         }
                         Text(room.name)
                             .font(.headline)
-                            .bold()
                             .lineLimit(1)
                     }
 
