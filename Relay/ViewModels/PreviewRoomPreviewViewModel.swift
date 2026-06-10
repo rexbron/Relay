@@ -36,7 +36,7 @@ final class PreviewRoomPreviewViewModel: RoomPreviewViewModelProtocol, TimelineV
     var hasReachedStart = true
     var hasReachedEnd = true
     var firstUnreadMessageId: String?
-    var typingUserDisplayNames: [String] = []
+    var typingUsers: [TypingUser] = []
     var timelineFocus: TimelineFocusState = .live
 
     init(

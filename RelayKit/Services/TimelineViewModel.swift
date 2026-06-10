@@ -39,7 +39,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
     public private(set) var hasReachedStart = false
     public private(set) var hasReachedEnd = true
     public var firstUnreadMessageId: String?
-    public private(set) var typingUserDisplayNames: [String] = []
+    public private(set) var typingUsers: [TypingUser] = []
     public private(set) var timelineFocus: TimelineFocusState = .live
 
     private let room: Room
@@ -547,7 +547,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         initialDiffsContinuation?.finish()
         initialDiffsContinuation = nil
         initialDiffsStream = nil
-        typingUserDisplayNames = []
+        typingUsers = []
     }
 
     /// Resumes live timeline observation after a ``suspend()``.
@@ -866,19 +866,45 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         typingHandle = room.subscribeToTypingNotifications(listener: listener)
 
         typingTask = Task { [weak self] in
+            // A child task that resolves display names and avatar URLs.
+            // Cancelled and replaced each time a new typing notification
+            // arrives, so stale resolutions never block clearing the
+            // indicator when the SDK sends an empty user list.
+            var resolveTask: Task<Void, Never>?
+
             for await userIds in stream {
                 guard let self else { break }
+                resolveTask?.cancel()
+
                 let filtered = userIds.filter { $0 != self.currentUserId }
-                var names: [String] = []
-                for userId in filtered {
-                    if let name = try? await self.room.memberDisplayName(userId: userId), !name.isEmpty {
-                        names.append(name)
-                    } else {
-                        names.append(userId)
-                    }
+
+                // Fast path: immediately clear the indicator when nobody
+                // is typing, without waiting for any prior resolution.
+                if filtered.isEmpty {
+                    self.typingUsers = []
+                    continue
                 }
-                self.typingUserDisplayNames = names
+
+                let room = self.room
+                resolveTask = Task {
+                    var users: [TypingUser] = []
+                    for userId in filtered {
+                        if Task.isCancelled { return }
+                        let name: String
+                        if let displayName = try? await room.memberDisplayName(userId: userId), !displayName.isEmpty {
+                            name = displayName
+                        } else {
+                            name = userId
+                        }
+                        let avatarURL = try? await room.memberAvatarUrl(userId: userId)
+                        if Task.isCancelled { return }
+                        users.append(TypingUser(id: userId, displayName: name, avatarURL: avatarURL))
+                    }
+                    self.typingUsers = users
+                }
             }
+
+            resolveTask?.cancel()
         }
     }
 

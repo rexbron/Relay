@@ -86,6 +86,10 @@ struct TimelineLazyVStackView: View {
     /// specific event). Controls entry animations for new messages.
     var isLive: Bool = true
 
+    /// The view model, used by the typing indicator injector to observe
+    /// typing state without invalidating the renderer's own body.
+    let viewModel: any TimelineViewModelProtocol
+
     /// Extra bottom margin so content clears the compose bar overlay.
     var bottomContentMargin: CGFloat = 0
 
@@ -135,6 +139,12 @@ struct TimelineLazyVStackView: View {
                         }
                     }
                 }
+
+                TypingIndicatorInjector(
+                    viewModel: viewModel,
+                    scrollPosition: $scrollPosition,
+                    isNearBottom: isNearBottomLatched
+                )
             }
             .scrollTargetLayout()
         }
@@ -445,5 +455,36 @@ final class SwipeScrollHandler {
         gestureAxis = .undecided
         accumulatedDeltaX = 0
         swipingMessageID = nil
+    }
+}
+
+// MARK: - Typing Indicator Injector
+
+/// A thin child view that observes only `viewModel.typingUsers`, isolating
+/// typing-state changes from the parent renderer's body re-evaluation.
+/// When typing users appear and the scroll is near bottom, it scrolls
+/// to keep the indicator visible.
+private struct TypingIndicatorInjector: View {
+    let viewModel: any TimelineViewModelProtocol
+    @Binding var scrollPosition: ScrollPosition
+    var isNearBottom: Bool
+
+    var body: some View {
+        let users = viewModel.typingUsers
+        Group {
+            if !users.isEmpty {
+                TypingIndicatorRowView(users: users)
+                    .id("__typing__")
+                    .transition(.opacity.combined(with: .blurReplace))
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: users.isEmpty)
+        .onChange(of: users.isEmpty) {
+            if isNearBottom {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    scrollPosition.scrollTo(edge: .bottom)
+                }
+            }
+        }
     }
 }

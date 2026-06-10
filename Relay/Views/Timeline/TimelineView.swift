@@ -562,6 +562,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 isLoadingMore: viewModel.isLoadingMore,
                 hasReachedEnd: viewModel.hasReachedEnd,
                 isLive: viewModel.timelineFocus == .live,
+                viewModel: viewModel,
                 bottomContentMargin: composeBarHeight + 4,
                 scrollPosition: $lazyVStackScrollPosition
             )
@@ -575,6 +576,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 highlightedMessageId: highlightedMessageId,
                 showURLPreviews: showURLPreviews,
                 actions: timelineActionsRef,
+                viewModel: viewModel,
                 onAppear: { row in advanceFullyReadMarker(to: row.message.eventID) },
                 onNearBottomChanged: { nearBottom in
                     isNearBottom = nearBottom

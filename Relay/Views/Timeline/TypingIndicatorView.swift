@@ -15,47 +15,58 @@
 import RelayInterface
 import SwiftUI
 
-// MARK: - Typing Indicator Overlay
+// MARK: - Typing Indicator Row
 
-/// A lightweight view that observes only `viewModel.typingUserDisplayNames`,
-/// isolating typing-state changes from ``TimelineView/body`` re-evaluation.
-/// Without this, every typing notification would trigger a full `body`
-/// recompute, rebuilding `messageRows` and passing them through the
-/// representable boundary — even though the message data hasn't changed.
-struct TypingIndicatorOverlay: View {
-    let viewModel: any TimelineViewModelProtocol
+/// A typing indicator styled to look like an incoming message. Displays
+/// overlapping avatars for each typing user and an incoming-style bubble
+/// containing animated dots. Designed to be placed at the end of the
+/// timeline content so that when a real message arrives, it replaces the
+/// indicator in-place with no scroll shift.
+struct TypingIndicatorRowView: View {
+    let users: [TypingUser]
 
     var body: some View {
-        let names = viewModel.typingUserDisplayNames
-        ZStack(alignment: .leading) {
-            if !names.isEmpty {
-                HStack(spacing: 6) {
-                    TypingBubble()
-                    Text(typingLabel(for: names))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(.regularMaterial, in: Capsule())
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 4)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
+        HStack(alignment: .bottom, spacing: 6) {
+            avatarStack
+            typingBubble
         }
-        .animation(.spring(duration: 0.3), value: names.isEmpty)
+        .frame(maxWidth: 500, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func typingLabel(for names: [String]) -> String {
-        switch names.count {
-        case 1:
-            return "\(names[0]) is typing…"
-        case 2:
-            return "\(names[0]) and \(names[1]) are typing…"
-        default:
-            return "\(names[0]) and \(names.count - 1) others are typing…"
+    // MARK: - Avatars
+
+    /// Stacked, overlapping avatars — one per typing user.
+    private var avatarStack: some View {
+        ZStack(alignment: .bottomLeading) {
+            ForEach(users.prefix(3).reversed()) { user in
+                let index = users.firstIndex(where: { $0.id == user.id }) ?? 0
+                AvatarView(
+                    name: user.displayName,
+                    mxcURL: user.avatarURL,
+                    size: 28
+                )
+                .offset(x: CGFloat(index) * 16)
+            }
         }
+        .frame(
+            width: 28 + CGFloat(max(users.prefix(3).count - 1, 0)) * 16,
+            alignment: .leading
+        )
+    }
+
+    // MARK: - Bubble
+
+    private var typingBubble: some View {
+        TypingBubble()
+            .padding(.horizontal, BubbleStyle.horizontalPadding)
+            .padding(.vertical, 12)
+            .background(
+                Color(.unemphasizedSelectedContentBackgroundColor),
+                in: BubbleStyle.shape
+            )
     }
 }
 
@@ -67,12 +78,12 @@ struct TypingBubble: View {
     var body: some View {
         SwiftUI.TimelineView(.animation) { context in
             let elapsed = context.date.timeIntervalSince(startDate)
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 ForEach(0..<3, id: \.self) { index in
                     let phase = dotPhase(elapsed: elapsed, index: index)
                     Circle()
                         .fill(.secondary)
-                        .frame(width: 6, height: 6)
+                        .frame(width: 8, height: 8)
                         .scaleEffect(0.6 + 0.4 * phase)
                         .opacity(0.4 + 0.6 * phase)
                 }
@@ -88,4 +99,22 @@ struct TypingBubble: View {
         let t = (elapsed + delay).truncatingRemainder(dividingBy: period) / period
         return sin(t * .pi)
     }
+}
+
+// MARK: - Previews
+
+#Preview("Single user typing") {
+    TypingIndicatorRowView(users: [
+        TypingUser(id: "@alice:matrix.org", displayName: "Alice")
+    ])
+    .padding()
+}
+
+#Preview("Multiple users typing") {
+    TypingIndicatorRowView(users: [
+        TypingUser(id: "@alice:matrix.org", displayName: "Alice"),
+        TypingUser(id: "@bob:matrix.org", displayName: "Bob"),
+        TypingUser(id: "@charlie:matrix.org", displayName: "Charlie")
+    ])
+    .padding()
 }

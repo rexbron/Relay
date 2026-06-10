@@ -54,8 +54,6 @@ struct TimelineBottomBar: View {
 
     private var composeBarSection: some View {
         VStack(spacing: 0) {
-            TypingIndicatorOverlay(viewModel: viewModel)
-
             ComposeBar(
                 compose: compose,
                 onSend: {

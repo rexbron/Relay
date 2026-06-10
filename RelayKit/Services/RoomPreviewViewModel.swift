@@ -48,7 +48,7 @@ public final class RoomPreviewViewModel: RoomPreviewViewModelProtocol, TimelineV
     public var hasReachedStart: Bool = true
     public var hasReachedEnd: Bool = true
     public var firstUnreadMessageId: String?
-    public var typingUserDisplayNames: [String] = []
+    public var typingUsers: [TypingUser] = []
     public var timelineFocus: TimelineFocusState = .live
 
     private let client: any ClientProxyProtocol
