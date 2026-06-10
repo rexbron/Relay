@@ -70,12 +70,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     @State private var showQuickSwitch = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            if !matrixService.spaces.isEmpty {
-                spaceRailView
-            }
-            navigationContent
-        }
+        navigationContent
         .overlay {
             if showQuickSwitch {
                 quickSwitchOverlay
@@ -226,27 +221,34 @@ struct MainView: View { // swiftlint:disable:this type_body_length
 
     @ViewBuilder
     private var sidebarColumn: some View {
-        if searchModel.isActive {
-            SearchResultsList(
-                rooms: searchModel.filteredRooms(from: matrixService.rooms, spaceId: selectedSpaceId),
-                searchModel: searchModel,
-                selectedRoomId: $selectedRoomId,
-                onMessageSelected: { roomId, eventId in
-                    searchModel.dismiss()
-                    isSearchFocused = false
-                    selectedRoomId = roomId
-                    Task {
-                        try? await Task.sleep(for: .milliseconds(300))
-                        focusedMessageId = eventId
+        Group {
+            if searchModel.isActive {
+                SearchResultsList(
+                    rooms: searchModel.filteredRooms(from: matrixService.rooms, spaceId: selectedSpaceId),
+                    searchModel: searchModel,
+                    selectedRoomId: $selectedRoomId,
+                    onMessageSelected: { roomId, eventId in
+                        searchModel.dismiss()
+                        isSearchFocused = false
+                        selectedRoomId = roomId
+                        Task {
+                            try? await Task.sleep(for: .milliseconds(300))
+                            focusedMessageId = eventId
+                        }
                     }
-                }
-            )
-        } else {
-            RoomListView(
+                )
+            } else {
+                RoomListView(
                     selectedRoomId: $selectedRoomId,
                     selectedSpaceId: $selectedSpaceId,
                     previewingInvite: $previewingInvite
                 )
+            }
+        }
+        .safeAreaInset(edge: .leading, spacing: 0) {
+            if !matrixService.spaces.isEmpty {
+                spaceRailView
+            }
         }
     }
 
