@@ -178,10 +178,10 @@ struct ActivityLogView: View {
             } label: {
                 Label(
                     isAutoScrollEnabled ? "Auto-scroll On" : "Auto-scroll Off",
-                    systemImage: isAutoScrollEnabled ? "arrow.up.left.circle.fill" : "arrow.up.left.circle"
+                    systemImage: isAutoScrollEnabled ? "pause.fill" : "play.fill"
                 )
             }
-            .help(isAutoScrollEnabled ? "Disable auto-scroll" : "Enable auto-scroll")
+            .help(isAutoScrollEnabled ? "Pause message scrolling" : "Resume message scrolling")
         }
 
         ToolbarItem(placement: .automatic) {
