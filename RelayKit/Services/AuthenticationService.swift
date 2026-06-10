@@ -14,7 +14,6 @@
 
 import Foundation
 import RelayInterface
-import os
 
 /// The persisted representation of a Matrix session, stored in the keychain.
 ///
@@ -391,8 +390,6 @@ final class AuthenticationService {
 // MARK: - OIDC Session Delegate
 
 final class KeychainSessionDelegate: ClientSessionDelegate, @unchecked Sendable {
-    private static let logger = Logger(subsystem: "RelayKit", category: "KeychainSessionDelegate")
-
     /// Guards against stale callbacks from a previous SDK client.
     ///
     /// When `AuthenticationService` creates a new client (e.g. on re-login),
@@ -415,7 +412,6 @@ final class KeychainSessionDelegate: ClientSessionDelegate, @unchecked Sendable 
 
     func retrieveSessionFromKeychain(userId: String) throws -> Session {
         guard isValid else {
-            Self.logger.warning("retrieveSessionFromKeychain: delegate invalidated, ignoring")
             Task { @MainActor [activityLog] in
                 activityLog?.log(
                     category: .auth, severity: .debug, source: "KeychainSessionDelegate",
@@ -425,7 +421,6 @@ final class KeychainSessionDelegate: ClientSessionDelegate, @unchecked Sendable 
             throw KeychainSessionError.sessionNotFound
         }
         guard let data = KeychainService.load() else {
-            Self.logger.error("No session data found in keychain")
             Task { @MainActor [activityLog] in
                 activityLog?.log(
                     category: .auth, severity: .warning, source: "KeychainSessionDelegate",
@@ -435,7 +430,6 @@ final class KeychainSessionDelegate: ClientSessionDelegate, @unchecked Sendable 
             throw KeychainSessionError.sessionNotFound
         }
         guard let stored = try? JSONDecoder().decode(StoredSession.self, from: data) else {
-            Self.logger.error("Failed to decode stored session data")
             Task { @MainActor [activityLog] in
                 activityLog?.log(
                     category: .auth, severity: .error, source: "KeychainSessionDelegate",
@@ -445,7 +439,6 @@ final class KeychainSessionDelegate: ClientSessionDelegate, @unchecked Sendable 
             throw KeychainSessionError.sessionNotFound
         }
         guard stored.userId == userId else {
-            Self.logger.error("Stored userId \(stored.userId) does not match requested \(userId)")
             Task { @MainActor [activityLog] in
                 activityLog?.log(
                     category: .auth, severity: .error, source: "KeychainSessionDelegate",
@@ -468,7 +461,6 @@ final class KeychainSessionDelegate: ClientSessionDelegate, @unchecked Sendable 
 
     func saveSessionInKeychain(session: Session) {
         guard isValid else {
-            Self.logger.warning("saveSessionInKeychain: delegate invalidated, ignoring")
             Task { @MainActor [activityLog] in
                 activityLog?.log(
                     category: .auth, severity: .debug, source: "KeychainSessionDelegate",
@@ -494,7 +486,6 @@ final class KeychainSessionDelegate: ClientSessionDelegate, @unchecked Sendable 
                 )
             }
         } else {
-            Self.logger.error("Failed to encode session for keychain storage")
             Task { @MainActor [activityLog] in
                 activityLog?.log(
                     category: .auth, severity: .error, source: "KeychainSessionDelegate",

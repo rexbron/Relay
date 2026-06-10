@@ -18,10 +18,8 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import RelayInterface
-import OSLog
 import UniformTypeIdentifiers
-
-private let logger = Logger(subsystem: "RelayKit", category: "Timeline")
+import os
 
 /// Concrete implementation of ``TimelineViewModelProtocol`` backed by the Matrix Rust SDK.
 ///
@@ -159,7 +157,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             }
             observeTypingNotifications()
         } catch {
-            logger.error("Failed to load timeline: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to load timeline in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.messageLoadFailed(error.localizedDescription))
             isLoading = false
         }
@@ -188,7 +190,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             await rebuildMessages()
             isLoading = false
         } catch {
-            logger.error("Failed to load thread timeline: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to load thread timeline in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.messageLoadFailed(error.localizedDescription))
             isLoading = false
         }
@@ -199,7 +205,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         do {
             _ = try await sdkTimeline.paginateBackwards(numEvents: 100)
         } catch {
-            logger.error("Failed to load earlier messages: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to load earlier messages in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.messageLoadFailed(error.localizedDescription))
         }
     }
@@ -216,7 +226,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 }
             }
         } catch {
-            logger.error("Failed to load newer messages: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to load newer messages in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
         }
     }
 
@@ -235,7 +249,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         do {
             try await sdkTimeline.sendReadReceipt(receiptType: .fullyRead, eventId: eventId)
         } catch {
-            logger.error("Failed to send fully-read receipt: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to send fully-read receipt in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
         }
     }
 
@@ -252,14 +270,22 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             timelineFocus = .focusedOnEvent(eventId)
             hasReachedEnd = false
         } catch {
-            logger.error("Failed to focus on event \(eventId): \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to focus on event in \(roomLabel)",
+                detail: "\(eventId): \(error.localizedDescription)", roomId: roomId
+            )
             errorReporter.report(.messageLoadFailed(error.localizedDescription))
             // Attempt to recover by returning to live
             do {
                 try await setupTimeline(focus: .live(hideThreadedEvents: false))
                 timelineFocus = .live
             } catch {
-                logger.error("Failed to recover live timeline: \(error)")
+                activityLog?.log(
+                    category: .timeline, severity: .error, source: "TimelineViewModel",
+                    summary: "Failed to recover live timeline in \(roomLabel)",
+                    detail: error.localizedDescription, roomId: roomId
+                )
             }
         }
 
@@ -282,7 +308,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             try await setupTimeline(focus: .live(hideThreadedEvents: false))
             timelineFocus = .live
         } catch {
-            logger.error("Failed to return to live timeline: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to return to live timeline in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.messageLoadFailed(error.localizedDescription))
             isLoading = false
         }
@@ -302,7 +332,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 _ = try await sdkTimeline.send(msg: msg)
             }
         } catch {
-            logger.error("Failed to send message: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to send message in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.messageSendFailed(error.localizedDescription))
         }
     }
@@ -316,7 +350,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         do {
             try await sdkTimeline.edit(eventOrTransactionId: itemId, newContent: editedContent)
         } catch {
-            logger.error("Failed to edit message: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to edit message in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.editFailed(error.localizedDescription))
         }
     }
@@ -327,7 +365,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         do {
             _ = try await sdkTimeline.toggleReaction(itemId: itemId, key: key)
         } catch {
-            logger.error("Failed to toggle reaction: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to toggle reaction in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.reactionFailed(error.localizedDescription))
         }
     }
@@ -338,7 +380,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         do {
             try await sdkTimeline.redactEvent(eventOrTransactionId: itemId, reason: reason)
         } catch {
-            logger.error("Failed to delete message: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to delete message in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.redactFailed(error.localizedDescription))
         }
     }
@@ -348,7 +394,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         do {
             _ = try await sdkTimeline.pinEvent(eventId: eventId)
         } catch {
-            logger.error("Failed to pin message: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to pin message in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.pinFailed(error.localizedDescription))
         }
     }
@@ -358,7 +408,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         do {
             _ = try await sdkTimeline.unpinEvent(eventId: eventId)
         } catch {
-            logger.error("Failed to unpin message: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to unpin message in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.pinFailed(error.localizedDescription))
         }
     }
@@ -384,7 +438,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 do {
                     data = try Data(contentsOf: url)
                 } catch {
-                    logger.error("Failed to read attachment \(filename): \(error)")
+                    activityLog?.log(
+                        category: .timeline, severity: .error, source: "TimelineViewModel",
+                        summary: "Failed to read attachment \(filename) in \(roomLabel)",
+                        detail: error.localizedDescription, roomId: roomId
+                    )
                     errorReporter.report(.fileCopyFailed(filename: filename, reason: error.localizedDescription))
                     return
                 }
@@ -478,7 +536,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 do {
                     data = try Data(contentsOf: url)
                 } catch {
-                    logger.error("Failed to read attachment \(filename): \(error)")
+                    activityLog?.log(
+                        category: .timeline, severity: .error, source: "TimelineViewModel",
+                        summary: "Failed to read attachment \(filename) in \(roomLabel)",
+                        detail: error.localizedDescription, roomId: roomId
+                    )
                     errorReporter.report(.fileCopyFailed(filename: filename, reason: error.localizedDescription))
                     return
                 }
@@ -501,7 +563,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
 
             try await handle.join()
         } catch {
-            logger.error("Failed to send attachment \(filename): \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to send attachment \(filename) in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.attachmentSendFailed(filename: filename, reason: error.localizedDescription))
         }
 
@@ -525,7 +591,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
     /// live timeline observation.
     func suspend() {
         guard !isSuspended, sdkTimeline != nil else { return }
-        logger.info("Suspending timeline for room \(self.roomId)")
+        activityLog?.log(
+            category: .timeline, severity: .info, source: "TimelineViewModel",
+            summary: "Suspending timeline for \(roomLabel)",
+            roomId: roomId
+        )
         isSuspended = true
 
         observationTask?.cancel()
@@ -558,7 +628,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
     /// visible until fresh data arrives via the normal diff pipeline.
     func resume() async {
         guard isSuspended else { return }
-        logger.info("Resuming timeline for room \(self.roomId)")
+        activityLog?.log(
+            category: .timeline, severity: .info, source: "TimelineViewModel",
+            summary: "Resuming timeline for \(roomLabel)",
+            roomId: roomId
+        )
         isSuspended = false
 
         do {
@@ -567,7 +641,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             hasReachedEnd = true
             observeTypingNotifications()
         } catch {
-            logger.error("Failed to resume timeline: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to resume timeline for \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
         }
     }
 
@@ -626,7 +704,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             do {
                 try await observePaginationStatus(tl)
             } catch {
-                logger.error("Failed to subscribe to pagination status: \(error)")
+                activityLog?.log(
+                    category: .timeline, severity: .error, source: "TimelineViewModel",
+                    summary: "Failed to subscribe to pagination status in \(roomLabel)",
+                    detail: error.localizedDescription, roomId: roomId
+                )
             }
         default:
             break
@@ -836,15 +918,14 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                     || "\(error)".contains("HostUnreachable")
                 if isTransient && attempt < Self.maxPaginationRetries - 1 {
                     let delay = Duration.seconds(1 << attempt) // 1s, 2s, 4s
-                    logger.info(
-                        "Pagination attempt \(attempt + 1) failed (transient), retrying in \(1 << attempt)s: \(error.localizedDescription)"
+                    activityLog?.log(
+                        category: .timeline, severity: .warning, source: "TimelineViewModel",
+                        summary: "Pagination attempt \(attempt + 1) failed (transient) in \(roomLabel), retrying in \(1 << attempt)s",
+                        detail: error.localizedDescription, roomId: roomId
                     )
                     try? await Task.sleep(for: delay)
                     guard !Task.isCancelled else { return false }
                 } else {
-                    logger.error(
-                        "Pagination failed after \(attempt + 1) attempt(s): \(error)"
-                    )
                     activityLog?.log(
                         category: .timeline, severity: .error, source: "TimelineViewModel",
                         summary: "Pagination failed in \(roomLabel)",

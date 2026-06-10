@@ -16,8 +16,6 @@ import Foundation
 import RelayInterface
 import os
 
-private let logger = Logger(subsystem: "RelayKit", category: "RoomList")
-
 /// Information about a new notification-worthy event in a room.
 public struct RoomNotificationEvent: Sendable {
     /// The room ID that has new unread activity.
@@ -185,7 +183,6 @@ final class RoomListManager {
             }
         }
 
-        logger.info("Room list manager restarted with new sync service")
         activityLog?.log(
             category: .roomList, severity: .info, source: "RoomListManager",
             summary: "Room list restarted with new sync service",

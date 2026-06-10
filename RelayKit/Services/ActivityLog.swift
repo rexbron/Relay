@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import Foundation
+import OSLog
 import RelayInterface
 
 /// A ring-buffer-backed diagnostic event log for debugging sync and connection issues.
@@ -27,6 +28,18 @@ import RelayInterface
 public final class ActivityLog: ActivityLogProtocol {
     /// The maximum number of events retained in the ring buffer.
     private let capacity: Int
+
+    /// Per-category os.Logger instances for forwarding events to the unified logging system.
+    private let loggers: [ActivityEvent.Category: Logger] = {
+        var map = [ActivityEvent.Category: Logger]()
+        for category in ActivityEvent.Category.allCases {
+            map[category] = Logger(
+                subsystem: "RelayKit",
+                category: "ActivityLog.\(category.label.replacing(" ", with: ""))"
+            )
+        }
+        return map
+    }()
 
     /// The backing storage for captured events.
     public private(set) var events: [ActivityEvent] = []
@@ -64,6 +77,27 @@ public final class ActivityLog: ActivityLogProtocol {
             events.removeFirst()
         }
         events.append(event)
+
+        if let logger = loggers[category] {
+            forward(event, to: logger)
+        }
+    }
+
+    /// Forwards an event to the unified logging system at the appropriate log level.
+    private func forward(_ event: ActivityEvent, to logger: Logger) {
+        let detail = event.detail ?? ""
+        let roomId = event.roomId ?? ""
+
+        switch event.severity {
+        case .debug:
+            logger.debug("[\(event.source, privacy: .public)] \(event.summary, privacy: .public) \(detail, privacy: .private(mask: .hash)) \(roomId, privacy: .private(mask: .hash))")
+        case .info:
+            logger.info("[\(event.source, privacy: .public)] \(event.summary, privacy: .public) \(detail, privacy: .private(mask: .hash)) \(roomId, privacy: .private(mask: .hash))")
+        case .warning:
+            logger.warning("[\(event.source, privacy: .public)] \(event.summary, privacy: .public) \(detail, privacy: .private(mask: .hash)) \(roomId, privacy: .private(mask: .hash))")
+        case .error:
+            logger.error("[\(event.source, privacy: .public)] \(event.summary, privacy: .public) \(detail, privacy: .private(mask: .hash)) \(roomId, privacy: .private(mask: .hash))")
+        }
     }
 
     /// Removes all captured events.

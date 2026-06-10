@@ -13,10 +13,7 @@
 // limitations under the License.
 
 import Foundation
-import os
 import RelayInterface
-
-private let logger = Logger(subsystem: "RelayKit", category: "LiveKitCredentialService")
 
 /// Fetches LiveKit credentials (WebSocket URL + JWT) for a Matrix room by
 /// implementing the MatrixRTC credential exchange flow (MSC4143).
@@ -54,7 +51,6 @@ struct LiveKitCredentialService {
     /// Returns `(livekitWebSocketURL, livekitJWT, sfuServiceURL)` for the given Matrix room.
     /// The `sfuServiceURL` is the SFU service URL from discovery, used in call member events.
     func credentials(for roomID: String) async throws -> (url: String, token: String, sfuServiceURL: String) {
-        logger.info("[RTC]Fetching LiveKit credentials for room \(roomID, privacy: .private)")
         activityLog?.log(
             category: .call, severity: .info, source: "LiveKitCredentialService",
             summary: "Fetching call credentials",
@@ -62,14 +58,17 @@ struct LiveKitCredentialService {
         )
         do {
             let sfuURL = try await discoverSFUURL()
-            logger.info("[RTC]SFU URL discovered: \(sfuURL)")
             activityLog?.log(
                 category: .call, severity: .debug, source: "LiveKitCredentialService",
                 summary: "SFU URL discovered",
                 roomId: roomID
             )
             let openIDToken = try await requestOpenIDToken()
-            logger.debug("[RTC]OpenID token obtained")
+            activityLog?.log(
+                category: .call, severity: .debug, source: "LiveKitCredentialService",
+                summary: "OpenID token obtained",
+                roomId: roomID
+            )
             let (url, jwt) = try await fetchLiveKitToken(sfuURL: sfuURL, roomID: roomID, openIDToken: openIDToken)
             activityLog?.log(
                 category: .call, severity: .info, source: "LiveKitCredentialService",
@@ -200,7 +199,11 @@ struct LiveKitCredentialService {
             throw LiveKitCredentialError.tokenExchangeFailed
         }
         let decoded = try JSONDecoder().decode(LiveKitTokenResponse.self, from: data)
-        logger.info("[RTC]LiveKit credentials obtained via /get_token")
+        activityLog?.log(
+            category: .call, severity: .debug, source: "LiveKitCredentialService",
+            summary: "LiveKit credentials obtained via /get_token",
+            roomId: roomID
+        )
         return (decoded.url, decoded.jwt)
     }
 
@@ -225,7 +228,11 @@ struct LiveKitCredentialService {
             throw LiveKitCredentialError.tokenExchangeFailed
         }
         let decoded = try JSONDecoder().decode(LiveKitTokenResponse.self, from: data)
-        logger.info("[RTC]LiveKit credentials obtained via legacy /sfu/get")
+        activityLog?.log(
+            category: .call, severity: .debug, source: "LiveKitCredentialService",
+            summary: "LiveKit credentials obtained via legacy /sfu/get",
+            roomId: roomID
+        )
         return (decoded.url, decoded.jwt)
     }
 }

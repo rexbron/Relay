@@ -15,10 +15,7 @@
 import Foundation
 import LiveKit
 import RelayInterface
-import OSLog
 import SwiftUI
-
-private let logger = Logger(subsystem: "RelayKit", category: "Call")
 
 /// A concrete ``CallViewModelProtocol`` implementation backed by the LiveKit Swift SDK.
 ///
@@ -224,11 +221,6 @@ public final class CallViewModel: CallViewModelProtocol {
             let encryptionOpts: EncryptionOptions? = keyProvider.map {
                 EncryptionOptions(keyProvider: $0, encryptionType: .gcm)
             }
-            if isE2eeEnabled {
-                logger.info("[RTC]E2EE enabled (encrypted Matrix room)")
-            } else {
-                logger.info("[RTC]E2EE disabled (unencrypted Matrix room)")
-            }
             let roomOpts = RoomOptions(
                 defaultVideoPublishOptions: VideoPublishOptions(
                     preferredCodec: .vp8
@@ -248,7 +240,11 @@ public final class CallViewModel: CallViewModelProtocol {
                 roomOptions: roomOpts
             )
             localParticipantID = room.localParticipant.identity?.stringValue
-            logger.info("[RTC]Connected with LiveKit identity: \(self.localParticipantID ?? "unknown", privacy: .public)")
+            activityLog?.log(
+                category: .call, severity: .debug, source: "CallViewModel",
+                summary: "Connected with LiveKit identity: \(localParticipantID ?? "unknown")",
+                roomId: roomID
+            )
 
             // Spin up the headless widget bridge *only* for encrypted rooms.
             // For unencrypted rooms the bridge adds no value (no keys to
@@ -268,7 +264,12 @@ public final class CallViewModel: CallViewModelProtocol {
                     bridge.start()
                     self.widgetBridge = bridge
                 } catch {
-                    logger.error("[RTC]Failed to create CallWidgetBridge: \(error.localizedDescription, privacy: .private)")
+                    activityLog?.log(
+                        category: .call, severity: .error, source: "CallViewModel",
+                        summary: "Failed to create CallWidgetBridge",
+                        detail: error.localizedDescription,
+                        roomId: roomID
+                    )
                 }
             }
 
@@ -291,7 +292,12 @@ public final class CallViewModel: CallViewModelProtocol {
                 // mismatched JWT identity would silently break decrypt.
                 let localIdentity = "\(encryptionService.userID):\(encryptionService.deviceID)"
                 if let livekitIdentity = self.localParticipantID, livekitIdentity != localIdentity {
-                    logger.warning("[RTC]LiveKit identity \(livekitIdentity, privacy: .public) != matrix identity \(localIdentity, privacy: .public) — frame encryption may misroute")
+                    activityLog?.log(
+                        category: .call, severity: .warning, source: "CallViewModel",
+                        summary: "LiveKit identity mismatch — frame encryption may misroute",
+                        detail: "LiveKit: \(livekitIdentity), Matrix: \(localIdentity)",
+                        roomId: roomID
+                    )
                 }
                 let keyIndex = self.localKeyIndex
                 CallEncryptionService.setRawKey(
@@ -300,7 +306,12 @@ public final class CallViewModel: CallViewModelProtocol {
                     participantId: localIdentity,
                     index: Int32(keyIndex)
                 )
-                logger.info("[RTC]Local E2EE key set (index \(keyIndex)) under participantId=\(localIdentity, privacy: .public) before camera publish")
+                activityLog?.log(
+                    category: .call, severity: .debug, source: "CallViewModel",
+                    summary: "Local E2EE key set (index \(keyIndex))",
+                    detail: "participantId: \(localIdentity)",
+                    roomId: roomID
+                )
             }
 
             // Set up MatrixRTC signaling and distribute the key **before**
@@ -340,7 +351,12 @@ public final class CallViewModel: CallViewModelProtocol {
                         membershipId: membershipId
                     )
                 } catch {
-                    logger.warning("[RTC]Call membership event failed: \(error.localizedDescription, privacy: .private)")
+                    activityLog?.log(
+                        category: .call, severity: .warning, source: "CallViewModel",
+                        summary: "Call membership event failed",
+                        detail: error.localizedDescription,
+                        roomId: roomID
+                    )
                 }
 
                 // 2. Start the membership heartbeat. matrix-js-sdk's
@@ -350,7 +366,9 @@ public final class CallViewModel: CallViewModelProtocol {
                 self.heartbeatTask = Self.startHeartbeat(
                     encryptionService: encryptionService,
                     sfuServiceURL: sfuServiceURL,
-                    membershipId: membershipId
+                    membershipId: membershipId,
+                    activityLog: self.activityLog,
+                    roomID: self.roomID
                 )
 
                 // 3. Distribute the already-generated local key via the
@@ -363,7 +381,6 @@ public final class CallViewModel: CallViewModelProtocol {
                 if self.isE2eeEnabled, let bridge, let localKey {
                     let targets = await encryptionService.fetchCallTargets()
                     self.callMembers = targets
-                    logger.info("[RTC]Distributing key to \(targets.count) remote user(s) BEFORE media publish")
                     do {
                         try await bridge.sendEncryptionKey(
                             localKey,
@@ -376,7 +393,12 @@ public final class CallViewModel: CallViewModelProtocol {
                             roomId: roomID
                         )
                     } catch {
-                        logger.warning("[RTC]Widget-bridge key distribution failed: \(error.localizedDescription, privacy: .private)")
+                        activityLog?.log(
+                            category: .call, severity: .warning, source: "CallViewModel",
+                            summary: "Widget-bridge key distribution failed",
+                            detail: error.localizedDescription,
+                            roomId: roomID
+                        )
                     }
                 }
             }
@@ -396,8 +418,6 @@ public final class CallViewModel: CallViewModelProtocol {
                 roomId: roomID
             )
         } catch {
-            logger.error("[RTC]Connect failed: \(error.localizedDescription, privacy: .private)")
-
             // The native WebRTC audio engine returns -9000
             // (kAudioEngineErrorInsufficientDevicePermission) when
             // microphone access is denied. The LiveKit SDK wraps this in a
@@ -466,12 +486,11 @@ public final class CallViewModel: CallViewModelProtocol {
     nonisolated private static func startHeartbeat(
         encryptionService: CallEncryptionService,
         sfuServiceURL: String,
-        membershipId: String?
+        membershipId: String?,
+        activityLog: ActivityLog?,
+        roomID: String?
     ) -> Task<Void, Never> {
         Task.detached(priority: .background) {
-            // Local logger — the file-scope `logger` is inferred as
-            // MainActor-isolated and isn't reachable from a detached task.
-            let log = Logger(subsystem: "RelayKit", category: "Call")
             while !Task.isCancelled {
                 do {
                     try await Task.sleep(for: heartbeatInterval)
@@ -484,9 +503,22 @@ public final class CallViewModel: CallViewModelProtocol {
                         sfuServiceURL: sfuServiceURL,
                         membershipId: membershipId
                     )
-                    log.debug("[RTC]Heartbeat refreshed call.member state event")
+                    Task { @MainActor in
+                        activityLog?.log(
+                            category: .call, severity: .debug, source: "CallViewModel",
+                            summary: "Heartbeat refreshed call.member state event",
+                            roomId: roomID
+                        )
+                    }
                 } catch {
-                    log.warning("[RTC]Heartbeat refresh failed: \(error.localizedDescription, privacy: .private)")
+                    Task { @MainActor in
+                        activityLog?.log(
+                            category: .call, severity: .warning, source: "CallViewModel",
+                            summary: "Heartbeat refresh failed",
+                            detail: error.localizedDescription,
+                            roomId: roomID
+                        )
+                    }
                 }
             }
         }
@@ -595,23 +627,36 @@ public final class CallViewModel: CallViewModelProtocol {
         // like `@user:server:DEVICEID`.
         let components = participantIdentity.components(separatedBy: ":")
         guard components.count >= 3 else {
-            logger.warning("[RTC]Cannot parse participant identity for key redistribution: \(participantIdentity, privacy: .private)")
+            activityLog?.log(
+                category: .call, severity: .warning, source: "CallViewModel",
+                summary: "Cannot parse participant identity for key redistribution",
+                roomId: roomID
+            )
             return
         }
         let userId = components[0] + ":" + components[1]
         let deviceId = components.dropFirst(2).joined(separator: ":")
         let index = localKeyIndex
 
-        Task {
+        Task { [weak self] in
             do {
                 try await bridge.sendEncryptionKey(
                     key,
                     keyIndex: index,
                     toMembers: [userId: [deviceId]]
                 )
-                logger.info("[RTC]Redistributed key to \(participantIdentity, privacy: .private)")
+                self?.activityLog?.log(
+                    category: .call, severity: .debug, source: "CallViewModel",
+                    summary: "Redistributed key to \(participantIdentity)",
+                    roomId: self?.roomID
+                )
             } catch {
-                logger.warning("[RTC]Key redistribution failed for \(participantIdentity, privacy: .private): \(error.localizedDescription, privacy: .private)")
+                self?.activityLog?.log(
+                    category: .call, severity: .warning, source: "CallViewModel",
+                    summary: "Key redistribution failed",
+                    detail: error.localizedDescription,
+                    roomId: self?.roomID
+                )
             }
         }
     }
@@ -700,7 +745,6 @@ public final class CallViewModel: CallViewModelProtocol {
                         viewModel.state = .disconnected
                     }
                 case .reconnecting:
-                    logger.info("[RTC]Reconnecting…")
                     viewModel.activityLog?.log(
                         category: .call, severity: .warning, source: "CallViewModel",
                         summary: "Call reconnecting",
@@ -716,8 +760,6 @@ public final class CallViewModel: CallViewModelProtocol {
             Task { @MainActor [weak viewModel] in
                 guard let viewModel else { return }
                 let identityStr = participant.identity?.stringValue ?? "(none)"
-                let sidStr = participant.sid?.stringValue ?? "(none)"
-                logger.info("[RTC]Remote participant connected: identity=\(identityStr, privacy: .public) sid=\(sidStr, privacy: .public) name=\(participant.name ?? "(none)", privacy: .public)")
                 viewModel.activityLog?.log(
                     category: .call, severity: .debug, source: "CallViewModel",
                     summary: "Remote participant connected",
@@ -736,7 +778,11 @@ public final class CallViewModel: CallViewModelProtocol {
             Task { @MainActor [weak viewModel] in
                 let identityStr = participant.identity?.stringValue ?? "(none)"
                 let kind = publication.kind.rawValue
-                logger.info("[RTC]Subscribed to \(kind, privacy: .public) track from identity=\(identityStr, privacy: .public) trackSid=\(publication.sid, privacy: .public)")
+                viewModel?.activityLog?.log(
+                    category: .call, severity: .debug, source: "CallViewModel",
+                    summary: "Subscribed to \(kind) track from \(identityStr)",
+                    roomId: viewModel?.roomID
+                )
                 viewModel?.syncParticipants(trackChanged: true)
             }
         }

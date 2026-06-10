@@ -21,10 +21,8 @@ import CryptoKit
 import Foundation
 import LiveKit
 import MatrixRustSDK
-import os
 import RelayInterface
-
-private let logger = Logger(subsystem: "RelayKit", category: "CallWidgetBridge")
+import os
 
 /// Headless widget-driver bridge for MatrixRTC E2EE.
 ///
@@ -191,8 +189,15 @@ public final class CallWidgetBridge: @unchecked Sendable {
         let capabilitiesProvider = self.capabilitiesProvider
         driverTask = Task { [weak self] in
             await driver.run(room: room, capabilitiesProvider: capabilitiesProvider)
-            logger.info("[RTC]WidgetDriver.run returned; driver exited")
             self?.resolveReady()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.activityLog?.log(
+                    category: .call, severity: .debug, source: "CallWidgetBridge",
+                    summary: "Widget driver exited",
+                    roomId: self.roomId
+                )
+            }
         }
 
         recvTask = Task { [weak self] in
@@ -204,13 +209,19 @@ public final class CallWidgetBridge: @unchecked Sendable {
         Task { [weak self] in
             do {
                 try await self?.sendRequest(action: "content_loaded", data: [:])
-                logger.info("[RTC]Widget content_loaded acknowledged by driver")
             } catch {
-                logger.warning("[RTC]content_loaded failed: \(error.localizedDescription, privacy: .private)")
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.activityLog?.log(
+                        category: .call, severity: .warning, source: "CallWidgetBridge",
+                        summary: "content_loaded failed",
+                        detail: error.localizedDescription,
+                        roomId: self.roomId
+                    )
+                }
             }
         }
 
-        logger.info("[RTC]CallWidgetBridge started (widgetId=\(self.widgetId, privacy: .public))")
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.activityLog?.log(
@@ -239,7 +250,6 @@ public final class CallWidgetBridge: @unchecked Sendable {
         }
 
         resolveReady()
-        logger.info("[RTC]CallWidgetBridge shut down")
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.activityLog?.log(
@@ -353,13 +363,12 @@ public final class CallWidgetBridge: @unchecked Sendable {
         let fp = SHA256.hash(data: key).prefix(8).map { String(format: "%02x", $0) }.joined()
 
         _ = try await sendRequest(action: "send_to_device", data: data)
-        logger.info("[RTC]Sent encryption key (index \(keyIndex)) to \(toMembers.count) user(s) member.id=\(self.membershipId, privacy: .public) sha256[0..8]=\(fp, privacy: .public)")
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.activityLog?.log(
                 category: .call, severity: .debug, source: "CallWidgetBridge",
                 summary: "Sent E2EE key to \(toMembers.count) user(s)",
-                detail: "Key index: \(keyIndex)",
+                detail: "Key index: \(keyIndex), fingerprint: \(fp)",
                 roomId: self.roomId
             )
         }
@@ -382,7 +391,15 @@ public final class CallWidgetBridge: @unchecked Sendable {
         ]
 
         _ = try await sendRequest(action: "send_event", data: data)
-        logger.info("[RTC]Sent call member state event (state_key=\(stateKey, privacy: .public))")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.activityLog?.log(
+                category: .call, severity: .debug, source: "CallWidgetBridge",
+                summary: "Sent call member state event",
+                detail: "state_key: \(stateKey)",
+                roomId: self.roomId
+            )
+        }
     }
 
     // MARK: - Request / Response plumbing
@@ -425,20 +442,27 @@ public final class CallWidgetBridge: @unchecked Sendable {
     private func recvLoop(handle: WidgetDriverHandle) async {
         while !Task.isCancelled {
             guard let raw = await handle.recv() else {
-                logger.info("[RTC]WidgetDriverHandle.recv returned nil; loop exiting")
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.activityLog?.log(
+                        category: .call, severity: .debug, source: "CallWidgetBridge",
+                        summary: "Widget driver recv loop exited",
+                        roomId: self.roomId
+                    )
+                }
                 break
             }
 
-            // SECURITY: never log the raw widget JSON. Outbound and inbound
-            // `send_to_device` payloads of type `io.element.call.encryption_keys`
-            // carry raw AES keys in the `keys.key` field — those would land
-            // unredacted in the system log. Action / type only; full bodies
-            // are .private so they're stripped from non-debug Console output.
-            logger.debug("[RTC]widget recv (\(raw.count) bytes)")
-
             guard let data = raw.data(using: .utf8),
                   let msg = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                logger.warning("[RTC]Non-JSON message from widget driver: \(raw, privacy: .private)")
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.activityLog?.log(
+                        category: .call, severity: .warning, source: "CallWidgetBridge",
+                        summary: "Non-JSON message from widget driver",
+                        roomId: self.roomId
+                    )
+                }
                 continue
             }
 
@@ -462,7 +486,14 @@ public final class CallWidgetBridge: @unchecked Sendable {
 
             // Incoming SDK-initiated requests (toWidget).
             guard let action = msg["action"] as? String else {
-                logger.warning("[RTC]Widget message missing action: \(raw, privacy: .private)")
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.activityLog?.log(
+                        category: .call, severity: .warning, source: "CallWidgetBridge",
+                        summary: "Widget message missing action",
+                        roomId: self.roomId
+                    )
+                }
                 continue
             }
             let requestId = (msg["requestId"] as? String) ?? ""
@@ -505,7 +536,14 @@ public final class CallWidgetBridge: @unchecked Sendable {
             // MatrixRTC member state is handled by Element Call peers
             // directly; we just need to ack these. Log and move on.
             if let type = data["type"] as? String {
-                logger.info("[RTC]widget incoming \(action, privacy: .public) type=\(type, privacy: .public)")
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.activityLog?.log(
+                        category: .call, severity: .debug, source: "CallWidgetBridge",
+                        summary: "Widget incoming \(action) type=\(type)",
+                        roomId: self.roomId
+                    )
+                }
             }
             responseBody = [:]
 
@@ -513,7 +551,14 @@ public final class CallWidgetBridge: @unchecked Sendable {
             responseBody = [:]
 
         default:
-            logger.info("[RTC]widget unhandled action=\(action, privacy: .public); acking with {}")
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.activityLog?.log(
+                    category: .call, severity: .debug, source: "CallWidgetBridge",
+                    summary: "Widget unhandled action: \(action)",
+                    roomId: self.roomId
+                )
+            }
             responseBody = [:]
         }
 
@@ -540,12 +585,27 @@ public final class CallWidgetBridge: @unchecked Sendable {
         if !requestId.isEmpty { reply["requestId"] = requestId }
 
         guard let json = try? Self.encode(reply) else {
-            logger.error("[RTC]Failed to encode widget reply")
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.activityLog?.log(
+                    category: .call, severity: .error, source: "CallWidgetBridge",
+                    summary: "Failed to encode widget reply",
+                    roomId: self.roomId
+                )
+            }
             return
         }
         let ok = await handle.send(msg: json)
         if !ok {
-            logger.warning("[RTC]handle.send returned false replying to action=\(original["action"] as? String ?? "?", privacy: .public)")
+            let action = original["action"] as? String ?? "?"
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.activityLog?.log(
+                    category: .call, severity: .warning, source: "CallWidgetBridge",
+                    summary: "handle.send returned false replying to action=\(action)",
+                    roomId: self.roomId
+                )
+            }
         }
     }
 
@@ -559,7 +619,14 @@ public final class CallWidgetBridge: @unchecked Sendable {
         }
         let content = (data["content"] as? [String: Any]) ?? [:]
         guard let keyProvider else {
-            logger.warning("[RTC]No keyProvider; dropping inbound key from \(sender, privacy: .private)")
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.activityLog?.log(
+                    category: .call, severity: .warning, source: "CallWidgetBridge",
+                    summary: "No keyProvider; dropping inbound key",
+                    roomId: self.roomId
+                )
+            }
             return
         }
 
@@ -574,7 +641,14 @@ public final class CallWidgetBridge: @unchecked Sendable {
         } else if let single = content["keys"] as? [String: Any] {
             keyEntries = [single]
         } else {
-            logger.warning("[RTC]encryption_keys to-device missing keys from \(sender, privacy: .private)")
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.activityLog?.log(
+                    category: .call, severity: .warning, source: "CallWidgetBridge",
+                    summary: "encryption_keys to-device missing keys",
+                    roomId: self.roomId
+                )
+            }
             return
         }
 
@@ -615,12 +689,6 @@ public final class CallWidgetBridge: @unchecked Sendable {
                 participantId: participantIdentity,
                 index: Int32(index)
             )
-            // Log with `.public` so we can correlate the key routing
-            // identity (what we register the frame-decryption key under)
-            // with the actual LiveKit participant identity (logged on
-            // connect) — if these do not match byte-for-byte, LiveKit will
-            // silently fail to decrypt this peer's frames.
-            logger.info("[RTC]Applied inbound key -> routed to LiveKit participantId=\(participantIdentity, privacy: .public) sender=\(sender, privacy: .public) device=\(deviceId, privacy: .public) member=\(memberId, privacy: .public) index=\(index)")
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.activityLog?.log(

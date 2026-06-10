@@ -15,9 +15,6 @@
 import Network
 import Observation
 import RelayInterface
-import os
-
-private let logger = Logger(subsystem: "RelayKit", category: "Network")
 
 /// Monitors network connectivity using `NWPathMonitor` and exposes reactive
 /// state for use by ``SyncManager``.
@@ -87,7 +84,10 @@ final class NetworkMonitor {
         }
 
         pathMonitor.start(queue: monitorQueue)
-        logger.debug("Network monitoring started")
+        activityLog?.log(
+            category: .network, severity: .debug, source: "NetworkMonitor",
+            summary: "Network monitoring started"
+        )
     }
 
     /// Stops monitoring network connectivity and releases resources.
@@ -98,7 +98,10 @@ final class NetworkMonitor {
         monitor?.cancel()
         monitor = nil
         isConnected = true
-        logger.debug("Network monitoring stopped")
+        activityLog?.log(
+            category: .network, severity: .debug, source: "NetworkMonitor",
+            summary: "Network monitoring stopped"
+        )
     }
 
     // MARK: - Private
@@ -119,13 +122,11 @@ final class NetworkMonitor {
             self.isConnected = satisfied
 
             if satisfied {
-                logger.info("Network connectivity restored")
                 self.activityLog?.log(
                     category: .network, severity: .info, source: "NetworkMonitor",
                     summary: "Network connectivity restored"
                 )
             } else {
-                logger.info("Network connectivity lost")
                 self.activityLog?.log(
                     category: .network, severity: .warning, source: "NetworkMonitor",
                     summary: "Network connectivity lost"
@@ -137,9 +138,6 @@ final class NetworkMonitor {
         // differs from the last settled value but may not survive the
         // debounce window.
         if satisfied != isConnected {
-            logger.debug(
-                "Path status changed to \(satisfied ? "satisfied" : "unsatisfied") — settling for \(Self.settlingInterval)"
-            )
             activityLog?.log(
                 category: .network, severity: .debug, source: "NetworkMonitor",
                 summary: "Path status change pending",

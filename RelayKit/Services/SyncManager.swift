@@ -15,10 +15,6 @@
 import AppKit
 import Foundation
 import RelayInterface
-import os
-
-private let logger = Logger(subsystem: "RelayKit", category: "Sync")
-
 /// Manages the Matrix sync service lifecycle using a unified state machine.
 ///
 /// ``SyncManager`` encapsulates starting, stopping, and observing the SDK's
@@ -465,7 +461,6 @@ final class SyncManager {
         // ── Pending Restore ─────────────────────────────────────────
 
         case (.pendingRestore, .networkOnline):
-            logger.info("Network restored — retrying deferred session restore")
             activityLog.log(
                 category: .sync, severity: .info, source: "SyncManager",
                 summary: "Retrying deferred session restore"
@@ -517,7 +512,6 @@ final class SyncManager {
         transitionPhase(to: .offline)
         syncState = .offline
 
-        logger.info("Sync service stopped — offline")
         activityLog.log(
             category: .sync, severity: .warning, source: "SyncManager",
             summary: "Sync service stopped — offline"
@@ -539,7 +533,6 @@ final class SyncManager {
 
         transitionPhase(to: .sleeping)
 
-        logger.info("System will sleep — sync service torn down")
         activityLog.log(
             category: .sync, severity: .info, source: "SyncManager",
             summary: "System sleep — tearing down sync service"
@@ -552,7 +545,6 @@ final class SyncManager {
     private func rebuildAfterWake() async {
         guard let client else { return }
 
-        logger.info("System did wake — rebuilding sync service")
         activityLog.log(
             category: .sync, severity: .info, source: "SyncManager",
             summary: "System wake — rebuilding sync service"
@@ -566,7 +558,6 @@ final class SyncManager {
     private func rebuildAfterOnline() async {
         guard let client else { return }
 
-        logger.info("Rebuilding sync service")
         activityLog.log(
             category: .sync, severity: .info, source: "SyncManager",
             summary: "Rebuilding sync service",
@@ -596,7 +587,10 @@ final class SyncManager {
             guard phase == .rebuilding else { return }
 
             guard reached else {
-                logger.info("Rebuild did not reach running state")
+                activityLog.log(
+                    category: .sync, severity: .warning, source: "SyncManager",
+                    summary: "Rebuild did not reach running state"
+                )
                 transitionPhase(to: .offline)
                 syncState = .offline
                 scheduleReconnect()
@@ -618,12 +612,20 @@ final class SyncManager {
             guard phase == .rebuilding else { return }
 
             if NetworkErrorClassifier.isOfflineShaped(error) {
-                logger.info("Rebuild failed (server unreachable): \(error.localizedDescription)")
+                activityLog.log(
+                    category: .sync, severity: .warning, source: "SyncManager",
+                    summary: "Rebuild failed (server unreachable)",
+                    detail: error.localizedDescription
+                )
                 transitionPhase(to: .offline)
                 syncState = .offline
                 scheduleReconnect()
             } else {
-                logger.error("Rebuild failed: \(error)")
+                activityLog.log(
+                    category: .sync, severity: .error, source: "SyncManager",
+                    summary: "Rebuild failed",
+                    detail: error.localizedDescription
+                )
                 transitionPhase(to: .active) // Terminal — no recovery
                 syncState = .error("Failed to restart sync: \(error.localizedDescription)")
             }
@@ -714,7 +716,6 @@ final class SyncManager {
         let slots = Int.random(in: 0..<upperBound)
         let delay = Double(slots) * baseSlotSeconds
         reconnectAttempt += 1
-        logger.info("Scheduling sync reconnect attempt #\(self.reconnectAttempt) in \(delay)s")
         activityLog.log(
             category: .sync, severity: .info, source: "SyncManager",
             summary: "Scheduling reconnect attempt #\(reconnectAttempt)",

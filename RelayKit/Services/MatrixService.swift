@@ -16,9 +16,6 @@
 import AppKit
 import Foundation
 import RelayInterface
-import os
-
-private let logger = Logger(subsystem: "RelayKit", category: "MatrixService")
 
 /// The concrete implementation of ``MatrixServiceProtocol`` backed by the Matrix Rust SDK.
 ///
@@ -366,7 +363,10 @@ public final class MatrixService: MatrixServiceProtocol {
         } catch is CancellationError {
             // Logout cancelled the sync — don't overwrite state
         } catch {
-            logger.error("Sync failed: \(error)")
+            _activityLog.log(
+                category: .sync, severity: .error, source: "MatrixService",
+                summary: "Sync failed", detail: error.localizedDescription
+            )
         }
     }
 
@@ -398,7 +398,10 @@ public final class MatrixService: MatrixServiceProtocol {
                 }
                 guard !Task.isCancelled else { return }
                 if case .receivedRequest(let details) = flowState, !isVerificationFlowActive {
-                    logger.info("Incoming verification request from device \(details.deviceId)")
+                    _activityLog.log(
+                        category: .auth, severity: .info, source: "MatrixService",
+                        summary: "Incoming verification request from device \(details.deviceId)"
+                    )
                     pendingVerificationRequest = IncomingVerificationRequest(
                         deviceId: String(details.deviceId),
                         senderId: details.senderProfile.userId,
@@ -532,7 +535,10 @@ public final class MatrixService: MatrixServiceProtocol {
     /// Use in non-throwing methods where a nil client indicates an unexpected state.
     private var currentClient: ClientProxy? {
         guard let client else {
-            logger.warning("Operation attempted without an active client")
+            _activityLog.log(
+                category: .auth, severity: .warning, source: "MatrixService",
+                summary: "Operation attempted without an active client"
+            )
             return nil
         }
         return client
@@ -604,7 +610,10 @@ public final class MatrixService: MatrixServiceProtocol {
         // Rust runtime to drop its internal resources.  There is no explicit
         // unsubscribe API on RoomListService -- the server-side sliding sync
         // window is managed automatically by the SDK.
-        logger.info("Suspended timeline VM for room \(roomId)")
+        _activityLog.log(
+            category: .timeline, severity: .info, source: "MatrixService",
+            summary: "Suspended timeline VM", roomId: roomId
+        )
     }
 
     /// Resumes a previously suspended timeline view model, re-establishing live
@@ -648,7 +657,10 @@ public final class MatrixService: MatrixServiceProtocol {
                 vm.suspend()
             }
             timelineViewModels.removeValue(forKey: candidateId)
-            logger.info("Evicted timeline VM for room \(candidateId)")
+            _activityLog.log(
+                category: .timeline, severity: .info, source: "MatrixService",
+                summary: "Evicted timeline VM", roomId: candidateId
+            )
         }
     }
 
@@ -1039,7 +1051,10 @@ public final class MatrixService: MatrixServiceProtocol {
     // swiftlint:disable:next cyclomatic_complexity
     public func pinnedMessages(roomId: String) async -> [TimelineMessage] {
         guard let room = room(id: roomId) else {
-            logger.warning("pinnedMessages: room not found for \(roomId)")
+            _activityLog.log(
+                category: .timeline, severity: .warning, source: "MatrixService",
+                summary: "Pinned messages: room not found", roomId: roomId
+            )
             return []
         }
 
@@ -1097,7 +1112,11 @@ public final class MatrixService: MatrixServiceProtocol {
                     kind: kind
                 ))
             } catch {
-                logger.warning("pinnedMessages: failed to fetch event \(eventId): \(error)")
+                _activityLog.log(
+                    category: .timeline, severity: .warning, source: "MatrixService",
+                    summary: "Pinned messages: failed to fetch event \(eventId)",
+                    detail: error.localizedDescription, roomId: roomId
+                )
             }
         }
 
@@ -1486,7 +1505,11 @@ public final class MatrixService: MatrixServiceProtocol {
             )
             return viewModel
         } catch {
-            logger.warning("Could not create encryption context, falling back to unencrypted call: \(error.localizedDescription)")
+            _activityLog.log(
+                category: .call, severity: .warning, source: "MatrixService",
+                summary: "Falling back to unencrypted call",
+                detail: error.localizedDescription, roomId: roomId
+            )
             let viewModel = CallViewModel()
             viewModel.activityLog = _activityLog
             return viewModel

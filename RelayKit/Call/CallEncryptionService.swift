@@ -116,17 +116,18 @@ struct CallEncryptionService {
 
         let jsonData = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
         let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
-        // Body + state key contain device IDs and per-call membership UUIDs;
-        // not raw secrets but routing data we don't need leaking to Console.
-        logger.debug("[RTC]Call member event body: \(jsonString, privacy: .private)")
-        logger.debug("[RTC]Call member state key: \(stateKey, privacy: .private)")
+        activityLog?.log(
+            category: .call, severity: .debug, source: "CallEncryptionService",
+            summary: "Sending call member event",
+            detail: "stateKey: \(stateKey)\nbody: \(jsonString)",
+            roomId: roomID
+        )
 
         _ = try await sdkRoom.sendStateEventRaw(
             eventType: Self.callMemberEventType,
             stateKey: stateKey,
             content: jsonString
         )
-        logger.info("[RTC]Sent call membership state event")
         activityLog?.log(
             category: .call, severity: .debug, source: "CallEncryptionService",
             summary: "Sent call membership state event",
@@ -146,7 +147,6 @@ struct CallEncryptionService {
             stateKey: stateKey,
             content: "{}"
         )
-        logger.info("[RTC]Removed call membership state event")
         activityLog?.log(
             category: .call, severity: .debug, source: "CallEncryptionService",
             summary: "Removed call membership state event",
@@ -180,8 +180,12 @@ struct CallEncryptionService {
             if let content = event["content"],
                let contentData = try? JSONSerialization.data(withJSONObject: content, options: [.sortedKeys]),
                let contentStr = String(data: contentData, encoding: .utf8) {
-                // .private — call routing data + device IDs, not for Console.
-                logger.debug("[RTC]Existing call member [key=\(stateKey, privacy: .private)]: \(contentStr, privacy: .private)")
+                activityLog?.log(
+                    category: .call, severity: .debug, source: "CallEncryptionService",
+                    summary: "Existing call member [key=\(stateKey)]",
+                    detail: contentStr,
+                    roomId: roomID
+                )
             }
         }
     }
