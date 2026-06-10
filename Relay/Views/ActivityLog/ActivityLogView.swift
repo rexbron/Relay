@@ -26,7 +26,7 @@ struct ActivityLogView: View {
     @Environment(\.activityLog) private var activityLog
     @Environment(\.matrixService) private var matrixService
 
-    @State private var selectedEventId: UUID?
+    @State private var selectedEventIds: Set<UUID> = []
     @State private var showingInspector = false
     @State private var searchText = ""
     @State private var selectedCategories: Set<ActivityEvent.Category> = Set(ActivityEvent.Category.allCases)
@@ -63,9 +63,14 @@ struct ActivityLogView: View {
         matrixService.rooms.first { $0.id == roomId }?.name
     }
 
+    private var selectedEvents: [ActivityEvent] {
+        let ids = selectedEventIds
+        return activityLog.events.filter { ids.contains($0.id) }
+    }
+
     private var selectedEvent: ActivityEvent? {
-        guard let selectedEventId else { return nil }
-        return activityLog.events.first { $0.id == selectedEventId }
+        guard selectedEventIds.count == 1, let id = selectedEventIds.first else { return nil }
+        return activityLog.events.first { $0.id == id }
     }
 
     var body: some View {
@@ -78,8 +83,8 @@ struct ActivityLogView: View {
             .toolbar {
                 toolbarContent
             }
-            .onChange(of: selectedEventId) { _, newValue in
-                if newValue != nil {
+            .onChange(of: selectedEventIds) { _, newValue in
+                if !newValue.isEmpty {
                     showingInspector = true
                 }
             }
@@ -90,9 +95,12 @@ struct ActivityLogView: View {
 
     private var eventTable: some View {
         ScrollViewReader { proxy in
-            List(filteredEvents, selection: $selectedEventId) { event in
+            List(filteredEvents, selection: $selectedEventIds) { event in
                 ActivityLogRow(event: event, roomName: event.roomId.flatMap { roomName(for: $0) })
                     .tag(event.id)
+            }
+            .onCopyCommand {
+                copySelectedEvents()
             }
             .listStyle(.inset(alternatesRowBackgrounds: true))
             .onChange(of: activityLog.events.count) {
@@ -107,7 +115,13 @@ struct ActivityLogView: View {
 
     @ViewBuilder
     private var detailPane: some View {
-        if let event = selectedEvent {
+        if selectedEventIds.count > 1 {
+            ContentUnavailableView(
+                "\(selectedEventIds.count) Events Selected",
+                systemImage: "doc.on.doc",
+                description: Text("Press ⌘C to copy as JSON")
+            )
+        } else if let event = selectedEvent {
             List {
                 Section("Event") {
                     LabeledContent("Timestamp", value: event.formattedTimestamp)
@@ -246,7 +260,7 @@ struct ActivityLogView: View {
         ToolbarItem(placement: .automatic) {
             Button("Clear", systemImage: "trash", role: .destructive) {
                 activityLog.clear()
-                selectedEventId = nil
+                selectedEventIds = []
             }
             .help("Clear all events")
         }
@@ -272,6 +286,25 @@ struct ActivityLogView: View {
         }
     }
     // MARK: - Export
+
+    /// Encodes the selected events as JSON and places them on the pasteboard.
+    private func copySelectedEvents() -> [NSItemProvider] {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+
+        var items: [NSItemProvider] = []
+        items.reserveCapacity(selectedEventIds.count)
+
+        for selectedEvent in selectedEvents {
+            if let data = try? encoder.encode(selectedEvent),
+               let string = String(data: data, encoding: .utf8) {
+                items.append(NSItemProvider(object: string as NSString))
+            }
+        }
+
+        return items
+    }
 
     /// Encodes the currently filtered events as JSON and presents a save panel.
     private func exportEvents() {
