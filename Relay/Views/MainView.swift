@@ -438,6 +438,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                             }
                         }
                     }
+                    .contentShape(.capsule)
                 }
                 .buttonStyle(.plain)
                 .help(showingInspector ? "Hide Inspector" : "Show Inspector")
