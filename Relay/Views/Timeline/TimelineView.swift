@@ -407,10 +407,13 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     /// `filteredMessages` + `buildRows` pipeline only runs when the underlying
     /// data actually changes, not on every `body` evaluation.
     private func rebuildCachedRows() {
-        cachedMessageRows = MessageRowBuilder.buildRows(
+        let newRows = MessageRowBuilder.buildRows(
             for: filteredMessages,
             hasReachedStart: viewModel.hasReachedStart
         )
+        if newRows != cachedMessageRows {
+            cachedMessageRows = newRows
+        }
     }
 
     /// The message list area containing the timeline renderer, overlays,

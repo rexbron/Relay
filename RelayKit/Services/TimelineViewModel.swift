@@ -912,10 +912,20 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         for diff in diffs {
             switch diff {
             case .reset(let values):
-                timelineItemIDs = values.map(Self.extractItemID)
+                let oldIDs = timelineItemIDs
+                let newIDs = values.map(Self.extractItemID)
+                timelineItemIDs = newIDs
                 timelineItems = values
-                // Full remap required — discard incremental tracking.
-                pendingChangedIndices = nil
+
+                if oldIDs.isEmpty {
+                    // First load — full remap required.
+                    pendingChangedIndices = nil
+                } else {
+                    // Diff old vs new IDs to avoid a full remap when most
+                    // items are unchanged (e.g. room resume with a few
+                    // new messages appended).
+                    markChangedIndicesForReset(oldIDs: oldIDs, newIDs: newIDs)
+                }
 
             case .append(let values):
                 let start = timelineItems.count
@@ -1065,6 +1075,40 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             }
         }
         pendingChangedIndices = indices
+    }
+
+    /// Compares old and new item IDs after a `.reset` diff and marks only the
+    /// indices that actually changed, avoiding a full remap when most content
+    /// is unchanged (e.g. resuming a room with a few new messages).
+    ///
+    /// Falls back to a full remap (`pendingChangedIndices = nil`) when the
+    /// arrays have diverged too much to cheaply diff (shared prefix < 50%
+    /// of the smaller array).
+    private func markChangedIndicesForReset(
+        oldIDs: [String?],
+        newIDs: [String?]
+    ) {
+        // Find the longest shared prefix of identical IDs.
+        let minCount = min(oldIDs.count, newIDs.count)
+        var sharedPrefix = 0
+        while sharedPrefix < minCount && oldIDs[sharedPrefix] == newIDs[sharedPrefix] {
+            sharedPrefix += 1
+        }
+
+        // If less than half the items match, a full remap is cheaper than
+        // tracking a large changed set.
+        if sharedPrefix < minCount / 2 {
+            pendingChangedIndices = nil
+            return
+        }
+
+        // Mark every index beyond the shared prefix as changed.
+        if sharedPrefix < newIDs.count {
+            if pendingChangedIndices == nil {
+                pendingChangedIndices = IndexSet()
+            }
+            pendingChangedIndices?.insert(integersIn: sharedPrefix..<newIDs.count)
+        }
     }
 
     /// Performs an incremental rebuild of messages, mapping only changed items
