@@ -189,11 +189,21 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                         onRoomTap: onRoomTap,
                         onSendWillScroll: { pendingScrollToBottom = true },
                         onHeightChanged: { height in
+                            let changed = height != composeBarHeight
                             composeBarHeight = height
                             if !timelineUseLazyVStack {
                                 tableProxy.setContentInsets(NSEdgeInsets(
                                     top: 0, left: 0, bottom: height + 4, right: 0
                                 ))
+                            }
+                            if changed, isNearBottom {
+                                if timelineUseLazyVStack {
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        lazyVStackScrollPosition.scrollTo(edge: .bottom)
+                                    }
+                                } else {
+                                    tableProxy.scrollToBottom(animated: true)
+                                }
                             }
                         }
                     )
