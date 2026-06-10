@@ -29,7 +29,7 @@ nonisolated struct StoredSession: Codable, Sendable {
     var userId: String
     var deviceId: String
     var homeserverUrl: String
-    var oidcData: String?
+    var oauthData: String?
 }
 
 /// Outcome of an attempt to restore a previously saved session.
@@ -198,7 +198,7 @@ final class AuthenticationService {
                 userId: stored.userId,
                 deviceId: stored.deviceId,
                 homeserverUrl: stored.homeserverUrl,
-                oidcData: stored.oidcData,
+                oauthData: stored.oauthData,
                 slidingSyncVersion: .native
             )
             try await client.restoreSession(session: session)
@@ -295,7 +295,7 @@ final class AuthenticationService {
             .buildClient()
 
         let loginDetails = await client.homeserverLoginDetails()
-        guard loginDetails.supportsOidcLogin() else {
+        guard loginDetails.supportsOauthLogin() else {
             activityLog?.log(
                 category: .auth, severity: .warning, source: "AuthenticationService",
                 summary: "Homeserver does not support OIDC",
@@ -304,7 +304,7 @@ final class AuthenticationService {
             throw RelayError.oauthNotSupported
         }
 
-        let oidcConfig = OidcConfiguration(
+        let oauthConfig = OAuthConfiguration(
             clientName: "Relay",
             redirectUri: Self.oauthRedirectURI,
             clientUri: "https://subpop.github.io/Relay",
@@ -314,8 +314,8 @@ final class AuthenticationService {
             staticRegistrations: [:]
         )
 
-        let authData = try await client.urlForOidc(
-            oidcConfiguration: oidcConfig,
+        let authData = try await client.urlForOauth(
+            oauthConfiguration: oauthConfig,
             prompt: nil,
             loginHint: nil,
             deviceId: nil,
@@ -334,7 +334,7 @@ final class AuthenticationService {
 
         let callbackURL = try await openURL(url)
 
-        try await client.loginWithOidcCallback(callbackUrl: callbackURL.absoluteString)
+        try await client.loginWithOauthCallback(callbackUrl: callbackURL.absoluteString)
 
         let session = try client.session()
         saveSession(session)
@@ -371,7 +371,7 @@ final class AuthenticationService {
             userId: session.userId,
             deviceId: session.deviceId,
             homeserverUrl: session.homeserverUrl,
-            oidcData: session.oidcData
+            oauthData: session.oauthData
         )
         if let encoded = try? JSONEncoder().encode(stored) {
             KeychainService.save(encoded)
@@ -461,7 +461,7 @@ final class KeychainSessionDelegate: ClientSessionDelegate, @unchecked Sendable 
             userId: stored.userId,
             deviceId: stored.deviceId,
             homeserverUrl: stored.homeserverUrl,
-            oidcData: stored.oidcData,
+            oauthData: stored.oauthData,
             slidingSyncVersion: .native
         )
     }
@@ -483,7 +483,7 @@ final class KeychainSessionDelegate: ClientSessionDelegate, @unchecked Sendable 
             userId: session.userId,
             deviceId: session.deviceId,
             homeserverUrl: session.homeserverUrl,
-            oidcData: session.oidcData
+            oauthData: session.oauthData
         )
         if let data = try? JSONEncoder().encode(stored) {
             KeychainService.save(data)

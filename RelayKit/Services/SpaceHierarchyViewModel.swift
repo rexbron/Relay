@@ -102,7 +102,7 @@ public final class SpaceHierarchyViewModel: SpaceHierarchyViewModelProtocol {
             let entriesListener = SpaceRoomListEntriesListenerProxy { updates in
                 entriesContinuation.yield(updates)
             }
-            entriesHandle = roomList.subscribeToRoomUpdate(listener: entriesListener)
+            entriesHandle = await roomList.subscribeToRoomUpdate(listener: entriesListener)
 
             // Subscribe to pagination state
             let (paginationStream, paginationContinuation) = AsyncStream<SpaceRoomListPaginationState>.makeStream()
@@ -137,7 +137,7 @@ public final class SpaceHierarchyViewModel: SpaceHierarchyViewModelProtocol {
             try await roomList.paginate()
 
             // Read initial results
-            spaceRooms = roomList.rooms()
+            spaceRooms = await roomList.rooms()
             rebuildChildren()
         } catch is CancellationError {
             // Ignore
@@ -155,7 +155,7 @@ public final class SpaceHierarchyViewModel: SpaceHierarchyViewModelProtocol {
 
         do {
             try await roomList.paginate()
-            spaceRooms = roomList.rooms()
+            spaceRooms = await roomList.rooms()
             rebuildChildren()
         } catch is CancellationError {
             // Ignore

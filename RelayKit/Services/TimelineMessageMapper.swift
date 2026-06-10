@@ -696,8 +696,6 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
             return "This room has been replaced"
         case .roomCanonicalAlias:
             return "Room address was changed"
-        case .roomAliases:
-            return "Room aliases were updated"
         case .roomThirdPartyInvite(let displayName):
             if let displayName {
                 return "\(displayName) was invited via a third-party service"

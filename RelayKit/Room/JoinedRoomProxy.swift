@@ -70,8 +70,8 @@ public final class JoinedRoomProxy: JoinedRoomProxyProtocol, @unchecked Sendable
     public let knockRequests: AsyncStream<[KnockRequest]>
     private let knockRequestsContinuation: AsyncStream<[KnockRequest]>.Continuation
 
-    public let liveLocationShares: AsyncStream<[LiveLocationShare]>
-    private let liveLocationSharesContinuation: AsyncStream<[LiveLocationShare]>.Continuation
+    public let liveLocationUpdates: AsyncStream<[LiveLocationShareUpdate]>
+    private let liveLocationUpdatesContinuation: AsyncStream<[LiveLocationShareUpdate]>.Continuation
 
     // MARK: - Initialization
 
@@ -109,9 +109,9 @@ public final class JoinedRoomProxy: JoinedRoomProxyProtocol, @unchecked Sendable
         self.knockRequests = knockStream
         self.knockRequestsContinuation = knockCont
 
-        let (llStream, llCont) = AsyncStream<[LiveLocationShare]>.makeStream(bufferingPolicy: .bufferingNewest(1))
-        self.liveLocationShares = llStream
-        self.liveLocationSharesContinuation = llCont
+        let (llStream, llCont) = AsyncStream<[LiveLocationShareUpdate]>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        self.liveLocationUpdates = llStream
+        self.liveLocationUpdatesContinuation = llCont
 
         // Subscribe to room info updates
         roomInfoTaskHandle = room.subscribeToRoomInfoUpdates(listener: SDKListener { [weak self] roomInfo in
@@ -133,7 +133,7 @@ public final class JoinedRoomProxy: JoinedRoomProxyProtocol, @unchecked Sendable
         identityStatusChangesContinuation.finish()
         sendQueueUpdatesContinuation.finish()
         knockRequestsContinuation.finish()
-        liveLocationSharesContinuation.finish()
+        liveLocationUpdatesContinuation.finish()
     }
 
     private func applyRoomInfo(_ info: RoomInfo) {
@@ -236,7 +236,8 @@ public final class JoinedRoomProxy: JoinedRoomProxyProtocol, @unchecked Sendable
 
     // MARK: - Live Location
 
-    public func startLiveLocationShare(durationMillis: UInt64) async throws {
+    @discardableResult
+    public func startLiveLocationShare(durationMillis: UInt64) async throws -> String {
         try await room.startLiveLocationShare(durationMillis: durationMillis)
     }
 
