@@ -186,6 +186,21 @@ struct ActivityLogView: View {
 
         ToolbarItem(placement: .automatic) {
             Menu {
+                Toggle(isOn: Binding(
+                    get: { selectedCategories == Set(ActivityEvent.Category.allCases) },
+                    set: { isOn in
+                        if isOn {
+                            selectedCategories = Set(ActivityEvent.Category.allCases)
+                        } else {
+                            selectedCategories = []
+                        }
+                    }
+                )) {
+                    Text("All")
+                }
+
+                Divider()
+
                 ForEach(ActivityEvent.Category.allCases) { category in
                     Toggle(isOn: Binding(
                         get: { selectedCategories.contains(category) },
