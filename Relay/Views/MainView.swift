@@ -250,6 +250,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 spaceRailView
             }
         }
+        .navigationSplitViewColumnWidth(min: 220, ideal: 300, max: 360)
     }
 
     // MARK: - Detail
