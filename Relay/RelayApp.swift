@@ -57,6 +57,7 @@ struct RelayApp: App {
             SearchCommand(appActions: appActions)
             QuickSwitchCommand(appActions: appActions)
             SidebarCommands()
+            InspectorCommands()
             CommandGroup(before: .appTermination) {
                 Button("Clear Cache…") {
                     showClearCacheConfirmation = true
