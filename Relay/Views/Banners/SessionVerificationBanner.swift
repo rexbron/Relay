@@ -31,7 +31,7 @@ struct SessionVerificationBanner: View {
     @State private var bannerWidth: CGFloat = 0
 
     /// Width threshold below which the banner switches to compact layout.
-    private static let compactThreshold: CGFloat = 180
+    private static let compactThreshold: CGFloat = 140
 
     /// Whether the banner should display in compact mode.
     private var isCompact: Bool {
