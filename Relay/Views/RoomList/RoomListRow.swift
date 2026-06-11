@@ -20,6 +20,15 @@ import SwiftUI
 struct RoomListRow: View {
     let room: RoomSummary
 
+    @Namespace private var animation
+    @State private var rowWidth: CGFloat = 0
+
+    private static let compactThreshold: CGFloat = 140
+
+    private var isCompact: Bool {
+        rowWidth < Self.compactThreshold
+    }
+
     /// Whether the room name should appear bold (has notification-worthy unread activity).
     private var hasVisibleUnread: Bool {
         guard !room.isMuted else { return false }
@@ -44,8 +53,44 @@ struct RoomListRow: View {
     }
 
     var body: some View {
+        Group {
+            if isCompact {
+                compactBody
+            } else {
+                fullBody
+            }
+        }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { newValue in
+            rowWidth = newValue
+        }
+        .animation(.default, value: isCompact)
+    }
+
+    private var compactBody: some View {
+        AvatarView(name: room.name, mxcURL: room.avatarURL, size: 60)
+            .matchedGeometryEffect(id: "avatar", in: animation)
+            .overlay(alignment: .topTrailing) {
+                if showBadge {
+                    Circle()
+                        .fill(badgeColor)
+                        .frame(width: 12, height: 12)
+                        .padding(1)
+                        .background(.background, in: .circle)
+                }
+                muteIndicator
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+            .opacity(room.successorRoomId != nil ? 0.5 : 1)
+            .help(room.name)
+    }
+
+    private var fullBody: some View {
         HStack(spacing: 10) {
             AvatarView(name: room.name, mxcURL: room.avatarURL, size: 48)
+                .matchedGeometryEffect(id: "avatar", in: animation)
                 .overlay(alignment: .topTrailing) {
                     muteIndicator
                 }
@@ -83,6 +128,7 @@ struct RoomListRow: View {
                 }
             }
             .padding(4)
+            .transition(.opacity)
         }
         .padding(.vertical, 8)
         .opacity(room.successorRoomId != nil ? 0.5 : 1)
@@ -247,3 +293,27 @@ extension AttributedString {
     ))
     .frame(width: 300)
 }
+
+#Preview("Compact") {
+    HStack(spacing: 0) {
+        RoomListRow(room: RoomSummary(
+            id: "!design:matrix.org",
+            name: "Design Team",
+            notificationCount: 3,
+            highlightCount: 1
+        ))
+
+        RoomListRow(room: RoomSummary(
+            id: "!hq:matrix.org",
+            name: "Matrix HQ",
+            notificationMode: .mute
+        ))
+
+        RoomListRow(room: RoomSummary(
+            id: "!dev:matrix.org",
+            name: "Development"
+        ))
+    }
+    .frame(width: 240)
+}
+

@@ -26,12 +26,55 @@ struct InviteListRow: View {
     let onDecline: () -> Void
     let onTap: () -> Void
 
+    @Namespace private var animation
     @State private var isAccepting = false
+    @State private var rowWidth: CGFloat = 0
+
+    private static let compactThreshold: CGFloat = 140
+
+    private var isCompact: Bool {
+        rowWidth < Self.compactThreshold
+    }
 
     var body: some View {
+        Group {
+            if isCompact {
+                compactBody
+            } else {
+                fullBody
+            }
+        }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { newValue in
+            rowWidth = newValue
+        }
+        .animation(.default, value: isCompact)
+    }
+
+    private var compactBody: some View {
+        Button(action: onTap) {
+            AvatarView(name: room.name, mxcURL: room.avatarURL, size: 60)
+                .matchedGeometryEffect(id: "avatar", in: animation)
+                .overlay(alignment: .bottomTrailing) {
+                    Image(systemName: "envelope.fill")
+                        .font(.system(size: 7))
+                        .foregroundStyle(.white)
+                        .frame(width: 14, height: 14)
+                        .background(.accent, in: .circle)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+        .help(room.name)
+    }
+
+    private var fullBody: some View {
         Button(action: onTap) {
             HStack(spacing: 10) {
                 AvatarView(name: room.name, mxcURL: room.avatarURL, size: 48)
+                    .matchedGeometryEffect(id: "avatar", in: animation)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 4) {
@@ -58,6 +101,7 @@ struct InviteListRow: View {
                     }
                 }
                 .padding(4)
+                .transition(.opacity)
 
                 Spacer()
 
@@ -125,3 +169,33 @@ struct InviteListRow: View {
     )
     .frame(width: 300)
 }
+#Preview("Compact") {
+    HStack(spacing: 0) {
+        InviteListRow(
+            room: RoomSummary(
+                id: "!invite:matrix.org",
+                name: "Design Team",
+                membership: .invited,
+                inviterName: "Alice"
+            ),
+            onAccept: {},
+            onDecline: {},
+            onTap: {}
+        )
+
+        InviteListRow(
+            room: RoomSummary(
+                id: "!dm-invite:matrix.org",
+                name: "Bob",
+                isDirect: true,
+                membership: .invited,
+                inviterName: "Bob"
+            ),
+            onAccept: {},
+            onDecline: {},
+            onTap: {}
+        )
+    }
+    .frame(width: 200)
+}
+
