@@ -55,6 +55,7 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
     /// The result of extracting content from an `EventTimelineItem`.
     private struct ExtractedContent {
         var body: String
+        var attributedBody: AttributedString?
         var kind: TimelineMessage.Kind
         var mediaInfo: TimelineMessage.MediaInfo?
         var formattedBody: String?
@@ -69,6 +70,7 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
     // swiftlint:enable function_body_length cyclomatic_complexity
         let body: String
         let kind: TimelineMessage.Kind
+        var attributedBody: AttributedString?
         var mediaInfo: TimelineMessage.MediaInfo?
         var formattedBody: String?
         var isEdited = false
@@ -177,15 +179,22 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
             }
         case .roomMembership(let userId, let userDisplayName, let change, _):
             let name = userDisplayName ?? userId
-            body = membershipDescription(name: name, change: change)
+            let attributed = membershipDescription(name: name, userId: userId, change: change)
+            body = String(attributed.characters)
+            attributedBody = attributed
             kind = .membership
         case .profileChange(let displayName, let prevDisplayName, let avatarUrl, let prevAvatarUrl):
-            body = profileChangeDescription(
+            let senderInfo = extractSenderInfo(event)
+            let attributed = profileChangeDescription(
                 displayName: displayName,
                 prevDisplayName: prevDisplayName,
                 avatarUrl: avatarUrl,
-                prevAvatarUrl: prevAvatarUrl
+                prevAvatarUrl: prevAvatarUrl,
+                senderName: senderInfo.displayName ?? event.sender,
+                userId: event.sender
             )
+            body = String(attributed.characters)
+            attributedBody = attributed
             kind = .profileChange
         case .state(let stateKey, let content):
             let (stateBody, stateKind) = describeStateEvent(
@@ -205,7 +214,7 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
         }
 
         return ExtractedContent(
-            body: body, kind: kind, mediaInfo: mediaInfo,
+            body: body, attributedBody: attributedBody, kind: kind, mediaInfo: mediaInfo,
             formattedBody: formattedBody, isEdited: isEdited
         )
     }
@@ -348,6 +357,7 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
                 senderDisplayName: displayName,
                 senderAvatarURL: avatarURL,
                 body: content.body,
+                attributedBody: content.attributedBody,
                 formattedBody: content.formattedBody,
                 timestamp: ts,
                 isOutgoing: event.isOwn,
@@ -387,6 +397,7 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
             senderDisplayName: displayName,
             senderAvatarURL: avatarURL,
             body: content.body,
+            attributedBody: content.attributedBody,
             formattedBody: content.formattedBody,
             timestamp: ts,
             isOutgoing: event.isOwn,
@@ -491,6 +502,7 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
             senderDisplayName: displayName,
             senderAvatarURL: avatarURL,
             body: content.body,
+            attributedBody: content.attributedBody,
             formattedBody: content.formattedBody,
             timestamp: ts,
             isOutgoing: event.isOwn,
@@ -563,75 +575,116 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
 
     // swiftlint:disable cyclomatic_complexity
     /// Returns a human-readable description for a membership change event.
-    nonisolated static func membershipDescription(name: String, change: MembershipChange?) -> String {
+    ///
+    /// - Parameters:
+    ///   - name: The display name (or user ID) of the member.
+    ///   - userId: The member's Matrix user ID, used to build `matrix.to` links.
+    ///   - change: The type of membership change.
+    nonisolated static func membershipDescription(
+        name: String,
+        userId: String? = nil,
+        change: MembershipChange?
+    ) -> AttributedString {
     // swiftlint:enable cyclomatic_complexity
-        guard let change else { return "\(name) membership changed" }
+        let linked = linkedName(name, userId: userId)
+        guard let change else { return linked + plain(" membership changed") }
         switch change {
         case .joined:
-            return "\(name) joined the room"
+            return linked + plain(" joined the room")
         case .left:
-            return "\(name) left the room"
+            return linked + plain(" left the room")
         case .banned:
-            return "\(name) was banned"
+            return linked + plain(" was banned")
         case .unbanned:
-            return "\(name) was unbanned"
+            return linked + plain(" was unbanned")
         case .kicked:
-            return "\(name) was removed from the room"
+            return linked + plain(" was removed from the room")
         case .invited:
-            return "\(name) was invited"
+            return linked + plain(" was invited")
         case .kickedAndBanned:
-            return "\(name) was removed and banned"
+            return linked + plain(" was removed and banned")
         case .invitationAccepted:
-            return "\(name) accepted the invitation"
+            return linked + plain(" accepted the invitation")
         case .invitationRejected:
-            return "\(name) rejected the invitation"
+            return linked + plain(" rejected the invitation")
         case .invitationRevoked:
-            return "\(name)'s invitation was revoked"
+            return linked + plain("'s invitation was revoked")
         case .knocked:
-            return "\(name) requested to join"
+            return linked + plain(" requested to join")
         case .knockAccepted:
-            return "\(name)'s join request was accepted"
+            return linked + plain("'s join request was accepted")
         case .knockRetracted:
-            return "\(name) retracted their join request"
+            return linked + plain(" retracted their join request")
         case .knockDenied:
-            return "\(name)'s join request was denied"
+            return linked + plain("'s join request was denied")
         case .none, .error, .notImplemented:
-            return "\(name) membership changed"
+            return linked + plain(" membership changed")
         }
     }
 
     /// Returns a human-readable description for a profile change event.
+    ///
+    /// - Parameters:
+    ///   - displayName: The new display name from the event content.
+    ///   - prevDisplayName: The previous display name from the event content.
+    ///   - avatarUrl: The new avatar URL from the event content.
+    ///   - prevAvatarUrl: The previous avatar URL from the event content.
+    ///   - senderName: Fallback name from the sender profile or user ID.
+    ///   - userId: The sender's Matrix user ID, used to build `matrix.to` links.
     nonisolated static func profileChangeDescription(
         displayName: String?,
         prevDisplayName: String?,
         avatarUrl: String?,
-        prevAvatarUrl: String?
-    ) -> String {
+        prevAvatarUrl: String?,
+        senderName: String? = nil,
+        userId: String? = nil
+    ) -> AttributedString {
         let nameChanged = displayName != prevDisplayName
         let avatarChanged = avatarUrl != prevAvatarUrl
 
         if nameChanged, let prev = prevDisplayName, let new = displayName {
             if avatarChanged {
-                return "\(prev) changed their name to \(new) and updated their avatar"
+                return linkedName(prev, userId: userId) + plain(" changed their name to ")
+                    + linkedName(new, userId: userId) + plain(" and updated their avatar")
             }
-            return "\(prev) changed their name to \(new)"
+            return linkedName(prev, userId: userId) + plain(" changed their name to ")
+                + linkedName(new, userId: userId)
         } else if nameChanged, let new = displayName {
             if avatarChanged {
-                return "\(new) set their name and updated their avatar"
+                return linkedName(new, userId: userId) + plain(" set their name and updated their avatar")
             }
-            return "\(new) set their display name"
+            return linkedName(new, userId: userId) + plain(" set their display name")
         } else if nameChanged, let prev = prevDisplayName {
-            return "\(prev) removed their display name"
+            return linkedName(prev, userId: userId) + plain(" removed their display name")
         } else if avatarChanged {
-            let name = displayName ?? prevDisplayName ?? "A user"
+            let name = displayName ?? prevDisplayName ?? senderName ?? "A user"
             if avatarUrl != nil {
-                return "\(name) updated their avatar"
+                return linkedName(name, userId: userId) + plain(" updated their avatar")
             }
-            return "\(name) removed their avatar"
+            return linkedName(name, userId: userId) + plain(" removed their avatar")
         }
 
-        let name = displayName ?? prevDisplayName ?? "A user"
-        return "\(name) updated their profile"
+        let name = displayName ?? prevDisplayName ?? senderName ?? "A user"
+        return linkedName(name, userId: userId) + plain(" updated their profile")
+    }
+
+    // MARK: - Attributed String Helpers
+
+    /// Creates an `AttributedString` for a user name, optionally linking it to a
+    /// `matrix.to` URL when a user ID is available.
+    private nonisolated static func linkedName(_ name: String, userId: String?) -> AttributedString {
+        var result = AttributedString(name)
+        if let userId,
+           let encoded = userId.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed),
+           let url = URL(string: "https://matrix.to/#/\(encoded)") {
+            result.link = url
+        }
+        return result
+    }
+
+    /// Creates a plain (unlinked) `AttributedString` from a literal string.
+    private nonisolated static func plain(_ text: String) -> AttributedString {
+        AttributedString(text)
     }
 
     /// Routes a state event to the appropriate description and message kind.

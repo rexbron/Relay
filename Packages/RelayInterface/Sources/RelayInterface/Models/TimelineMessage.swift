@@ -242,6 +242,13 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
     /// The text body of the message (may contain Markdown formatting).
     public var body: String
 
+    /// A rich-text version of the message body with embedded link attributes.
+    ///
+    /// For system events (membership changes, profile updates), user names carry
+    /// `matrix.to` link attributes so they render as clickable mentions. Regular
+    /// messages leave this `nil` and use ``formattedBody`` instead.
+    public var attributedBody: AttributedString?
+
     /// The HTML-formatted body of the message, when the sender used `org.matrix.custom.html` format.
     ///
     /// When non-nil, the UI should prefer rendering this over ``body``, falling back to ``body``
@@ -296,6 +303,7 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
     ///   - senderDisplayName: The sender's display name.
     ///   - senderAvatarURL: The sender's avatar URL.
     ///   - body: The message body text.
+    ///   - attributedBody: Rich-text body with link attributes for system events.
     ///   - formattedBody: The HTML-formatted body, if available.
     ///   - timestamp: The time the message was sent.
     ///   - isOutgoing: Whether the current user sent this message.
@@ -314,6 +322,7 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         senderDisplayName: String? = nil,
         senderAvatarURL: String? = nil,
         body: String,
+        attributedBody: AttributedString? = nil,
         formattedBody: String? = nil,
         timestamp: Date,
         isOutgoing: Bool,
@@ -332,6 +341,7 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         self.senderDisplayName = senderDisplayName
         self.senderAvatarURL = senderAvatarURL
         self.body = body
+        self.attributedBody = attributedBody
         self.formattedBody = formattedBody
         self.timestamp = timestamp
         self.isOutgoing = isOutgoing

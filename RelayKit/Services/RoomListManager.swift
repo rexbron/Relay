@@ -814,14 +814,14 @@ private final class RoomEntry: Identifiable {
             }
         case .roomMembership(let userId, let userDisplayName, let change, _):
             let name = userDisplayName ?? userId
-            return AttributedString(TimelineMessageMapper.membershipDescription(name: name, change: change))
+            return TimelineMessageMapper.membershipDescription(name: name, change: change)
         case .profileChange(let displayName, let prevDisplayName, let avatarUrl, let prevAvatarUrl):
-            return AttributedString(TimelineMessageMapper.profileChangeDescription(
+            return TimelineMessageMapper.profileChangeDescription(
                 displayName: displayName,
                 prevDisplayName: prevDisplayName,
                 avatarUrl: avatarUrl,
                 prevAvatarUrl: prevAvatarUrl
-            ))
+            )
         case .state(let stateKey, let content):
             let (body, _) = TimelineMessageMapper.describeStateEvent(
                 content,
