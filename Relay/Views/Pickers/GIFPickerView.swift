@@ -82,6 +82,15 @@ struct GIFPickerView: View {
                 .foregroundStyle(.secondary)
             TextField("Search GIFs", text: $query)
                 .textFieldStyle(.plain)
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
