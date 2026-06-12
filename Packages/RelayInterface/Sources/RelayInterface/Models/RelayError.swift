@@ -30,6 +30,12 @@ public enum RelayError: LocalizedError, Sendable {
     /// Authentication failed with the given underlying reason.
     case loginFailed(String)
 
+    /// The session's authentication tokens expired and could not be refreshed.
+    ///
+    /// This typically happens with OAuth/OIDC sessions when the refresh token
+    /// expires during an extended system sleep. The user must sign in again.
+    case sessionExpired
+
     /// The homeserver does not support OAuth login.
     case oauthNotSupported
 
@@ -124,6 +130,8 @@ public enum RelayError: LocalizedError, Sendable {
             "Not Signed In"
         case .loginFailed:
             "Sign In Failed"
+        case .sessionExpired:
+            "Session Expired"
         case .oauthNotSupported:
             "OAuth Not Supported"
         case .oauthInvalidURL:
@@ -181,6 +189,8 @@ public enum RelayError: LocalizedError, Sendable {
             "Please sign in to continue."
         case .loginFailed(let reason):
             reason
+        case .sessionExpired:
+            "Your session's authentication token could not be refreshed. Please sign in again."
         case .oauthNotSupported:
             "This homeserver does not support OAuth login."
         case .oauthInvalidURL:

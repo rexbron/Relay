@@ -302,6 +302,21 @@ public final class MatrixService: MatrixServiceProtocol {
             // react to connectivity changes from the very beginning.
             networkMonitor.start()
 
+            // Wire the auth failure callback so SyncManager can notify us
+            // when a rebuild fails due to an expired refresh token (e.g.
+            // after an extended sleep). We report the error so the user
+            // sees an explanation, then log out cleanly so they return to
+            // the login screen.
+            syncManager.onAuthenticationFailure = { [weak self] in
+                guard let self else { return }
+                self._activityLog.log(
+                    category: .auth, severity: .error, source: "MatrixService",
+                    summary: "Session invalidated — logging out"
+                )
+                self.errorReporter.report(.sessionExpired)
+                await self.logout()
+            }
+
             // Wire the restart callback so SyncManager can notify us when
             // the sync service is rebuilt after a connectivity restoration.
             // RoomListManager re-subscribes to the new service's room list,

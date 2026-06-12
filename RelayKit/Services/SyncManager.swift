@@ -149,6 +149,13 @@ final class SyncManager {
     /// `restoreSession` + `startSync` pipeline.
     var onPendingOnlineRestore: (() async -> Void)?
 
+    /// Called when the sync service encounters an unrecoverable
+    /// authentication error (e.g. `M_UNKNOWN_TOKEN` after a refresh
+    /// token expires during sleep). ``MatrixService`` sets this to
+    /// clear the invalid session and return the user to the login
+    /// screen.
+    var onAuthenticationFailure: (() async -> Void)?
+
     // MARK: - Private Properties
 
     private let networkMonitor: NetworkMonitor
@@ -265,6 +272,7 @@ final class SyncManager {
         reconnectAttempt = 0
         onSyncServiceRestarted = nil
         onPendingOnlineRestore = nil
+        onAuthenticationFailure = nil
         transitionPhase(to: .idle)
         syncState = .idle
     }
@@ -611,7 +619,18 @@ final class SyncManager {
             // failed build attempt.
             guard phase == .rebuilding else { return }
 
-            if NetworkErrorClassifier.isOfflineShaped(error) {
+            if NetworkErrorClassifier.isAuthenticationError(error) {
+                activityLog.log(
+                    category: .sync, severity: .error, source: "SyncManager",
+                    summary: "Rebuild failed — session invalidated",
+                    detail: error.localizedDescription
+                )
+                // The refresh token expired (e.g. during an extended
+                // sleep). This is unrecoverable without re-authentication.
+                // Notify MatrixService so it can clean up and return the
+                // user to the login screen.
+                await onAuthenticationFailure?()
+            } else if NetworkErrorClassifier.isOfflineShaped(error) {
                 activityLog.log(
                     category: .sync, severity: .warning, source: "SyncManager",
                     summary: "Rebuild failed (server unreachable)",

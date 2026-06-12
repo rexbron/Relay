@@ -16,13 +16,10 @@ import Foundation
 import MatrixRustSDK
 
 /// Classifies SDK errors as transient connectivity / homeserver-reachability
-/// problems vs. permanent failures (auth invalidated, schema mismatch, …).
+/// problems vs. permanent authentication failures.
 ///
 /// We pattern-match the SDK's typed error enums (`ClientBuildError`,
-/// `ClientError.MatrixApi`) directly — no string sniffing. The classifier
-/// deliberately does **not** flag `unknownToken` / `unauthorized`: those
-/// need a re-auth flow and shouldn't be silently masked behind an
-/// "Offline" pill.
+/// `ClientError.MatrixApi`) directly — no string sniffing.
 enum NetworkErrorClassifier {
     /// True when an SDK error looks like a transient connectivity /
     /// homeserver-reachability problem. From the user's perspective both
@@ -49,5 +46,29 @@ enum NetworkErrorClassifier {
         }
 
         return false
+    }
+
+    /// True when an SDK error indicates that the session's access or
+    /// refresh token has been invalidated by the homeserver.
+    ///
+    /// This covers the `M_UNKNOWN_TOKEN` error code returned when a
+    /// refresh token expires (e.g. during an extended sleep) and the
+    /// `M_UNAUTHORIZED` error code for other authentication failures.
+    /// These errors are unrecoverable without re-authentication and
+    /// should trigger a logout-and-return-to-login flow rather than
+    /// retrying or showing an offline banner.
+    static func isAuthenticationError(_ error: Error) -> Bool {
+        guard let client = error as? ClientError,
+              case .MatrixApi(let kind, _, _, _) = client else {
+            return false
+        }
+        switch kind {
+        case .unknownToken:
+            return true
+        case .unauthorized:
+            return true
+        default:
+            return false
+        }
     }
 }
