@@ -280,36 +280,57 @@ public final class CallViewModel: CallViewModelProtocol {
             // frames is encrypted with nothing the remote peer can decrypt —
             // and Element-X's video decoder stalls on that first undecodable
             // frame, resulting in perpetual black video.
-            if self.isE2eeEnabled, let keyProvider = self.keyProvider, let encryptionService {
+            //
+            // Key under the identity LiveKit assigned us. This was the JWT
+            // `sub` claim: `<user>:<server>:<device>` on the legacy
+            // `/sfu/get` path, or the unpadded-base64 SHA-256 hash of
+            // `[user, device, member_id]` on v2 `/get_token`. The cryptor
+            // routes frames to remote peers' decoders using the *same*
+            // identity string LiveKit hands the SFU, so registering under
+            // the matrix-shaped `<user>:<device>` silently misroutes
+            // outbound frames on v2.
+            if self.isE2eeEnabled, let keyProvider = self.keyProvider {
                 let key = CallEncryptionService.generateKey()
                 self.localEncryptionKey = key
-                // Legacy `m.call.member` rtcBackendIdentity is always
-                // `${sender}:${device_id}` (matrix-js-sdk CallMembership.ts
-                // line 101). This is what remote peers route our frames under,
-                // so our local sender cryptor MUST be keyed under the same
-                // byte sequence — do not trust `localParticipantID` (the
-                // identity LiveKit assigns from the SFU JWT), since a
-                // mismatched JWT identity would silently break decrypt.
-                let localIdentity = "\(encryptionService.userID):\(encryptionService.deviceID)"
-                if let livekitIdentity = self.localParticipantID, livekitIdentity != localIdentity {
+                // Diagnostic: warn when the LiveKit-assigned identity
+                // doesn't match what peers will compute from our
+                // session-kind `m.call.member` event
+                // (`${sender}:${device_id}`, per matrix-js-sdk
+                // `CallMembership.parseFromEvent`). The legacy-first
+                // credential path keeps us on the colon shape, so this
+                // is normally silent; if it fires we've landed on the
+                // v2 hash identity and peer-side decryption will fail
+                // until we also publish MSC4143 sticky events.
+                let matrixSidIdentity = "\(encryptionService.userID):\(encryptionService.deviceID)"
+                if let livekitIdentity = self.localParticipantID, livekitIdentity != matrixSidIdentity {
                     activityLog?.log(
                         category: .call, severity: .warning, source: "CallViewModel",
                         summary: "LiveKit identity mismatch — frame encryption may misroute",
-                        detail: "LiveKit: \(livekitIdentity), Matrix: \(localIdentity)",
+                        detail: "LiveKit: \(livekitIdentity), peers expect: \(matrixSidIdentity)",
                         roomId: roomID
                     )
                 }
                 let keyIndex = self.localKeyIndex
-                CallEncryptionService.setRawKey(
+                guard let livekitIdentity = self.localParticipantID, !livekitIdentity.isEmpty else {
+                    activityLog?.log(
+                        category: .call, severity: .error, source: "CallViewModel",
+                        summary: "LiveKit assigned no local identity",
+                        detail: "Cannot install local E2EE key; outbound frames will be undecodable.",
+                        roomId: roomID
+                    )
+                    throw CallViewModelError.missingLocalParticipantIdentity
+                }
+                let setKeyFailure = CallEncryptionService.setRawKey(
                     key,
                     on: keyProvider,
-                    participantId: localIdentity,
+                    participantId: livekitIdentity,
                     index: Int32(keyIndex)
                 )
+                let failureNote = setKeyFailure.map { " setRawKey failure: \($0)." } ?? ""
                 activityLog?.log(
-                    category: .call, severity: .debug, source: "CallViewModel",
-                    summary: "Local E2EE key set (index \(keyIndex))",
-                    detail: "participantId: \(localIdentity)",
+                    category: .call, severity: setKeyFailure == nil ? .debug : .error, source: "CallViewModel",
+                    summary: "Local E2EE key installed",
+                    detail: "Index: \(keyIndex), participantId: \(livekitIdentity). Frame cryptor will use this key for outbound frames before camera/mic publish.\(failureNote)",
                     roomId: roomID
                 )
             }
@@ -616,47 +637,58 @@ public final class CallViewModel: CallViewModelProtocol {
 
     // MARK: - E2EE Key Redistribution
 
-    /// Re-sends the local encryption key to a newly joined participant so they
-    /// can decrypt our media. Routes through the widget bridge so the SDK
-    /// Olm-encrypts the to-device payload.
+    /// Re-sends the local encryption key to all current call members so a
+    /// peer that just joined LiveKit can decrypt our media.
+    ///
+    /// Previously this method parsed the LiveKit participant identity
+    /// (`@user:server:device`) to recover a single user/device target. On
+    /// v2 the identity is an opaque base64 hash, so the parse fails and the
+    /// new peer never receives our key. Re-fetching `m.call.member` state
+    /// and broadcasting to everyone matches Element Call's
+    /// `RTCEncryptionManager` behaviour on membership changes — slightly
+    /// inefficient (existing peers receive our key twice) but correct on
+    /// both legacy and v2 paths.
+    ///
+    /// The `participantIdentity` parameter is now only used for logging.
     fileprivate func redistributeKey(to participantIdentity: String) {
-        guard let key = localEncryptionKey, let bridge = widgetBridge else { return }
-
-        // Parse "user:device" from the LiveKit identity
-        // (format: `@userId:server:deviceId`). Element Call uses identities
-        // like `@user:server:DEVICEID`.
-        let components = participantIdentity.components(separatedBy: ":")
-        guard components.count >= 3 else {
-            activityLog?.log(
-                category: .call, severity: .warning, source: "CallViewModel",
-                summary: "Cannot parse participant identity for key redistribution",
-                roomId: roomID
-            )
+        guard let key = localEncryptionKey,
+              let bridge = widgetBridge,
+              let encryptionService else {
             return
         }
-        let userId = components[0] + ":" + components[1]
-        let deviceId = components.dropFirst(2).joined(separator: ":")
         let index = localKeyIndex
 
-        Task { [weak self] in
+        Task {
+            let targets = await encryptionService.fetchCallTargets()
+            guard !targets.isEmpty else {
+                await MainActor.run {
+                    activityLog?.log(
+                        category: .call, severity: .debug, source: "CallViewModel",
+                        summary: "No call targets to redistribute key to",
+                        detail: "Trigger: new participant \(participantIdentity). `fetchCallTargets` returned an empty map.",
+                        roomId: roomID
+                    )
+                }
+                return
+            }
+            let targetList = targets.keys.sorted().joined(separator: ", ")
             do {
                 try await bridge.sendEncryptionKey(
                     key,
                     keyIndex: index,
-                    toMembers: [userId: [deviceId]]
+                    toMembers: targets
                 )
-                self?.activityLog?.log(
-                    category: .call, severity: .debug, source: "CallViewModel",
-                    summary: "Redistributed key to \(participantIdentity)",
-                    roomId: self?.roomID
-                )
+                // Success entry — including fp — already written by
+                // CallWidgetBridge.sendEncryptionKey.
             } catch {
-                self?.activityLog?.log(
-                    category: .call, severity: .warning, source: "CallViewModel",
-                    summary: "Key redistribution failed",
-                    detail: error.localizedDescription,
-                    roomId: self?.roomID
-                )
+                await MainActor.run {
+                    activityLog?.log(
+                        category: .call, severity: .warning, source: "CallViewModel",
+                        summary: "E2EE key redistribution failed",
+                        detail: "Trigger: new participant \(participantIdentity). Targets: \(targetList). Error: \(error.localizedDescription)",
+                        roomId: roomID
+                    )
+                }
             }
         }
     }
@@ -993,6 +1025,23 @@ public final class CallViewModel: CallViewModelProtocol {
             Task { @MainActor [weak viewModel] in
                 viewModel?.videoTrackRevision += 1
             }
+        }
+    }
+}
+
+// MARK: - Errors
+
+/// Errors raised by `CallViewModel.connect`. Only the cases that surface to
+/// the user via the error reporter or the call sheet need a
+/// `LocalizedError`; internal-only failures can be plain `Swift.Error`.
+enum CallViewModelError: LocalizedError {
+    case missingLocalParticipantIdentity
+
+    var errorDescription: String? {
+        switch self {
+        case .missingLocalParticipantIdentity:
+            return "LiveKit didn't assign an identity to the local participant; "
+                 + "the call can't be encrypted. Try reconnecting."
         }
     }
 }

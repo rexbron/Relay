@@ -248,6 +248,42 @@ struct CallEncryptionService {
         return Data(bytes)
     }
 
+    // MARK: - LiveKit Identity (MSC4195)
+
+    /// Reproduces lk-jwt-service's `LiveKitIdentityFor` in Swift so we can
+    /// route frame-cryptor keys to the same participant identity that the
+    /// JWT service assigned when it issued the access token.
+    ///
+    /// On the v2 (`/get_token`) path the LiveKit participant identity is
+    /// the unpadded-base64 SHA-256 hash of the JSON serialization of
+    /// `[matrixID, claimedDeviceID, memberID]`; keying our cryptor under
+    /// `<userID>:<deviceID>` (the legacy shape) silently misroutes every
+    /// frame on v2-only deployments.
+    ///
+    /// Inputs are all ASCII (Matrix IDs, device IDs, UUIDs), so Swift's
+    /// `JSONSerialization` produces byte-identical output to Go's
+    /// `json.Marshal` for the same array. Reference:
+    /// `lk-jwt-service/helper.go::LiveKitIdentityFor`.
+    static func liveKitIdentity(
+        matrixID: String,
+        claimedDeviceID: String,
+        memberID: String
+    ) -> String {
+        let parts: [String] = [matrixID, claimedDeviceID, memberID]
+        guard let jsonData = try? JSONSerialization.data(
+            withJSONObject: parts,
+            options: []
+        ) else {
+            return ""
+        }
+        let digest = SHA256.hash(data: jsonData)
+        // SHA-256 outputs 32 bytes; standard base64 = 44 chars with exactly
+        // one '=' of padding. Strip it to match Go's `unpaddedBase64`.
+        return Data(digest)
+            .base64EncodedString()
+            .replacing("=", with: "")
+    }
+
     // MARK: - Key Provider Setup
 
     /// Builds a `BaseKeyProvider` whose internal `LKRTCFrameCryptorKeyProvider`

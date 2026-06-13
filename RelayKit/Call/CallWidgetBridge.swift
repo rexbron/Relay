@@ -658,23 +658,36 @@ public final class CallWidgetBridge: @unchecked Sendable {
         let topDeviceId = (content["device_id"] as? String) ?? ""
         let deviceId = !claimedDeviceId.isEmpty ? claimedDeviceId : topDeviceId
 
-        // LiveKit participant identity lookup order. Element Call connects to
-        // the SFU with identity `@user:server:deviceId` (confirmed in the
-        // MatrixRTC JWT grant), so that's what we need to key on for the
-        // LKRTCFrameCryptorKeyProvider to route the key to the right
-        // participant's decoder.
+        // Register the inbound key under every plausible LiveKit
+        // participant identity for this peer. Which shape LiveKit assigned
+        // depends on which credential path (legacy or v2) the peer took
+        // when they joined the SFU — we don't necessarily know that from
+        // the to-device payload alone, so register under every candidate
+        // and let the cryptor pick the one whose participantId matches the
+        // SFU-assigned identity.
         //
-        // `member.id` is the MSC4143 per-membership UUID — an *event*-level
-        // identifier, not a LiveKit participant identity. It only enters the
-        // fallback chain so older peers that somehow omit the device id still
-        // get routed.
-        let participantIdentity: String
+        // - Legacy (`/sfu/get`): identity = `<sender>:<deviceId>`.
+        // - v2 (`/get_token`): identity = unpadded-base64 SHA-256 of
+        //   `[sender, claimed_device_id, member.id]` per
+        //   `lk-jwt-service/helper.go::LiveKitIdentityFor`.
+        var participantIdentities: [String] = []
         if !deviceId.isEmpty {
-            participantIdentity = "\(sender):\(deviceId)"
-        } else if !memberId.isEmpty {
-            participantIdentity = memberId
-        } else {
-            participantIdentity = sender
+            participantIdentities.append("\(sender):\(deviceId)")
+        }
+        if !claimedDeviceId.isEmpty && !memberId.isEmpty {
+            let v2Identity = CallEncryptionService.liveKitIdentity(
+                matrixID: sender,
+                claimedDeviceID: claimedDeviceId,
+                memberID: memberId
+            )
+            if !v2Identity.isEmpty {
+                participantIdentities.append(v2Identity)
+            }
+        }
+        if participantIdentities.isEmpty {
+            // Last-resort fallback — older peers that omit both device_id
+            // and member.id. Element Call's parser does the same.
+            participantIdentities.append(memberId.isEmpty ? sender : memberId)
         }
 
         for entry in keyEntries {
@@ -683,18 +696,26 @@ public final class CallWidgetBridge: @unchecked Sendable {
                   let keyData = Data(base64Encoded: base64Key) else {
                 continue
             }
-            CallEncryptionService.setRawKey(
-                keyData,
-                on: keyProvider,
-                participantId: participantIdentity,
-                index: Int32(index)
-            )
+            var setFailures: [String] = []
+            for participantIdentity in participantIdentities {
+                if let reason = CallEncryptionService.setRawKey(
+                    keyData,
+                    on: keyProvider,
+                    participantId: participantIdentity,
+                    index: Int32(index)
+                ) {
+                    setFailures.append("\(participantIdentity): \(reason)")
+                }
+            }
+            let identitiesJoined = participantIdentities.joined(separator: ", ")
+            let fp = SHA256.hash(data: keyData).prefix(8).map { String(format: "%02x", $0) }.joined()
+            let failureNote = setFailures.isEmpty ? "" : " setRawKey failures: \(setFailures.joined(separator: "; "))."
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.activityLog?.log(
-                    category: .call, severity: .debug, source: "CallWidgetBridge",
+                    category: .call, severity: setFailures.isEmpty ? .debug : .warning, source: "CallWidgetBridge",
                     summary: "Received E2EE key from \(sender)",
-                    detail: "Participant: \(participantIdentity), key index: \(index)",
+                    detail: "Routed to LiveKit participantIds: [\(identitiesJoined)]. Sender: \(sender), device: \(deviceId), member: \(memberId), index: \(index), sha256[0..8]: \(fp).\(failureNote)",
                     roomId: self.roomId
                 )
             }
