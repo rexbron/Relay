@@ -744,6 +744,13 @@ public final class CallViewModel: CallViewModelProtocol {
                     if viewModel.state == .connected {
                         viewModel.state = .disconnected
                     }
+                    logger.info("[RTC]LiveKit connection state: disconnected")
+                    viewModel.activityLog?.log(
+                        category: .call, severity: .warning, source: "CallViewModel",
+                        summary: "LiveKit connection disconnected",
+                        detail: "Previous state: \(Self.describe(oldValue))",
+                        roomId: viewModel.roomID
+                    )
                 case .reconnecting:
                     viewModel.activityLog?.log(
                         category: .call, severity: .warning, source: "CallViewModel",
@@ -753,6 +760,63 @@ public final class CallViewModel: CallViewModelProtocol {
                 default:
                     break
                 }
+            }
+        }
+
+        /// Fires when the SFU rejects the initial connection (auth, transport,
+        /// codec negotiation). Distinct from `didDisconnectWithError`, which
+        /// fires after a successful connect terminates.
+        func room(_ room: LiveKit.Room, didFailToConnectWithError error: LiveKitError?) {
+            let description = error?.localizedDescription ?? "no error reported"
+            Task { @MainActor [weak viewModel] in
+                guard let viewModel else { return }
+                logger.error("[RTC]LiveKit didFailToConnect: \(description, privacy: .public)")
+                viewModel.activityLog?.log(
+                    category: .call, severity: .error, source: "CallViewModel",
+                    summary: "LiveKit connection rejected",
+                    detail: description,
+                    roomId: viewModel.roomID
+                )
+            }
+        }
+
+        /// Fires when an already-connected room disconnects, with an optional
+        /// error explaining why. A `nil` error indicates a clean local
+        /// disconnect; a non-nil error is the most useful signal we get when
+        /// a call drops mid-session.
+        func room(_ room: LiveKit.Room, didDisconnectWithError error: LiveKitError?) {
+            let description = error?.localizedDescription
+            Task { @MainActor [weak viewModel] in
+                guard let viewModel else { return }
+                if let description {
+                    logger.error("[RTC]LiveKit didDisconnect: \(description, privacy: .public)")
+                    viewModel.activityLog?.log(
+                        category: .call, severity: .error, source: "CallViewModel",
+                        summary: "LiveKit connection lost",
+                        detail: description,
+                        roomId: viewModel.roomID
+                    )
+                } else {
+                    logger.info("[RTC]LiveKit didDisconnect (clean)")
+                    viewModel.activityLog?.log(
+                        category: .call, severity: .debug, source: "CallViewModel",
+                        summary: "LiveKit disconnected cleanly",
+                        roomId: viewModel.roomID
+                    )
+                }
+            }
+        }
+
+        /// Human-readable label for a `LiveKit.ConnectionState` enum value.
+        /// Lives on the delegate so the activity-log detail strings stay
+        /// stable across LiveKit SDK updates.
+        nonisolated private static func describe(_ state: LiveKit.ConnectionState) -> String {
+            switch state {
+            case .connected: "connected"
+            case .disconnected: "disconnected"
+            case .reconnecting: "reconnecting"
+            case .connecting: "connecting"
+            case .disconnecting: "disconnecting"
             }
         }
 
@@ -775,15 +839,36 @@ public final class CallViewModel: CallViewModelProtocol {
 
         func room(_ room: LiveKit.Room, participant: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication) {
             observeDimensions(of: publication)
+            let identityStr = participant.identity?.stringValue ?? "(none)"
+            let kind = publication.kind.rawValue
+            let sid = publication.sid
             Task { @MainActor [weak viewModel] in
-                let identityStr = participant.identity?.stringValue ?? "(none)"
-                let kind = publication.kind.rawValue
-                viewModel?.activityLog?.log(
+                guard let viewModel else { return }
+                viewModel.activityLog?.log(
                     category: .call, severity: .debug, source: "CallViewModel",
-                    summary: "Subscribed to \(kind) track from \(identityStr)",
-                    roomId: viewModel?.roomID
+                    summary: "Subscribed to remote \(kind) track",
+                    detail: "Identity: \(identityStr), trackSid: \(sid)",
+                    roomId: viewModel.roomID
                 )
-                viewModel?.syncParticipants(trackChanged: true)
+                viewModel.syncParticipants(trackChanged: true)
+            }
+        }
+
+        /// Fires when LiveKit can't subscribe to a remote track — the most
+        /// common cause is firewall / NAT blocking the media path while
+        /// signalling completes. This is the strongest signal for the
+        /// "connected, no media" failure shape.
+        func room(_ room: LiveKit.Room, participant: RemoteParticipant, didFailToSubscribeTrackWithSid trackSid: Track.Sid, error: LiveKitError) {
+            let identityStr = participant.identity?.stringValue ?? "(none)"
+            let description = error.localizedDescription
+            Task { @MainActor [weak viewModel] in
+                guard let viewModel else { return }
+                viewModel.activityLog?.log(
+                    category: .call, severity: .error, source: "CallViewModel",
+                    summary: "Failed to subscribe to remote track",
+                    detail: "Identity: \(identityStr), trackSid: \(trackSid), error: \(description)",
+                    roomId: viewModel.roomID
+                )
             }
         }
 
@@ -811,14 +896,62 @@ public final class CallViewModel: CallViewModelProtocol {
 
         func room(_ room: LiveKit.Room, localParticipant: LocalParticipant, didPublishTrack publication: LocalTrackPublication) {
             observeDimensions(of: publication)
+            let kind = publication.kind.rawValue
+            let sid = publication.sid
             Task { @MainActor [weak viewModel] in
-                viewModel?.videoTrackRevision += 1
+                guard let viewModel else { return }
+                logger.info("[RTC]Published local \(kind, privacy: .public) track sid=\(sid, privacy: .public)")
+                viewModel.activityLog?.log(
+                    category: .call, severity: .debug, source: "CallViewModel",
+                    summary: "Published local \(kind) track",
+                    detail: "trackSid: \(sid)",
+                    roomId: viewModel.roomID
+                )
+                viewModel.videoTrackRevision += 1
             }
         }
 
         func room(_ room: LiveKit.Room, participant: RemoteParticipant, didPublishTrack publication: RemoteTrackPublication) {
             Task { @MainActor [weak viewModel] in
                 viewModel?.syncParticipants(trackChanged: true)
+            }
+        }
+
+        /// Per-track LiveKit E2EE state transitions. Only fires when E2EE is
+        /// enabled on the room. Normal lifecycle is `.new` → `.ok`. Any other
+        /// terminal state (`.missing_key`, `.encryption_failed`,
+        /// `.decryption_failed`, `.internal_error`) is the canonical signal
+        /// for "connected but no media" on encrypted rooms — surface them
+        /// loudly so users on Element-Call interop calls can see the
+        /// cryptor failing without having to read os_log.
+        func room(_ room: LiveKit.Room, trackPublication: TrackPublication, didUpdateE2EEState state: E2EEState) {
+            let stateLabel = state.toString()
+            let trackSid = trackPublication.sid
+            let trackKind = trackPublication.kind.rawValue
+            Task { @MainActor [weak viewModel] in
+                guard let viewModel else { return }
+                switch state {
+                case .ok, .new, .key_ratcheted:
+                    return
+                case .missing_key:
+                    logger.warning("[RTC]E2EE state=missing_key on \(trackKind, privacy: .public) sid=\(trackSid, privacy: .public)")
+                    viewModel.activityLog?.log(
+                        category: .call, severity: .warning, source: "CallViewModel",
+                        summary: "E2EE missing key for \(trackKind) track",
+                        detail: "trackSid: \(trackSid). Remote peer's encryption key hasn't been received yet or was rejected.",
+                        roomId: viewModel.roomID
+                    )
+                case .encryption_failed, .decryption_failed, .internal_error:
+                    logger.error("[RTC]E2EE state=\(stateLabel, privacy: .public) on \(trackKind, privacy: .public) sid=\(trackSid, privacy: .public)")
+                    viewModel.activityLog?.log(
+                        category: .call, severity: .error, source: "CallViewModel",
+                        summary: "E2EE failure on \(trackKind) track",
+                        detail: "State: \(stateLabel), trackSid: \(trackSid)",
+                        roomId: viewModel.roomID
+                    )
+                @unknown default:
+                    return
+                }
             }
         }
 
