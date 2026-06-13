@@ -220,6 +220,12 @@ struct LiveKitCredentialService {
 
         let body = GetTokenRequest(
             roomId: roomID,
+            // Element Call hardcodes "m.call#ROOM" for the application slot
+            // on the v2 endpoint. lk-jwt-service `SFURequest.Validate()`
+            // rejects requests where `slot_id` is empty with HTTP 400
+            // M_BAD_JSON, which is what forced every previous Relay call
+            // to silently fall back to legacy `/sfu/get`.
+            slotId: "m.call#ROOM",
             openidToken: openIDToken,
             member: .init(id: "\(userID):\(deviceID)", claimedUserId: userID, claimedDeviceId: deviceID)
         )
@@ -379,6 +385,7 @@ struct OpenIDTokenPayload: Codable {
 
 private struct GetTokenRequest: Encodable {
     let roomId: String
+    let slotId: String
     let openidToken: OpenIDTokenPayload
     let member: Member
     struct Member: Encodable {
@@ -393,6 +400,7 @@ private struct GetTokenRequest: Encodable {
     }
     enum CodingKeys: String, CodingKey {
         case roomId = "room_id"
+        case slotId = "slot_id"
         case openidToken = "openid_token"
         case member
     }
