@@ -167,11 +167,42 @@ struct LiveKitCredentialService {
         roomID: String,
         openIDToken: OpenIDTokenPayload
     ) async throws -> (url: String, token: String) {
-        // Try the v2 endpoint first, fall back to legacy
-        if let result = try? await fetchLiveKitTokenV2(sfuURL: sfuURL, roomID: roomID, openIDToken: openIDToken) {
-            return result
+        // Try v2 first. If it fails, log the actual server response (status,
+        // Matrix errcode, message) before falling back to legacy — so users
+        // on v2-only deployments see actionable detail rather than the
+        // legacy endpoint's generic "tokenExchangeFailed".
+        do {
+            return try await fetchLiveKitTokenV2(
+                sfuURL: sfuURL,
+                roomID: roomID,
+                openIDToken: openIDToken
+            )
+        } catch let v2Error {
+            logV2Failure(v2Error, sfuURL: sfuURL)
         }
         return try await fetchLiveKitTokenLegacy(sfuURL: sfuURL, roomID: roomID, openIDToken: openIDToken)
+    }
+
+    /// Logs a v2 `/get_token` failure to os_log and the activity log so that
+    /// the silent fall-back to legacy is at least visible after the fact.
+    /// Format-aware: a `LiveKitCredentialError.tokenExchangeRejected` carries
+    /// structured detail; anything else falls through to its
+    /// `localizedDescription`.
+    private func logV2Failure(_ error: Error, sfuURL: String) {
+        let detail: String
+        if case let LiveKitCredentialError.tokenExchangeRejected(status, errcode, message, _) = error {
+            let errcodePart = errcode.map { " \($0)" } ?? ""
+            let messagePart = message.map { ": \($0)" } ?? ""
+            detail = "HTTP \(status)\(errcodePart)\(messagePart)"
+        } else {
+            detail = error.localizedDescription
+        }
+        logger.warning("[RTC]/get_token failed, falling back to /sfu/get — \(detail, privacy: .public)")
+        activityLog?.log(
+            category: .call, severity: .warning, source: "LiveKitCredentialService",
+            summary: "v2 /get_token rejected; falling back to legacy",
+            detail: detail
+        )
     }
 
     private func fetchLiveKitTokenV2(
@@ -195,8 +226,17 @@ struct LiveKitCredentialService {
         request.httpBody = try JSONEncoder().encode(body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw LiveKitCredentialError.tokenExchangeFailed
+        guard let http = response as? HTTPURLResponse else {
+            throw LiveKitCredentialError.serverError
+        }
+        guard http.statusCode == 200 else {
+            let (errcode, message) = Self.parseMatrixError(data)
+            throw LiveKitCredentialError.tokenExchangeRejected(
+                status: http.statusCode,
+                errcode: errcode,
+                message: message,
+                endpoint: "/get_token"
+            )
         }
         let decoded = try JSONDecoder().decode(LiveKitTokenResponse.self, from: data)
         activityLog?.log(
@@ -224,8 +264,17 @@ struct LiveKitCredentialService {
         request.httpBody = try JSONEncoder().encode(body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw LiveKitCredentialError.tokenExchangeFailed
+        guard let http = response as? HTTPURLResponse else {
+            throw LiveKitCredentialError.serverError
+        }
+        guard http.statusCode == 200 else {
+            let (errcode, message) = Self.parseMatrixError(data)
+            throw LiveKitCredentialError.tokenExchangeRejected(
+                status: http.statusCode,
+                errcode: errcode,
+                message: message,
+                endpoint: "/sfu/get"
+            )
         }
         let decoded = try JSONDecoder().decode(LiveKitTokenResponse.self, from: data)
         activityLog?.log(
@@ -234,6 +283,22 @@ struct LiveKitCredentialService {
             roomId: roomID
         )
         return (decoded.url, decoded.jwt)
+    }
+
+    /// Extracts `(errcode, error)` from a Matrix-style error response body.
+    /// Used to turn lk-jwt-service responses like
+    /// `{"errcode":"M_BAD_JSON","error":"The request body is missing..."}`
+    /// into a single human-readable line. Returns `(nil, nil)` if the body
+    /// isn't a Matrix error envelope.
+    private static func parseMatrixError(_ data: Data) -> (errcode: String?, message: String?) {
+        struct MatrixError: Decodable {
+            let errcode: String?
+            let error: String?
+        }
+        guard let parsed = try? JSONDecoder().decode(MatrixError.self, from: data) else {
+            return (nil, nil)
+        }
+        return (parsed.errcode, parsed.error)
     }
 }
 
@@ -244,7 +309,11 @@ enum LiveKitCredentialError: LocalizedError {
     case invalidURL
     case serverError
     case openIDTokenFailed
-    case tokenExchangeFailed
+    /// The LiveKit JWT service rejected our request. Carries the HTTP
+    /// status, Matrix `errcode`/`error` if present, and which endpoint
+    /// produced the failure (`/get_token` or `/sfu/get`) so a user
+    /// support trace can identify both the path taken and the reason.
+    case tokenExchangeRejected(status: Int, errcode: String?, message: String?, endpoint: String)
 
     var errorDescription: String? {
         switch self {
@@ -257,8 +326,10 @@ enum LiveKitCredentialError: LocalizedError {
             return "The homeserver returned an error while fetching call credentials."
         case .openIDTokenFailed:
             return "Failed to obtain an OpenID token from the homeserver."
-        case .tokenExchangeFailed:
-            return "The call server rejected the credential exchange."
+        case .tokenExchangeRejected(let status, let errcode, let message, let endpoint):
+            let errcodePart = errcode.map { " \($0)" } ?? ""
+            let messagePart = message.map { ": \($0)" } ?? ""
+            return "Call server rejected \(endpoint) with HTTP \(status)\(errcodePart)\(messagePart)"
         }
     }
 }
