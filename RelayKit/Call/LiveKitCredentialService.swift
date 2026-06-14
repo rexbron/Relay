@@ -90,21 +90,21 @@ struct LiveKitCredentialService {
     // MARK: - Step 1: Discover SFU URL
 
     private func discoverSFUURL(roomID: String) async throws -> String {
-        // Prefer the MSC4143 transports endpoint
+        // Existing-call SFU wins. Per `focus_active.focus_selection ==
+        // "oldest_membership"` (matrix-js-sdk's `MatrixRTCSession`), every
+        // joiner must converge on the SFU advertised by the *oldest*
+        // active call membership. If we picked our own homeserver's SFU
+        // here instead, a federated call would split across two SFUs and
+        // media never reaches the other side.
+        if let url = try? await fetchSFUFromCallMembers(roomID: roomID) {
+            return url
+        }
+        // Bootstrap path — we're the first to join. Prefer MSC4143
+        // transports endpoint, fall back to `.well-known`.
         if let url = try? await fetchRTCTransportsURL() {
             return url
         }
-        // Fall back to .well-known
         if let url = try? await fetchWellKnownSFUURL() {
-            return url
-        }
-        // Last resort: read another active call participant's
-        // `foci_preferred[0]` from `m.call.member` state. Joining an
-        // in-progress call on a homeserver without `.well-known` configured
-        // would otherwise fail with `sfuURLNotFound` even though the SFU is
-        // visible in room state. Matches Element Call / matrix-js-sdk
-        // discovery behaviour.
-        if let url = try? await fetchSFUFromCallMembers(roomID: roomID) {
             return url
         }
         throw LiveKitCredentialError.sfuURLNotFound
@@ -148,12 +148,15 @@ struct LiveKitCredentialService {
         return first.livekitServiceUrl
     }
 
-    /// Walks `m.call.member` state events on the room and returns the first
-    /// `foci_preferred[].livekit_service_url` advertised by a peer with
-    /// non-empty content. Lets a user join an in-progress call when their
-    /// homeserver doesn't expose `.well-known org.matrix.msc4143.rtc_foci`
-    /// — the SFU the existing participants are already using is right there
-    /// in room state.
+    /// Reads `m.call.member` state events on the room and returns the
+    /// `foci_preferred[].livekit_service_url` advertised by the **oldest**
+    /// active call membership — the SFU every joiner is supposed to
+    /// converge on per `focus_active.focus_selection == "oldest_membership"`.
+    ///
+    /// Skips tombstoned (empty-content) and expired memberships so a stale
+    /// leftover doesn't outvote the live participants. Returns
+    /// `sfuURLNotFound` when nobody is in the call yet, signalling the
+    /// caller to bootstrap via local discovery.
     private func fetchSFUFromCallMembers(roomID: String) async throws -> String {
         let base = homeserver.trimmingCharacters(in: .init(charactersIn: "/"))
         let encodedRoomID = roomID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? roomID
@@ -172,24 +175,43 @@ struct LiveKitCredentialService {
             throw LiveKitCredentialError.sfuURLNotFound
         }
 
+        struct Candidate {
+            let createdTs: Int64
+            let sfuURL: String
+        }
+        var candidates: [Candidate] = []
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+
         for event in events {
             guard let type = event["type"] as? String,
                   type == "org.matrix.msc3401.call.member",
                   let content = event["content"] as? [String: Any],
                   !content.isEmpty,
-                  let fociPreferred = content["foci_preferred"] as? [[String: Any]]
+                  let fociPreferred = content["foci_preferred"] as? [[String: Any]],
+                  let focus = fociPreferred.first(where: { ($0["type"] as? String) == "livekit" }),
+                  let serviceURL = focus["livekit_service_url"] as? String,
+                  !serviceURL.isEmpty
             else { continue }
-            for focus in fociPreferred {
-                guard let focusType = focus["type"] as? String,
-                      focusType == "livekit",
-                      let serviceURL = focus["livekit_service_url"] as? String,
-                      !serviceURL.isEmpty
-                else { continue }
-                logger.info("[RTC]Recovered SFU URL from existing call member state")
-                return serviceURL
+
+            // Drop expired memberships. Default `expires` is 4h
+            // (14400000ms). `created_ts` falls back to event-level
+            // `origin_server_ts` so very old non-tombstoned events still
+            // get pruned.
+            let createdTs = (content["created_ts"] as? NSNumber)?.int64Value
+                ?? (event["origin_server_ts"] as? NSNumber)?.int64Value
+                ?? 0
+            let expires = (content["expires"] as? NSNumber)?.int64Value ?? 14400000
+            if createdTs > 0 && createdTs + expires < nowMs {
+                continue
             }
+            candidates.append(Candidate(createdTs: createdTs, sfuURL: serviceURL))
         }
-        throw LiveKitCredentialError.sfuURLNotFound
+
+        guard let oldest = candidates.min(by: { $0.createdTs < $1.createdTs }) else {
+            throw LiveKitCredentialError.sfuURLNotFound
+        }
+        logger.info("[RTC]Joining existing call SFU per oldest_membership: \(oldest.sfuURL, privacy: .public)")
+        return oldest.sfuURL
     }
 
     // MARK: - Step 2: Request OpenID Token
