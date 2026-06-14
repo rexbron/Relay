@@ -220,28 +220,33 @@ struct LiveKitCredentialService {
         roomID: String,
         openIDToken: OpenIDTokenPayload
     ) async throws -> (url: String, token: String) {
-        // Try v2 first. If it fails, log the actual server response (status,
-        // Matrix errcode, message) before falling back to legacy — so users
-        // on v2-only deployments see actionable detail rather than the
-        // legacy endpoint's generic "tokenExchangeFailed".
+        // Try legacy `/sfu/get` first. It assigns LiveKit identity
+        // `${user}:${device}` — which matches what matrix-js-sdk peers
+        // (Element Call / Element X / Element Web) compute as
+        // `rtcBackendIdentity` from our `org.matrix.msc3401.call.member`
+        // event (see `CallMembership.parseFromEvent` —
+        // `MembershipKind.Session` branch is the plain-concat form, not the
+        // hashed v2 form). If we use v2 `/get_token` we land on a hashed
+        // identity that peers reading our legacy session event cannot
+        // reconcile, breaking video routing. v2 only becomes viable once we
+        // also publish MSC4143 sticky `m.rtc.member` events.
         do {
-            return try await fetchLiveKitTokenV2(
+            return try await fetchLiveKitTokenLegacy(
                 sfuURL: sfuURL,
                 roomID: roomID,
                 openIDToken: openIDToken
             )
-        } catch let v2Error {
-            logV2Failure(v2Error, sfuURL: sfuURL)
+        } catch let legacyError {
+            logLegacyFailure(legacyError, sfuURL: sfuURL)
         }
-        return try await fetchLiveKitTokenLegacy(sfuURL: sfuURL, roomID: roomID, openIDToken: openIDToken)
+        return try await fetchLiveKitTokenV2(sfuURL: sfuURL, roomID: roomID, openIDToken: openIDToken)
     }
 
-    /// Logs a v2 `/get_token` failure to os_log and the activity log so that
-    /// the silent fall-back to legacy is at least visible after the fact.
-    /// Format-aware: a `LiveKitCredentialError.tokenExchangeRejected` carries
-    /// structured detail; anything else falls through to its
-    /// `localizedDescription`.
-    private func logV2Failure(_ error: Error, sfuURL: String) {
+    /// Logs a `/sfu/get` failure to os_log and the activity log so that the
+    /// fall-forward to v2 is at least visible after the fact. Format-aware:
+    /// a `LiveKitCredentialError.tokenExchangeRejected` carries structured
+    /// detail; anything else falls through to its `localizedDescription`.
+    private func logLegacyFailure(_ error: Error, sfuURL: String) {
         let detail: String
         if case let LiveKitCredentialError.tokenExchangeRejected(status, errcode, message, _) = error {
             let errcodePart = errcode.map { " \($0)" } ?? ""
@@ -250,10 +255,10 @@ struct LiveKitCredentialService {
         } else {
             detail = error.localizedDescription
         }
-        logger.warning("[RTC]/get_token failed, falling back to /sfu/get — \(detail, privacy: .public)")
+        logger.warning("[RTC]/sfu/get failed, trying /get_token — \(detail, privacy: .public)")
         activityLog?.log(
             category: .call, severity: .warning, source: "LiveKitCredentialService",
-            summary: "v2 /get_token rejected; falling back to legacy",
+            summary: "Legacy /sfu/get rejected; trying v2",
             detail: detail
         )
     }

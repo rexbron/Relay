@@ -372,12 +372,8 @@ public final class CallViewModel: CallViewModelProtocol {
                         membershipId: membershipId
                     )
                 } catch {
-                    activityLog?.log(
-                        category: .call, severity: .warning, source: "CallViewModel",
-                        summary: "Call membership event failed",
-                        detail: error.localizedDescription,
-                        roomId: roomID
-                    )
+                    let description = String(reflecting: error)
+                    self.logCallMembershipFailure(error, description: description)
                 }
 
                 // 2. Start the membership heartbeat. matrix-js-sdk's
@@ -650,6 +646,34 @@ public final class CallViewModel: CallViewModelProtocol {
     /// both legacy and v2 paths.
     ///
     /// The `participantIdentity` parameter is now only used for logging.
+    /// Surfaces a `sendCallMemberEvent` failure to the Activity Log. The most
+    /// common failure shape in the wild is M_FORBIDDEN because the room's
+    /// `power_levels.events.org.matrix.msc3401.call.member` defaults to
+    /// `state_default` (50) instead of being explicitly lowered to 0 — when
+    /// hit, peers running Element Call / Element X have no Matrix-level
+    /// record of us joining the call, so they never send us their E2EE key
+    /// and our tiles stay black. Relay-created rooms set the override at
+    /// creation (see `MatrixService.callPowerLevels`); rooms created
+    /// elsewhere may not.
+    fileprivate func logCallMembershipFailure(_ error: Error, description: String) {
+        let isPowerLevelDenial = description.contains("M_FORBIDDEN")
+            && description.contains("org.matrix.msc3401.call.member")
+            && description.contains("power")
+        let summary = "Call membership state event rejected"
+        let detail: String
+        if isPowerLevelDenial {
+            detail = "Homeserver returned M_FORBIDDEN: this room requires a higher power level to send `org.matrix.msc3401.call.member`. Ask a room admin to set its required power level to 0 (Relay-created rooms do this automatically). Without this event in room state, other participants can't send you E2EE keys and your tiles will stay black on encrypted calls. Raw error: \(description)"
+        } else {
+            detail = "Without a successful call membership state event, peers can't see you as a call participant and won't send you E2EE keys. Raw error: \(description)"
+        }
+        activityLog?.log(
+            category: .call, severity: .error, source: "CallViewModel",
+            summary: summary,
+            detail: detail,
+            roomId: roomID
+        )
+    }
+
     fileprivate func redistributeKey(to participantIdentity: String) {
         guard let key = localEncryptionKey,
               let bridge = widgetBridge,
@@ -852,6 +876,18 @@ public final class CallViewModel: CallViewModelProtocol {
             }
         }
 
+        /// Human-readable label for a `LiveKit.Track.Kind`. The raw value is
+        /// `Int`-backed (`audio=0`, `video=1`, `none=2`) which is useless in
+        /// logs.
+        nonisolated fileprivate static func describe(_ kind: Track.Kind) -> String {
+            switch kind {
+            case .audio: "audio"
+            case .video: "video"
+            case .none: "none"
+            default: "unknown(\(kind.rawValue))"
+            }
+        }
+
         func room(_ room: LiveKit.Room, participantDidConnect participant: RemoteParticipant) {
             Task { @MainActor [weak viewModel] in
                 guard let viewModel else { return }
@@ -872,7 +908,7 @@ public final class CallViewModel: CallViewModelProtocol {
         func room(_ room: LiveKit.Room, participant: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication) {
             observeDimensions(of: publication)
             let identityStr = participant.identity?.stringValue ?? "(none)"
-            let kind = publication.kind.rawValue
+            let kind = Self.describe(publication.kind)
             let sid = publication.sid
             Task { @MainActor [weak viewModel] in
                 guard let viewModel else { return }
@@ -928,7 +964,7 @@ public final class CallViewModel: CallViewModelProtocol {
 
         func room(_ room: LiveKit.Room, localParticipant: LocalParticipant, didPublishTrack publication: LocalTrackPublication) {
             observeDimensions(of: publication)
-            let kind = publication.kind.rawValue
+            let kind = Self.describe(publication.kind)
             let sid = publication.sid
             Task { @MainActor [weak viewModel] in
                 guard let viewModel else { return }
@@ -944,8 +980,19 @@ public final class CallViewModel: CallViewModelProtocol {
         }
 
         func room(_ room: LiveKit.Room, participant: RemoteParticipant, didPublishTrack publication: RemoteTrackPublication) {
+            let identityStr = participant.identity?.stringValue ?? "(none)"
+            let kind = Self.describe(publication.kind)
+            let sid = publication.sid
             Task { @MainActor [weak viewModel] in
-                viewModel?.syncParticipants(trackChanged: true)
+                guard let viewModel else { return }
+                logger.info("[RTC]Remote published \(kind, privacy: .public) track from identity=\(identityStr, privacy: .public) trackSid=\(sid, privacy: .public)")
+                viewModel.activityLog?.log(
+                    category: .call, severity: .debug, source: "CallViewModel",
+                    summary: "Remote published \(kind) track",
+                    detail: "Identity: \(identityStr), trackSid: \(sid)",
+                    roomId: viewModel.roomID
+                )
+                viewModel.syncParticipants(trackChanged: true)
             }
         }
 
@@ -959,7 +1006,7 @@ public final class CallViewModel: CallViewModelProtocol {
         func room(_ room: LiveKit.Room, trackPublication: TrackPublication, didUpdateE2EEState state: E2EEState) {
             let stateLabel = state.toString()
             let trackSid = trackPublication.sid
-            let trackKind = trackPublication.kind.rawValue
+            let trackKind = Self.describe(trackPublication.kind)
             Task { @MainActor [weak viewModel] in
                 guard let viewModel else { return }
                 switch state {
