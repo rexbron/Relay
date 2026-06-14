@@ -57,7 +57,7 @@ struct LiveKitCredentialService {
             roomId: roomID
         )
         do {
-            let sfuURL = try await discoverSFUURL()
+            let sfuURL = try await discoverSFUURL(roomID: roomID)
             activityLog?.log(
                 category: .call, severity: .debug, source: "LiveKitCredentialService",
                 summary: "SFU URL discovered",
@@ -89,13 +89,22 @@ struct LiveKitCredentialService {
 
     // MARK: - Step 1: Discover SFU URL
 
-    private func discoverSFUURL() async throws -> String {
+    private func discoverSFUURL(roomID: String) async throws -> String {
         // Prefer the MSC4143 transports endpoint
         if let url = try? await fetchRTCTransportsURL() {
             return url
         }
         // Fall back to .well-known
         if let url = try? await fetchWellKnownSFUURL() {
+            return url
+        }
+        // Last resort: read another active call participant's
+        // `foci_preferred[0]` from `m.call.member` state. Joining an
+        // in-progress call on a homeserver without `.well-known` configured
+        // would otherwise fail with `sfuURLNotFound` even though the SFU is
+        // visible in room state. Matches Element Call / matrix-js-sdk
+        // discovery behaviour.
+        if let url = try? await fetchSFUFromCallMembers(roomID: roomID) {
             return url
         }
         throw LiveKitCredentialError.sfuURLNotFound
@@ -137,6 +146,50 @@ struct LiveKitCredentialService {
             throw LiveKitCredentialError.sfuURLNotFound
         }
         return first.livekitServiceUrl
+    }
+
+    /// Walks `m.call.member` state events on the room and returns the first
+    /// `foci_preferred[].livekit_service_url` advertised by a peer with
+    /// non-empty content. Lets a user join an in-progress call when their
+    /// homeserver doesn't expose `.well-known org.matrix.msc4143.rtc_foci`
+    /// — the SFU the existing participants are already using is right there
+    /// in room state.
+    private func fetchSFUFromCallMembers(roomID: String) async throws -> String {
+        let base = homeserver.trimmingCharacters(in: .init(charactersIn: "/"))
+        let encodedRoomID = roomID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? roomID
+        guard let url = URL(string: "\(base)/_matrix/client/v3/rooms/\(encodedRoomID)/state") else {
+            throw LiveKitCredentialError.invalidURL
+        }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw LiveKitCredentialError.serverError
+        }
+
+        guard let events = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            throw LiveKitCredentialError.sfuURLNotFound
+        }
+
+        for event in events {
+            guard let type = event["type"] as? String,
+                  type == "org.matrix.msc3401.call.member",
+                  let content = event["content"] as? [String: Any],
+                  !content.isEmpty,
+                  let fociPreferred = content["foci_preferred"] as? [[String: Any]]
+            else { continue }
+            for focus in fociPreferred {
+                guard let focusType = focus["type"] as? String,
+                      focusType == "livekit",
+                      let serviceURL = focus["livekit_service_url"] as? String,
+                      !serviceURL.isEmpty
+                else { continue }
+                logger.info("[RTC]Recovered SFU URL from existing call member state")
+                return serviceURL
+            }
+        }
+        throw LiveKitCredentialError.sfuURLNotFound
     }
 
     // MARK: - Step 2: Request OpenID Token
