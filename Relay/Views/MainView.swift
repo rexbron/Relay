@@ -364,25 +364,39 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     }
 
     private func startCallButton(roomId: String) -> some View {
-        Button {
+        let hasOngoingCall = currentRoom?.hasRoomCall ?? false
+        let label = hasOngoingCall ? "Join Call" : "Start Call"
+        let confirmTitle = hasOngoingCall ? "Join Call" : "Start Call"
+        let confirmAction = hasOngoingCall ? "Join" : "Call"
+        return Button {
             showCallConfirmation = true
         } label: {
-            Label("Start Call", systemImage: "phone.fill")
+            // Force the title to render alongside the icon on
+            // ongoing-call state so the toolbar pill visibly changes
+            // — default macOS toolbar style would hide the title and
+            // leave the pill indistinguishable from the idle state.
+            if hasOngoingCall {
+                Label(label, systemImage: "phone.fill")
+                    .labelStyle(.titleAndIcon)
+                    .foregroundStyle(Color.accentColor)
+            } else {
+                Label(label, systemImage: "phone.fill")
+            }
         }
-        .help("Start Call")
+        .help(label)
         .disabled(callManager.hasActiveCall)
         .confirmationDialog(
-            "Start Call",
+            confirmTitle,
             isPresented: $showCallConfirmation
         ) {
-            Button("Call") {
+            Button(confirmAction) {
                 startCall(roomId: roomId)
             }
         } message: {
             if let name = currentRoom?.name {
-                Text("Start a call in \(name)?")
+                Text(hasOngoingCall ? "Join the call in \(name)?" : "Start a call in \(name)?")
             } else {
-                Text("Start a call in this room?")
+                Text(hasOngoingCall ? "Join the call in this room?" : "Start a call in this room?")
             }
         }
     }

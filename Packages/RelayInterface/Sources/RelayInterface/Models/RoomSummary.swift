@@ -152,6 +152,12 @@ public final class RoomSummary: Identifiable {
     /// space filter bar.
     public var parentSpaceIds: Set<String>
 
+    /// Whether this room currently has an ongoing MatrixRTC call.
+    ///
+    /// Mirrors the SDK's `RoomInfo.hasRoomCall`, which is true whenever any
+    /// non-expired `m.call.member` state event exists in the room.
+    public var hasRoomCall: Bool
+
     /// Creates a new ``RoomSummary`` instance.
     ///
     /// - Parameters:
@@ -192,7 +198,8 @@ public final class RoomSummary: Identifiable {
         inviterName: String? = nil,
         inviterAvatarURL: String? = nil,
         isSpace: Bool = false,
-        parentSpaceIds: Set<String> = []
+        parentSpaceIds: Set<String> = [],
+        hasRoomCall: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -213,5 +220,6 @@ public final class RoomSummary: Identifiable {
         self.inviterAvatarURL = inviterAvatarURL
         self.isSpace = isSpace
         self.parentSpaceIds = parentSpaceIds
+        self.hasRoomCall = hasRoomCall
     }
 }
