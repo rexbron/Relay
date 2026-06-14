@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import AppKit
+import CryptoKit
 import RelayInterface
 import UniformTypeIdentifiers
 
@@ -21,6 +22,27 @@ import UniformTypeIdentifiers
 /// Used by ``ImageMessageView``, ``VideoMessageView``, and ``AudioMessageView``
 /// to avoid duplicating the download-write-present logic.
 enum MediaFileHelper {
+
+    /// Returns a unique temporary file URL for the given media info.
+    ///
+    /// The filename is prefixed with a short hash derived from the MXC URL so
+    /// that different media items with the same filename (e.g. `image.png`)
+    /// never collide. The file is placed directly in the temporary directory
+    /// (no subdirectory) so the QuickLook XPC service can always access it.
+    /// The original file extension is preserved so QuickLook identifies the
+    /// content type correctly.
+    static func temporaryFileURL(for mediaInfo: TimelineMessage.MediaInfo) -> URL {
+        let hash = Insecure.MD5
+            .hash(data: Data(mediaInfo.mxcURL.utf8))
+            .prefix(8)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let ext = (mediaInfo.filename as NSString).pathExtension
+        let base = (mediaInfo.filename as NSString).deletingPathExtension
+        let uniqueName = ext.isEmpty ? "\(hash)-\(base)" : "\(hash)-\(base).\(ext)"
+        return FileManager.default.temporaryDirectory
+            .appending(path: uniqueName)
+    }
 
     /// Downloads media content and writes it to a temporary file.
     ///
@@ -40,7 +62,7 @@ enum MediaFileHelper {
             throw MediaFileError.downloadFailed
         }
 
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(mediaInfo.filename)
+        let url = temporaryFileURL(for: mediaInfo)
         try data.write(to: url)
         return url
     }

@@ -157,8 +157,7 @@ struct VideoMessageView: View {
                 mxcURL: mediaInfo.mxcURL,
                 mediaSourceJSON: mediaInfo.mediaSourceJSON
             ) {
-                let tempURL = FileManager.default.temporaryDirectory
-                    .appendingPathComponent(mediaInfo.filename)
+                let tempURL = MediaFileHelper.temporaryFileURL(for: mediaInfo)
                 if (try? data.write(to: tempURL)) != nil {
                     cachedVideoFileURL = tempURL
                     let asset = AVURLAsset(url: tempURL)
