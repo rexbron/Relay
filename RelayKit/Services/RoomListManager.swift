@@ -532,6 +532,7 @@ private final class RoomEntry: Identifiable {
         summary.pinnedEventIds = info.pinnedEventIds
         summary.isFavourite = info.isFavourite
         summary.successorRoomId = info.successorRoom?.roomId
+        summary.hasRoomCall = info.hasRoomCall
 
         // Map SDK membership to RelayInterface type
         switch info.membership {
