@@ -191,51 +191,27 @@ struct CallEncryptionService {
     }
 
     /// Returns a `userId -> [deviceId]` map of *other* users currently in the
-    /// call, parsed from `org.matrix.msc3401.call.member` state events.
+    /// call, sourced from the SDK's `RoomInfo.activeRoomCallParticipants`.
     ///
-    /// Element-X writes per-device call-member events with state key
-    /// `_<userId>_<deviceId>_m.call`. We walk the full room state, filter for
-    /// non-empty call-member content (empty content means the participant
-    /// has left), and extract `(userId, deviceId)` from the state key.
+    /// The SDK's call-membership view is user-level only — no device IDs —
+    /// so each user's device list is `["*"]` (the to-device wildcard) and
+    /// the SDK fans out the Olm-encrypted to-device payload to all of that
+    /// user's devices. Matches `matrix-js-sdk/src/matrixrtc/
+    /// ToDeviceKeyTransport.ts`. Some of those devices won't be in the
+    /// call, but the AES key we're broadcasting is per-call and the receiver
+    /// only consumes it if their LiveKit cryptor expects it — so the extra
+    /// Olm sessions are wasted, not unsafe.
+    ///
     /// Our own `userID` is excluded.
     func fetchCallTargets() async -> [String: [String]] {
-        let base = homeserver.trimmingCharacters(in: .init(charactersIn: "/"))
-        let encodedRoomID = roomID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? roomID
+        guard let sdkRoom else { return [:] }
+        guard let info = try? await sdkRoom.roomInfo() else { return [:] }
 
-        guard let url = URL(string: "\(base)/_matrix/client/v3/rooms/\(encodedRoomID)/state") else { return [:] }
-
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse, http.statusCode == 200,
-              let events = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            return [:]
+        var targets: [String: [String]] = [:]
+        for participantUserID in info.activeRoomCallParticipants where participantUserID != self.userID {
+            targets[participantUserID] = ["*"]
         }
-
-        var targets: [String: Set<String>] = [:]
-        for event in events {
-            guard let type = event["type"] as? String,
-                  type == Self.callMemberEventType,
-                  let stateKey = event["state_key"] as? String,
-                  let content = event["content"] as? [String: Any],
-                  !content.isEmpty else { continue }
-
-            // State key format: `_<userId>_<deviceId>_m.call` where userId is
-            // itself `@localpart:server.tld`. Strip the leading underscore
-            // and the trailing `_m.call` marker, then split on the *last*
-            // underscore to separate deviceId from userId.
-            guard stateKey.hasPrefix("_"), stateKey.hasSuffix("_m.call") else { continue }
-            let trimmed = String(stateKey.dropFirst().dropLast("_m.call".count))
-            guard let lastUnderscore = trimmed.lastIndex(of: "_") else { continue }
-            let userId = String(trimmed[..<lastUnderscore])
-            let deviceId = String(trimmed[trimmed.index(after: lastUnderscore)...])
-            guard userId != self.userID else { continue }
-
-            targets[userId, default: []].insert(deviceId)
-        }
-
-        return targets.mapValues { Array($0) }
+        return targets
     }
 
     // MARK: - Key Generation

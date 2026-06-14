@@ -100,14 +100,17 @@ State key: `_<userID>_<deviceID>_m.call`. Matches Element X's per-device convent
 
 ### `CallEncryptionService.fetchCallTargets`
 
-Lines 197–235.
+Sources call participants from `RoomInfo.activeRoomCallParticipants` and
+broadcasts our AES key to all of each user's devices via the to-device
+`"*"` wildcard. Matches Element Call's
+`matrix-js-sdk/src/matrixrtc/ToDeviceKeyTransport.ts` behaviour. The
+SDK accessor is user-level only — no device IDs — so a few Olm
+sessions to non-call devices get warmed up unnecessarily, but the key
+itself is per-call and only consumed by a LiveKit cryptor that
+expects it.
 
-| Concern | Detail |
-| --- | --- |
-| Uses raw REST `/rooms/{id}/state` rather than SDK room state | Stale-cache hazard, and `homeserver` field may differ from the delegated client URL for some accounts. |
-| State-key parser expects `_<userId>_<deviceId>_m.call` exactly | Filters out any peer using just `<userId>` or a different per-device key shape. |
-
-**Tracked as Item 5.**
+(History: previously walked raw `/rooms/{id}/state` REST to parse
+per-device state keys. Switched in Item 5.)
 
 ### `CallWidgetBridge.handleIncomingToDevice` (key routing)
 
