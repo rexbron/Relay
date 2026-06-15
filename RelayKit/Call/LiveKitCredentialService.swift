@@ -54,6 +54,7 @@ struct LiveKitCredentialService {
         activityLog?.log(
             category: .call, severity: .info, source: "LiveKitCredentialService",
             summary: "Fetching call credentials",
+            detail: "Room: \(roomID)",
             roomId: roomID
         )
         do {
@@ -61,6 +62,7 @@ struct LiveKitCredentialService {
             activityLog?.log(
                 category: .call, severity: .debug, source: "LiveKitCredentialService",
                 summary: "SFU URL discovered",
+                detail: "SFU: \(sfuURL)",
                 roomId: roomID
             )
             let openIDToken = try await requestOpenIDToken()
@@ -210,7 +212,11 @@ struct LiveKitCredentialService {
         guard let oldest = candidates.min(by: { $0.createdTs < $1.createdTs }) else {
             throw LiveKitCredentialError.sfuURLNotFound
         }
-        logger.info("[RTC]Joining existing call SFU per oldest_membership: \(oldest.sfuURL, privacy: .public)")
+        activityLog?.log(
+            category: .call, severity: .debug, source: "LiveKitCredentialService",
+            summary: "Joining existing call SFU (oldest_membership)",
+            detail: "SFU: \(oldest.sfuURL). Picked from \(candidates.count) active member(s)."
+        )
         return oldest.sfuURL
     }
 
@@ -264,9 +270,9 @@ struct LiveKitCredentialService {
         return try await fetchLiveKitTokenV2(sfuURL: sfuURL, roomID: roomID, openIDToken: openIDToken)
     }
 
-    /// Logs a `/sfu/get` failure to os_log and the activity log so that the
-    /// fall-forward to v2 is at least visible after the fact. Format-aware:
-    /// a `LiveKitCredentialError.tokenExchangeRejected` carries structured
+    /// Surfaces a `/sfu/get` failure so the fall-forward to v2 is visible
+    /// after the fact. Format-aware: a
+    /// `LiveKitCredentialError.tokenExchangeRejected` carries structured
     /// detail; anything else falls through to its `localizedDescription`.
     private func logLegacyFailure(_ error: Error, sfuURL: String) {
         let detail: String
@@ -277,7 +283,6 @@ struct LiveKitCredentialService {
         } else {
             detail = error.localizedDescription
         }
-        logger.warning("[RTC]/sfu/get failed, trying /get_token — \(detail, privacy: .public)")
         activityLog?.log(
             category: .call, severity: .warning, source: "LiveKitCredentialService",
             summary: "Legacy /sfu/get rejected; trying v2",
@@ -327,7 +332,8 @@ struct LiveKitCredentialService {
         let decoded = try JSONDecoder().decode(LiveKitTokenResponse.self, from: data)
         activityLog?.log(
             category: .call, severity: .debug, source: "LiveKitCredentialService",
-            summary: "LiveKit credentials obtained via /get_token",
+            summary: "Credentials obtained via v2 /get_token",
+            detail: "LiveKit URL: \(decoded.url)",
             roomId: roomID
         )
         return (decoded.url, decoded.jwt)
@@ -365,7 +371,8 @@ struct LiveKitCredentialService {
         let decoded = try JSONDecoder().decode(LiveKitTokenResponse.self, from: data)
         activityLog?.log(
             category: .call, severity: .debug, source: "LiveKitCredentialService",
-            summary: "LiveKit credentials obtained via legacy /sfu/get",
+            summary: "Credentials obtained via legacy /sfu/get",
+            detail: "LiveKit URL: \(decoded.url)",
             roomId: roomID
         )
         return (decoded.url, decoded.jwt)

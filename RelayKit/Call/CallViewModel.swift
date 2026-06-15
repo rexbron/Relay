@@ -69,6 +69,11 @@ public final class CallViewModel: CallViewModelProtocol {
     /// The LiveKit key provider used for per-participant AES-GCM frame encryption.
     @ObservationIgnored
     private var keyProvider: BaseKeyProvider?
+    /// `true` when the HKDF-SHA256 LKRTCFrameCryptorKeyProvider was
+    /// successfully swapped in. `false` means we fell back to the
+    /// default PBKDF2 provider and interop with Element Call will fail.
+    @ObservationIgnored
+    private var hkdfKeyProviderInstalled: Bool = false
     /// The local participant's current encryption key (raw 16 bytes).
     @ObservationIgnored
     private var localEncryptionKey: Data?
@@ -185,10 +190,12 @@ public final class CallViewModel: CallViewModelProtocol {
             // so the two sides produce different AES keys from matching
             // fingerprints, and every frame's auth tag fails on the peer.
             // See CallEncryptionService.makeHKDFKeyProvider for details.
-            self.keyProvider = CallEncryptionService.makeHKDFKeyProvider(
+            let result = CallEncryptionService.makeHKDFKeyProvider(
                 ratchetWindowSize: 10,
                 keyRingSize: 256
             )
+            self.keyProvider = result.provider
+            self.hkdfKeyProviderInstalled = result.hkdfInstalled
         }
         self.matrixRoom = encryptionContext.matrixRoom
     }
@@ -221,6 +228,24 @@ public final class CallViewModel: CallViewModelProtocol {
             let encryptionOpts: EncryptionOptions? = keyProvider.map {
                 EncryptionOptions(keyProvider: $0, encryptionType: .gcm)
             }
+            if isE2eeEnabled {
+                let kdfDetail = hkdfKeyProviderInstalled
+                    ? "HKDF-SHA256 key derivation active (Element Call interop path)."
+                    : "WARNING: HKDF swap failed — using default PBKDF2. Element Call peers will produce different AES keys from the same IKM and frames will fail to decrypt."
+                activityLog?.log(
+                    category: .call, severity: hkdfKeyProviderInstalled ? .debug : .warning, source: "CallViewModel",
+                    summary: "LiveKit E2EE enabled",
+                    detail: "GCM frame encryption active. \(kdfDetail)",
+                    roomId: roomID
+                )
+            } else {
+                activityLog?.log(
+                    category: .call, severity: .debug, source: "CallViewModel",
+                    summary: "LiveKit E2EE disabled",
+                    detail: "Unencrypted Matrix room — frames sent in the clear to the SFU.",
+                    roomId: roomID
+                )
+            }
             let roomOpts = RoomOptions(
                 defaultVideoPublishOptions: VideoPublishOptions(
                     preferredCodec: .vp8
@@ -242,7 +267,8 @@ public final class CallViewModel: CallViewModelProtocol {
             localParticipantID = room.localParticipant.identity?.stringValue
             activityLog?.log(
                 category: .call, severity: .debug, source: "CallViewModel",
-                summary: "Connected with LiveKit identity: \(localParticipantID ?? "unknown")",
+                summary: "Connected to LiveKit",
+                detail: "Local identity: \(localParticipantID ?? "unknown"). Peers reading our `m.call.member` event expect this to match `${sender}:${device_id}` for legacy session events.",
                 roomId: roomID
             )
 
@@ -261,13 +287,16 @@ public final class CallViewModel: CallViewModelProtocol {
                         keyProvider: self.keyProvider
                     )
                     bridge.activityLog = self.activityLog
+                    bridge.onCallMemberStateChanged = { [weak self] in
+                        self?.redistributeKeyOnMembershipChange()
+                    }
                     bridge.start()
                     self.widgetBridge = bridge
                 } catch {
                     activityLog?.log(
                         category: .call, severity: .error, source: "CallViewModel",
                         summary: "Failed to create CallWidgetBridge",
-                        detail: error.localizedDescription,
+                        detail: "E2EE key exchange will not work; remote tiles will stay black. Error: \(error.localizedDescription)",
                         roomId: roomID
                     )
                 }
@@ -398,22 +427,26 @@ public final class CallViewModel: CallViewModelProtocol {
                 if self.isE2eeEnabled, let bridge, let localKey {
                     let targets = await encryptionService.fetchCallTargets()
                     self.callMembers = targets
+                    let targetList = targets.keys.sorted().joined(separator: ", ")
+                    activityLog?.log(
+                        category: .call, severity: .debug, source: "CallViewModel",
+                        summary: "Distributing E2EE key to \(targets.count) user(s) before media publish",
+                        detail: "Recipients: \(targetList.isEmpty ? "(none)" : targetList).",
+                        roomId: roomID
+                    )
                     do {
                         try await bridge.sendEncryptionKey(
                             localKey,
                             keyIndex: keyIndex,
                             toMembers: targets
                         )
-                        activityLog?.log(
-                            category: .call, severity: .debug, source: "CallViewModel",
-                            summary: "Distributed E2EE key to \(targets.count) user(s)",
-                            roomId: roomID
-                        )
+                        // Success entry — including fp — already written by
+                        // CallWidgetBridge.sendEncryptionKey.
                     } catch {
                         activityLog?.log(
                             category: .call, severity: .warning, source: "CallViewModel",
-                            summary: "Widget-bridge key distribution failed",
-                            detail: error.localizedDescription,
+                            summary: "E2EE key distribution failed",
+                            detail: "Tried sending to \(targets.count) user(s): \(targetList). Peers will see `missing_key` and our media will appear as black tiles to them. Error: \(error.localizedDescription)",
                             roomId: roomID
                         )
                     }
@@ -520,19 +553,15 @@ public final class CallViewModel: CallViewModelProtocol {
                         sfuServiceURL: sfuServiceURL,
                         membershipId: membershipId
                     )
-                    Task { @MainActor in
-                        activityLog?.log(
-                            category: .call, severity: .debug, source: "CallViewModel",
-                            summary: "Heartbeat refreshed call.member state event",
-                            roomId: roomID
-                        )
-                    }
+                    // Success entry already written by
+                    // `CallEncryptionService.sendCallMemberEvent`.
                 } catch {
-                    Task { @MainActor in
+                    let description = error.localizedDescription
+                    await MainActor.run {
                         activityLog?.log(
                             category: .call, severity: .warning, source: "CallViewModel",
-                            summary: "Heartbeat refresh failed",
-                            detail: error.localizedDescription,
+                            summary: "Call membership heartbeat refresh failed",
+                            detail: "Other participants may treat us as having left when our event expires. Error: \(description)",
                             roomId: roomID
                         )
                     }
@@ -674,6 +703,62 @@ public final class CallViewModel: CallViewModelProtocol {
         )
     }
 
+    /// Re-distributes our local E2EE key in response to an inbound
+    /// `m.call.member` state change. The widget bridge fires the
+    /// callback whenever it sees one of these events; we use that as a
+    /// signal to refresh our recipient set, because the SDK's
+    /// `RoomInfo.activeRoomCallParticipants` accessor lags behind
+    /// LiveKit's `participantDidConnect` (which is what
+    /// ``redistributeKey(to:)`` keys off).
+    ///
+    /// Guarded against heartbeat refreshes: skips when the *user* set
+    /// of targets hasn't changed since the last send.
+    fileprivate func redistributeKeyOnMembershipChange() {
+        guard let key = localEncryptionKey,
+              let bridge = widgetBridge,
+              let encryptionService else {
+            return
+        }
+        let index = localKeyIndex
+
+        Task { [weak self] in
+            guard let self else { return }
+            let targets = await encryptionService.fetchCallTargets()
+            let targetUserIDs = Set(targets.keys)
+            let previousUserIDs = await MainActor.run { Set(self.callMembers.keys) }
+            // Heartbeat / unchanged-member case: no new peer, nothing to do.
+            if targetUserIDs.isEmpty || targetUserIDs == previousUserIDs { return }
+
+            let targetList = targets.keys.sorted().joined(separator: ", ")
+            do {
+                try await bridge.sendEncryptionKey(
+                    key,
+                    keyIndex: index,
+                    toMembers: targets
+                )
+                await MainActor.run {
+                    self.callMembers = targets
+                    self.activityLog?.log(
+                        category: .call, severity: .debug, source: "CallViewModel",
+                        summary: "Redistributed E2EE key on m.call.member change",
+                        detail: "Recipients: \(targetList). Index: \(index).",
+                        roomId: self.roomID
+                    )
+                }
+            } catch {
+                let description = error.localizedDescription
+                await MainActor.run {
+                    self.activityLog?.log(
+                        category: .call, severity: .warning, source: "CallViewModel",
+                        summary: "E2EE key redistribution failed (m.call.member trigger)",
+                        detail: "Targets: \(targetList). Error: \(description)",
+                        roomId: self.roomID
+                    )
+                }
+            }
+        }
+    }
+
     fileprivate func redistributeKey(to participantIdentity: String) {
         guard let key = localEncryptionKey,
               let bridge = widgetBridge,
@@ -800,7 +885,6 @@ public final class CallViewModel: CallViewModelProtocol {
                     if viewModel.state == .connected {
                         viewModel.state = .disconnected
                     }
-                    logger.info("[RTC]LiveKit connection state: disconnected")
                     viewModel.activityLog?.log(
                         category: .call, severity: .warning, source: "CallViewModel",
                         summary: "LiveKit connection disconnected",
@@ -826,7 +910,6 @@ public final class CallViewModel: CallViewModelProtocol {
             let description = error?.localizedDescription ?? "no error reported"
             Task { @MainActor [weak viewModel] in
                 guard let viewModel else { return }
-                logger.error("[RTC]LiveKit didFailToConnect: \(description, privacy: .public)")
                 viewModel.activityLog?.log(
                     category: .call, severity: .error, source: "CallViewModel",
                     summary: "LiveKit connection rejected",
@@ -845,7 +928,6 @@ public final class CallViewModel: CallViewModelProtocol {
             Task { @MainActor [weak viewModel] in
                 guard let viewModel else { return }
                 if let description {
-                    logger.error("[RTC]LiveKit didDisconnect: \(description, privacy: .public)")
                     viewModel.activityLog?.log(
                         category: .call, severity: .error, source: "CallViewModel",
                         summary: "LiveKit connection lost",
@@ -853,7 +935,6 @@ public final class CallViewModel: CallViewModelProtocol {
                         roomId: viewModel.roomID
                     )
                 } else {
-                    logger.info("[RTC]LiveKit didDisconnect (clean)")
                     viewModel.activityLog?.log(
                         category: .call, severity: .debug, source: "CallViewModel",
                         summary: "LiveKit disconnected cleanly",
@@ -892,10 +973,12 @@ public final class CallViewModel: CallViewModelProtocol {
             Task { @MainActor [weak viewModel] in
                 guard let viewModel else { return }
                 let identityStr = participant.identity?.stringValue ?? "(none)"
+                let sidStr = participant.sid?.stringValue ?? "(none)"
+                let displayName = participant.name ?? "(none)"
                 viewModel.activityLog?.log(
                     category: .call, severity: .debug, source: "CallViewModel",
                     summary: "Remote participant connected",
-                    detail: "Identity: \(identityStr)",
+                    detail: "Identity: \(identityStr), sid: \(sidStr), name: \(displayName)",
                     roomId: viewModel.roomID
                 )
                 viewModel.syncParticipants(trackChanged: true)
@@ -968,7 +1051,6 @@ public final class CallViewModel: CallViewModelProtocol {
             let sid = publication.sid
             Task { @MainActor [weak viewModel] in
                 guard let viewModel else { return }
-                logger.info("[RTC]Published local \(kind, privacy: .public) track sid=\(sid, privacy: .public)")
                 viewModel.activityLog?.log(
                     category: .call, severity: .debug, source: "CallViewModel",
                     summary: "Published local \(kind) track",
@@ -985,7 +1067,6 @@ public final class CallViewModel: CallViewModelProtocol {
             let sid = publication.sid
             Task { @MainActor [weak viewModel] in
                 guard let viewModel else { return }
-                logger.info("[RTC]Remote published \(kind, privacy: .public) track from identity=\(identityStr, privacy: .public) trackSid=\(sid, privacy: .public)")
                 viewModel.activityLog?.log(
                     category: .call, severity: .debug, source: "CallViewModel",
                     summary: "Remote published \(kind) track",
@@ -1013,7 +1094,6 @@ public final class CallViewModel: CallViewModelProtocol {
                 case .ok, .new, .key_ratcheted:
                     return
                 case .missing_key:
-                    logger.warning("[RTC]E2EE state=missing_key on \(trackKind, privacy: .public) sid=\(trackSid, privacy: .public)")
                     viewModel.activityLog?.log(
                         category: .call, severity: .warning, source: "CallViewModel",
                         summary: "E2EE missing key for \(trackKind) track",
@@ -1021,7 +1101,6 @@ public final class CallViewModel: CallViewModelProtocol {
                         roomId: viewModel.roomID
                     )
                 case .encryption_failed, .decryption_failed, .internal_error:
-                    logger.error("[RTC]E2EE state=\(stateLabel, privacy: .public) on \(trackKind, privacy: .public) sid=\(trackSid, privacy: .public)")
                     viewModel.activityLog?.log(
                         category: .call, severity: .error, source: "CallViewModel",
                         summary: "E2EE failure on \(trackKind) track",
