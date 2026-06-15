@@ -119,6 +119,10 @@ struct AudioMessageView: View {
         isLoadingMedia = true
         defer { isLoadingMedia = false }
 
+        // Resign first responder so QLPreviewPanel can find the
+        // SwiftUI .quickLookPreview handler in the responder chain.
+        NSApp.keyWindow?.makeFirstResponder(nil)
+
         do {
             quickLookURL = try await MediaFileHelper.downloadToTemporaryFile(
                 mediaInfo: mediaInfo, matrixService: matrixService

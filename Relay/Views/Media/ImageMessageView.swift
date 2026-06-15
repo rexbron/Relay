@@ -201,9 +201,15 @@ struct ImageMessageView: View {
         defer { isLoadingFullImage = false }
 
         do {
-            quickLookURL = try await MediaFileHelper.downloadToTemporaryFile(
+            let url = try await MediaFileHelper.downloadToTemporaryFile(
                 mediaInfo: mediaInfo, matrixService: matrixService
             )
+            // Resign first responder so QLPreviewPanel can find the
+            // SwiftUI .quickLookPreview handler in the responder chain.
+            // Without this, an active ComposeInputTextView keeps the
+            // panel from locating its data source.
+            NSApp.keyWindow?.makeFirstResponder(nil)
+            quickLookURL = url
         } catch {
             errorReporter.report(.mediaPreviewFailed(filename: mediaInfo.filename, reason: error.localizedDescription))
         }

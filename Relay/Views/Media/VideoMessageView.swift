@@ -195,6 +195,10 @@ struct VideoMessageView: View {
         isLoadingMedia = true
         defer { isLoadingMedia = false }
 
+        // Resign first responder so QLPreviewPanel can find the
+        // SwiftUI .quickLookPreview handler in the responder chain.
+        NSApp.keyWindow?.makeFirstResponder(nil)
+
         if let cached = cachedVideoFileURL, FileManager.default.fileExists(atPath: cached.path) {
             quickLookURL = cached
             return
