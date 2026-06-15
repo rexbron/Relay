@@ -1,0 +1,160 @@
+/* Apple Help Book styling for Relay. Apple Help Viewer renders
+   the page inside a fixed-width WebKit pane (~520pt); these styles
+   match the default macOS help look-and-feel. */
+
+:root {
+    color-scheme: light dark;
+    --fg: #1d1d1f;
+    --fg-muted: #6e6e73;
+    --bg: #ffffff;
+    --rule: #d2d2d7;
+    --accent: #0066cc;
+    --code-bg: #f5f5f7;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --fg: #f5f5f7;
+        --fg-muted: #a1a1a6;
+        --bg: #1d1d1f;
+        --rule: #3a3a3c;
+        --accent: #2997ff;
+        --code-bg: #2c2c2e;
+    }
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 13px -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, sans-serif;
+    line-height: 1.5;
+}
+
+body {
+    padding: 24px 32px 48px 32px;
+    max-width: 640px;
+}
+
+h1, h2, h3 {
+    color: var(--fg);
+    font-weight: 600;
+    line-height: 1.25;
+    margin-top: 1.6em;
+}
+
+h1 {
+    font-size: 22px;
+    margin-top: 0;
+}
+
+h2 {
+    font-size: 16px;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 4px;
+}
+
+h3 {
+    font-size: 14px;
+}
+
+p, ul, ol, table {
+    margin: 0.6em 0;
+}
+
+ul, ol {
+    padding-left: 24px;
+}
+
+li {
+    margin: 0.2em 0;
+}
+
+code, kbd {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.95em;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 4px;
+}
+
+pre {
+    background: var(--code-bg);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.95em;
+    line-height: 1.45;
+}
+
+pre code {
+    background: none;
+    padding: 0;
+}
+
+a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.8em 0;
+}
+
+th, td {
+    border: 1px solid var(--rule);
+    padding: 6px 10px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: var(--code-bg);
+    font-weight: 600;
+}
+
+.callout {
+    background: var(--code-bg);
+    border-left: 3px solid var(--accent);
+    padding: 8px 12px;
+    margin: 1em 0;
+    border-radius: 4px;
+}
+
+.muted {
+    color: var(--fg-muted);
+}
+
+nav.topic-list {
+    list-style: none;
+    padding: 0;
+}
+
+nav.topic-list li {
+    border-bottom: 1px solid var(--rule);
+    padding: 10px 0;
+}
+
+nav.topic-list li:last-child {
+    border-bottom: none;
+}
+
+nav.topic-list a {
+    display: block;
+    font-weight: 500;
+}
+
+nav.topic-list .subtitle {
+    color: var(--fg-muted);
+    font-weight: 400;
+    margin-top: 2px;
+}

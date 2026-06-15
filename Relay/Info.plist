@@ -4,6 +4,10 @@
 <dict>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>CFBundleHelpBookFolder</key>
+	<string>Relay.help</string>
+	<key>CFBundleHelpBookName</key>
+	<string>io.github.subpop.relay.help</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
