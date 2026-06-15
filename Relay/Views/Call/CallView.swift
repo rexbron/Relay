@@ -35,6 +35,11 @@ struct CallView: View {
     @State private var serverURL: String = ""
     @State private var accessToken: String = ""
     @State private var isJoining: Bool = false
+    /// Connecting-phase label that has stuck around long enough to be
+    /// worth showing the user. Updated from
+    /// ``CallViewModelProtocol/connectingPhase`` with a ~300 ms reveal
+    /// delay so brief phases on a fast network never flash on screen.
+    @State private var visibleConnectingPhase: String?
     // NOTE: The earlier implementation auto-hid the control bar after a
     // timeout using a `controlsVisible` @State + `.animation(.easeInOut(..),
     // value: controlsVisible)` on the control bar's opacity, plus a
@@ -379,12 +384,45 @@ struct CallView: View {
             Text("Joining call…")
                 .font(.headline)
                 .foregroundStyle(.white.opacity(0.7))
+            // Step indicator — only appears once a phase has been the
+            // current phase for ~300 ms. Hidden on fast networks.
+            if let visibleConnectingPhase {
+                Text(visibleConnectingPhase)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .transition(.opacity)
+            }
             Button("Cancel") {
                 Task { await viewModel.disconnect() }
             }
             .buttonStyle(.bordered)
             .foregroundStyle(.white)
             Spacer()
+        }
+        .animation(.easeInOut(duration: 0.2), value: visibleConnectingPhase)
+        .onChange(of: viewModel.connectingPhase, initial: true) { _, newPhase in
+            scheduleConnectingPhaseReveal(newPhase)
+        }
+    }
+
+    /// Reveals `phase` as the visible connecting-phase label after a
+    /// short delay (~300 ms). If `connectingPhase` changes again before
+    /// the delay fires, the previous phase is never shown — so brief
+    /// steps on a fast network don't flash on screen.
+    private func scheduleConnectingPhaseReveal(_ phase: String?) {
+        guard let phase else {
+            visibleConnectingPhase = nil
+            return
+        }
+        // Already showing it — nothing to do.
+        if visibleConnectingPhase == phase { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            // Confirm the view model is still on the same phase before
+            // committing it to the visible state.
+            if viewModel.connectingPhase == phase {
+                visibleConnectingPhase = phase
+            }
         }
     }
 
