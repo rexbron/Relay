@@ -83,6 +83,12 @@ public protocol CallViewModelProtocol: AnyObject, Observable {
     /// The identity of the local participant, set after connection.
     var localParticipantID: String? { get }
 
+    /// Human-readable description of the current connection step. Only
+    /// non-nil while `state == .connecting`. The UI is expected to hide
+    /// transient phases (steps shorter than ~300ms) so the indicator
+    /// only surfaces during genuinely slow joins on poor networks.
+    var connectingPhase: String? { get }
+
     /// A monotonically increasing counter that is bumped whenever video tracks change
     /// (publish, unpublish, camera toggle, etc.). SwiftUI views should read this value
     /// to ensure ``NSViewRepresentable`` bridges receive `updateNSView` calls when the

@@ -34,6 +34,11 @@ public final class CallViewModel: CallViewModelProtocol {
     public private(set) var isLocalCameraEnabled: Bool = false
     public private(set) var isLocalMicrophoneEnabled: Bool = false
     public private(set) var localParticipantID: String?
+    /// Human-readable label for the current step inside `.connecting`.
+    /// Updated as the connect path moves through credential exchange,
+    /// LiveKit attach, membership publish, key distribution, and media
+    /// start. Cleared when the call reaches `.connected` or `.failed`.
+    public private(set) var connectingPhase: String?
     /// Incremented whenever video tracks change, triggering SwiftUI to
     /// re-evaluate `videoContent(for:)` and pick up new or removed tracks.
     public private(set) var videoTrackRevision: UInt = 0
@@ -204,6 +209,7 @@ public final class CallViewModel: CallViewModelProtocol {
 
     public func connect(url: String, token: String, sfuServiceURL: String = "") async throws {
         state = .connecting
+        connectingPhase = "Joining call server…"
         activityLog?.log(
             category: .call, severity: .info, source: "CallViewModel",
             summary: "Connecting to call",
@@ -264,6 +270,7 @@ public final class CallViewModel: CallViewModelProtocol {
                 connectOptions: connectOpts,
                 roomOptions: roomOpts
             )
+            connectingPhase = "Preparing encryption…"
             localParticipantID = room.localParticipant.identity?.stringValue
             activityLog?.log(
                 category: .call, severity: .debug, source: "CallViewModel",
@@ -395,6 +402,7 @@ public final class CallViewModel: CallViewModelProtocol {
                 // `MatrixService.callPowerLevels`); we no longer try to
                 // mutate them at join time, matching Element Call.
                 let membershipId = bridge?.membershipId
+                connectingPhase = "Announcing presence to the room…"
                 do {
                     try await encryptionService.sendCallMemberEvent(
                         sfuServiceURL: sfuServiceURL,
@@ -425,6 +433,7 @@ public final class CallViewModel: CallViewModelProtocol {
                 // state events already present on the room. The SDK
                 // then Olm-encrypts the payload per-device.
                 if self.isE2eeEnabled, let bridge, let localKey {
+                    connectingPhase = "Distributing encryption keys…"
                     let targets = await encryptionService.fetchCallTargets()
                     self.callMembers = targets
                     let targetList = targets.keys.sorted().joined(separator: ", ")
@@ -455,12 +464,14 @@ public final class CallViewModel: CallViewModelProtocol {
 
             // Key is now installed locally and (best-effort) distributed to
             // any existing call participants. Safe to publish media.
+            connectingPhase = "Starting camera & microphone…"
             try await room.localParticipant.setMicrophone(enabled: true)
             try await room.localParticipant.setCamera(enabled: true)
 
             isLocalCameraEnabled = true
             isLocalMicrophoneEnabled = true
             state = .connected
+            connectingPhase = nil
             videoTrackRevision += 1
             activityLog?.log(
                 category: .call, severity: .info, source: "CallViewModel",
@@ -480,6 +491,7 @@ public final class CallViewModel: CallViewModelProtocol {
             }
 
             state = .failed(message)
+            connectingPhase = nil
             activityLog?.log(
                 category: .call, severity: .error, source: "CallViewModel",
                 summary: "Call connection failed",
@@ -499,6 +511,7 @@ public final class CallViewModel: CallViewModelProtocol {
         // Update UI state immediately — SwiftUI re-renders to the
         // disconnected state while the awaited cleanup runs.
         state = .disconnected
+        connectingPhase = nil
         participants = []
         isLocalCameraEnabled = false
         isLocalMicrophoneEnabled = false
