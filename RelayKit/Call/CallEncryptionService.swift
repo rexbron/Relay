@@ -16,10 +16,7 @@ import CryptoKit
 import Foundation
 import LiveKit
 import MatrixRustSDK
-import OSLog
 import RelayInterface
-
-private let logger = Logger(subsystem: "RelayKit", category: "CallEncryption")
 
 /// Helpers for MatrixRTC call-member state signaling, power-level bootstrap,
 /// and LiveKit key provider plumbing.
@@ -116,13 +113,9 @@ struct CallEncryptionService {
 
         let jsonData = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
         let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
-        activityLog?.log(
-            category: .call, severity: .debug, source: "CallEncryptionService",
-            summary: "Sending call member event",
-            detail: "stateKey: \(stateKey)\nbody: \(jsonString)",
-            roomId: roomID
-        )
-
+        // Body + state key contain device IDs and per-call membership UUIDs;
+        // not raw secrets but routing data — the post-send Activity Log
+        // entry below captures the same fields without the full body.
         _ = try await sdkRoom.sendStateEventRaw(
             eventType: Self.callMemberEventType,
             stateKey: stateKey,
@@ -131,6 +124,7 @@ struct CallEncryptionService {
         activityLog?.log(
             category: .call, severity: .debug, source: "CallEncryptionService",
             summary: "Sent call membership state event",
+            detail: "state_key: \(stateKey), membershipID: \(membership), foci_preferred SFU: \(serviceURL).",
             roomId: roomID
         )
     }
@@ -173,20 +167,52 @@ struct CallEncryptionService {
             return
         }
 
+        struct MemberSummary {
+            let stateKey: String
+            let isActive: Bool
+            let sfuURL: String?
+            let membershipID: String?
+        }
+        var summaries: [MemberSummary] = []
+
         for event in events {
             guard let type = event["type"] as? String,
                   type == Self.callMemberEventType else { continue }
             let stateKey = event["state_key"] as? String ?? "(none)"
-            if let content = event["content"],
-               let contentData = try? JSONSerialization.data(withJSONObject: content, options: [.sortedKeys]),
-               let contentStr = String(data: contentData, encoding: .utf8) {
-                activityLog?.log(
-                    category: .call, severity: .debug, source: "CallEncryptionService",
-                    summary: "Existing call member [key=\(stateKey)]",
-                    detail: contentStr,
-                    roomId: roomID
-                )
+            let contentDict = event["content"] as? [String: Any] ?? [:]
+            let isActive = !contentDict.isEmpty
+            let sfu = (contentDict["foci_preferred"] as? [[String: Any]])?
+                .first(where: { ($0["type"] as? String) == "livekit" })?["livekit_service_url"] as? String
+            let membership = contentDict["membershipID"] as? String
+            summaries.append(MemberSummary(
+                stateKey: stateKey,
+                isActive: isActive,
+                sfuURL: sfu,
+                membershipID: membership
+            ))
+        }
+
+        let active = summaries.filter { $0.isActive }
+        let tombstoned = summaries.count - active.count
+        if active.isEmpty {
+            activityLog?.log(
+                category: .call, severity: .debug, source: "CallEncryptionService",
+                summary: "No active call members in room",
+                detail: "Total `m.call.member` events scanned: \(summaries.count) (\(tombstoned) tombstoned).",
+                roomId: roomID
+            )
+        } else {
+            let lines = active.map { summary -> String in
+                let sfu = summary.sfuURL ?? "(no SFU advertised)"
+                let mid = summary.membershipID ?? "(no membershipID)"
+                return "  \(summary.stateKey) — SFU: \(sfu), membershipID: \(mid)"
             }
+            activityLog?.log(
+                category: .call, severity: .debug, source: "CallEncryptionService",
+                summary: "Active call members in room: \(active.count)",
+                detail: "Scanned \(summaries.count) `m.call.member` events (\(tombstoned) tombstoned).\n\(lines.joined(separator: "\n"))",
+                roomId: roomID
+            )
         }
     }
 
@@ -286,7 +312,7 @@ struct CallEncryptionService {
     static func makeHKDFKeyProvider(
         ratchetWindowSize: Int32 = 10,
         keyRingSize: Int32 = 256
-    ) -> BaseKeyProvider {
+    ) -> (provider: BaseKeyProvider, hkdfInstalled: Bool, fallbackReason: String?) {
         let options = KeyProviderOptions(
             sharedKey: false,
             ratchetWindowSize: ratchetWindowSize,
@@ -295,8 +321,7 @@ struct CallEncryptionService {
         let provider = BaseKeyProvider(options: options)
 
         guard let cls = NSClassFromString("LKRTCFrameCryptorKeyProvider") as? NSObject.Type else {
-            logger.error("[RTC]LKRTCFrameCryptorKeyProvider class not found at runtime; HKDF swap skipped — E2EE interop with Element Call will fail (PBKDF2 vs HKDF mismatch)")
-            return provider
+            return (provider, false, "LKRTCFrameCryptorKeyProvider class not found at runtime")
         }
 
         let initSel = NSSelectorFromString(
@@ -311,8 +336,7 @@ struct CallEncryptionService {
         )
         let allocated = allocImp(cls, allocSel)
         guard (allocated as AnyObject).responds(to: initSel) else {
-            logger.error("[RTC]LKRTCFrameCryptorKeyProvider does not expose keyDerivationAlgorithm: init; webrtc-xcframework may be < 144.x — falling back to PBKDF2 (Element Call interop will fail)")
-            return provider
+            return (provider, false, "LKRTCFrameCryptorKeyProvider does not expose keyDerivationAlgorithm: init (webrtc-xcframework may be < 144.x)")
         }
 
         typealias InitFunc = @convention(c) (
@@ -338,12 +362,10 @@ struct CallEncryptionService {
         )
 
         guard let ivar = class_getInstanceVariable(BaseKeyProvider.self, "rtcKeyProvider") else {
-            logger.error("[RTC]rtcKeyProvider ivar not found on BaseKeyProvider; HKDF swap skipped")
-            return provider
+            return (provider, false, "rtcKeyProvider ivar not found on BaseKeyProvider")
         }
         object_setIvar(provider, ivar, hkdfRtc)
-        logger.info("[RTC]Installed HKDF-backed LKRTCFrameCryptorKeyProvider (Element Call interop path)")
-        return provider
+        return (provider, true, nil)
     }
 
     /// Sets a raw key on a `BaseKeyProvider` for the given participant, bypassing
@@ -353,15 +375,22 @@ struct CallEncryptionService {
     /// `BaseKeyProvider` is decorated with `@objcMembers`, so its internal
     /// `rtcKeyProvider` (an `LKRTCFrameCryptorKeyProvider`) is accessible via KVC.
     /// The ObjC provider accepts `NSData` directly.
+    /// Sets a raw AES key on the provider for `participantId`. Returns
+    /// `nil` on success, or a short failure reason string the caller can
+    /// surface in the Activity Log. The fingerprint of the raw IKM is
+    /// computed by the caller (via the SHA-256 it already keeps for its
+    /// own bookkeeping) — diverging fingerprints across local/peer
+    /// records are the #1 root cause of "maximum ratchet attempts
+    /// exceeded" on an otherwise-correct key-exchange handshake.
+    @discardableResult
     static func setRawKey(
         _ keyData: Data,
         on keyProvider: BaseKeyProvider,
         participantId: String,
         index: Int32 = 0
-    ) {
+    ) -> String? {
         guard let rtcProvider = keyProvider.value(forKey: "rtcKeyProvider") as AnyObject? else {
-            logger.error("[RTC]Could not access rtcKeyProvider via KVC")
-            return
+            return "Could not access rtcKeyProvider via KVC"
         }
 
         // LKRTCFrameCryptorKeyProvider is an ObjC class with:
@@ -371,8 +400,7 @@ struct CallEncryptionService {
         typealias SetKeyFunc = @convention(c) (AnyObject, Selector, NSData, Int32, NSString) -> Void
         let selector = NSSelectorFromString("setKey:withIndex:forParticipant:")
         guard (rtcProvider as? NSObject)?.responds(to: selector) == true else {
-            logger.error("[RTC]rtcKeyProvider does not respond to setKey:withIndex:forParticipant:")
-            return
+            return "rtcKeyProvider does not respond to setKey:withIndex:forParticipant:"
         }
 
         let imp = unsafeBitCast(
@@ -380,28 +408,22 @@ struct CallEncryptionService {
             to: SetKeyFunc.self
         )
         imp(rtcProvider, selector, keyData as NSData, index, participantId as NSString)
-        // SHA-256 fingerprint of the raw IKM so we can confirm the exact same
-        // 16 bytes end up on the wire. Matches the fingerprint logged in
-        // CallWidgetBridge.sendEncryptionKey. Diverging fingerprints mean
-        // our local frame cryptor and the peer are using different keys —
-        // the #1 root cause of "maximum ratchet attempts exceeded" on an
-        // otherwise-correct key-exchange handshake.
-        let fp = SHA256.hash(data: keyData).prefix(8).map { String(format: "%02x", $0) }.joined()
-        logger.info("[RTC]Set raw encryption key for participant \(participantId, privacy: .public) at index \(index) bytes=\(keyData.count) sha256[0..8]=\(fp, privacy: .public)")
+        return nil
     }
 
     /// Convenience: sets a raw key using base64-encoded key data.
+    /// Returns `nil` on success or a short failure reason.
+    @discardableResult
     static func setRawKey(
         base64Key: String,
         on keyProvider: BaseKeyProvider,
         participantId: String,
         index: Int32 = 0
-    ) {
+    ) -> String? {
         guard let keyData = Data(base64Encoded: base64Key) else {
-            logger.error("[RTC]Invalid base64 key for participant \(participantId, privacy: .private)")
-            return
+            return "Invalid base64 key for participant \(participantId)"
         }
-        setRawKey(keyData, on: keyProvider, participantId: participantId, index: index)
+        return setRawKey(keyData, on: keyProvider, participantId: participantId, index: index)
     }
 }
 

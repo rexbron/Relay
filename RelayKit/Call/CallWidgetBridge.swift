@@ -82,6 +82,11 @@ public final class CallWidgetBridge: @unchecked Sendable {
     private let roomId: String
     /// Activity log for surfacing widget bridge events in the Activity Log window.
     weak var activityLog: ActivityLog?
+    /// Fires whenever an `org.matrix.msc3401.call.member` state event is
+    /// observed via the widget driver — used by ``CallViewModel`` to retry
+    /// E2EE key distribution after a peer's membership lands in room
+    /// state. Closing on `[weak self]` is the caller's responsibility.
+    var onCallMemberStateChanged: (() -> Void)?
     /// Per-call MatrixRTC membership UUID. Must match the `membershipID`
     /// field in the `org.matrix.msc3401.call.member` state event and the
     /// `member.id` field in outbound `io.element.call.encryption_keys`
@@ -189,15 +194,15 @@ public final class CallWidgetBridge: @unchecked Sendable {
         let capabilitiesProvider = self.capabilitiesProvider
         driverTask = Task { [weak self] in
             await driver.run(room: room, capabilitiesProvider: capabilitiesProvider)
-            self?.resolveReady()
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+            guard let self else { return }
+            await MainActor.run {
                 self.activityLog?.log(
                     category: .call, severity: .debug, source: "CallWidgetBridge",
-                    summary: "Widget driver exited",
+                    summary: "WidgetDriver.run returned (driver exited)",
                     roomId: self.roomId
                 )
             }
+            self.resolveReady()
         }
 
         recvTask = Task { [weak self] in
@@ -207,15 +212,25 @@ public final class CallWidgetBridge: @unchecked Sendable {
         // Kick the state machine off the "Unset" state. Fire-and-forget —
         // the response just echoes back through recvLoop.
         Task { [weak self] in
+            guard let self else { return }
+            let widgetId = self.widgetId
             do {
-                try await self?.sendRequest(action: "content_loaded", data: [:])
+                try await self.sendRequest(action: "content_loaded", data: [:])
+                await MainActor.run {
+                    self.activityLog?.log(
+                        category: .call, severity: .debug, source: "CallWidgetBridge",
+                        summary: "Widget content_loaded acknowledged by driver",
+                        detail: "widgetId: \(widgetId)",
+                        roomId: self.roomId
+                    )
+                }
             } catch {
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
+                let description = error.localizedDescription
+                await MainActor.run {
                     self.activityLog?.log(
                         category: .call, severity: .warning, source: "CallWidgetBridge",
                         summary: "content_loaded failed",
-                        detail: error.localizedDescription,
+                        detail: "widgetId: \(widgetId). Error: \(description)",
                         roomId: self.roomId
                     )
                 }
@@ -227,6 +242,7 @@ public final class CallWidgetBridge: @unchecked Sendable {
             self.activityLog?.log(
                 category: .call, severity: .debug, source: "CallWidgetBridge",
                 summary: "Widget bridge started",
+                detail: "widgetId: \(self.widgetId)",
                 roomId: self.roomId
             )
         }
@@ -368,7 +384,7 @@ public final class CallWidgetBridge: @unchecked Sendable {
             self.activityLog?.log(
                 category: .call, severity: .debug, source: "CallWidgetBridge",
                 summary: "Sent E2EE key to \(toMembers.count) user(s)",
-                detail: "Key index: \(keyIndex), fingerprint: \(fp)",
+                detail: "Key index: \(keyIndex), member.id: \(self.membershipId), sha256[0..8]: \(fp).",
                 roomId: self.roomId
             )
         }
@@ -395,7 +411,7 @@ public final class CallWidgetBridge: @unchecked Sendable {
             guard let self else { return }
             self.activityLog?.log(
                 category: .call, severity: .debug, source: "CallWidgetBridge",
-                summary: "Sent call member state event",
+                summary: "Sent call member state event via widget",
                 detail: "state_key: \(stateKey)",
                 roomId: self.roomId
             )
@@ -445,13 +461,19 @@ public final class CallWidgetBridge: @unchecked Sendable {
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.activityLog?.log(
-                        category: .call, severity: .debug, source: "CallWidgetBridge",
+                        category: .call, severity: .info, source: "CallWidgetBridge",
                         summary: "Widget driver recv loop exited",
+                        detail: "WidgetDriverHandle.recv returned nil.",
                         roomId: self.roomId
                     )
                 }
                 break
             }
+
+            // SECURITY: never surface raw widget JSON. Outbound and inbound
+            // `send_to_device` payloads of type `io.element.call.encryption_keys`
+            // carry raw AES keys in the `keys.key` field — those would land
+            // unredacted in any log sink. We track action / type only.
 
             guard let data = raw.data(using: .utf8),
                   let msg = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -460,6 +482,7 @@ public final class CallWidgetBridge: @unchecked Sendable {
                     self.activityLog?.log(
                         category: .call, severity: .warning, source: "CallWidgetBridge",
                         summary: "Non-JSON message from widget driver",
+                        detail: "Length: \(raw.count) bytes.",
                         roomId: self.roomId
                     )
                 }
@@ -491,6 +514,7 @@ public final class CallWidgetBridge: @unchecked Sendable {
                     self.activityLog?.log(
                         category: .call, severity: .warning, source: "CallWidgetBridge",
                         summary: "Widget message missing action",
+                        detail: "Message has neither `response` nor `action` keys; ignoring.",
                         roomId: self.roomId
                     )
                 }
@@ -534,15 +558,27 @@ public final class CallWidgetBridge: @unchecked Sendable {
         case "send_event", "update_state":
             // Incoming Matrix events observed by the widget driver.
             // MatrixRTC member state is handled by Element Call peers
-            // directly; we just need to ack these. Log and move on.
+            // directly; we just need to ack these. Log and — for
+            // `org.matrix.msc3401.call.member` — also poke the view model
+            // to retry E2EE key distribution, since the SDK's
+            // `RoomInfo.activeRoomCallParticipants` accessor lags behind
+            // LiveKit's `participantDidConnect` signal: a peer can join
+            // the SFU before their membership state event arrives, which
+            // leaves our `redistributeKey(to:)` path unable to find them.
             if let type = data["type"] as? String {
+                let logAction = action
+                let logType = type
+                let isMemberEvent = (type == CallEncryptionService.callMemberEventType)
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.activityLog?.log(
                         category: .call, severity: .debug, source: "CallWidgetBridge",
-                        summary: "Widget incoming \(action) type=\(type)",
+                        summary: "Widget incoming \(logAction) (\(logType))",
                         roomId: self.roomId
                     )
+                    if isMemberEvent {
+                        self.onCallMemberStateChanged?()
+                    }
                 }
             }
             responseBody = [:]
@@ -551,11 +587,13 @@ public final class CallWidgetBridge: @unchecked Sendable {
             responseBody = [:]
 
         default:
+            let logAction = action
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.activityLog?.log(
                     category: .call, severity: .debug, source: "CallWidgetBridge",
-                    summary: "Widget unhandled action: \(action)",
+                    summary: "Widget unhandled action: \(logAction)",
+                    detail: "Acking with empty response.",
                     roomId: self.roomId
                 )
             }
@@ -597,12 +635,13 @@ public final class CallWidgetBridge: @unchecked Sendable {
         }
         let ok = await handle.send(msg: json)
         if !ok {
-            let action = original["action"] as? String ?? "?"
+            let originalAction = original["action"] as? String ?? "?"
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.activityLog?.log(
                     category: .call, severity: .warning, source: "CallWidgetBridge",
-                    summary: "handle.send returned false replying to action=\(action)",
+                    summary: "Widget handle.send returned false",
+                    detail: "Replying to action=\(originalAction).",
                     roomId: self.roomId
                 )
             }
@@ -623,7 +662,8 @@ public final class CallWidgetBridge: @unchecked Sendable {
                 guard let self else { return }
                 self.activityLog?.log(
                     category: .call, severity: .warning, source: "CallWidgetBridge",
-                    summary: "No keyProvider; dropping inbound key",
+                    summary: "Dropping inbound encryption key — no keyProvider",
+                    detail: "Sender: \(sender). The local frame cryptor isn't wired up yet.",
                     roomId: self.roomId
                 )
             }
@@ -645,7 +685,8 @@ public final class CallWidgetBridge: @unchecked Sendable {
                 guard let self else { return }
                 self.activityLog?.log(
                     category: .call, severity: .warning, source: "CallWidgetBridge",
-                    summary: "encryption_keys to-device missing keys",
+                    summary: "encryption_keys to-device missing `keys` payload",
+                    detail: "Sender: \(sender).",
                     roomId: self.roomId
                 )
             }
