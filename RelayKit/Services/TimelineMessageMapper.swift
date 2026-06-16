@@ -286,6 +286,7 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
                     if case .ready(let name, _, _) = senderProfile { name } else { nil }
                 let replyBody: String
                 var replyFormattedBody: String?
+                var replyImageURL: String?
                 if case .msgLike(let replyMl) = content,
                    case .message(let replyMsg) = replyMl.kind {
                     replyBody = replyMsg.body
@@ -296,6 +297,8 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
                         replyFormattedBody = ec.formatted?.body
                     case .notice(let nc) where nc.formatted?.format == .html:
                         replyFormattedBody = nc.formatted?.body
+                    case .image(let ic):
+                        replyImageURL = ic.source.url()
                     default:
                         break
                     }
@@ -305,7 +308,8 @@ struct TimelineMessageMapper: Sendable { // swiftlint:disable:this type_body_len
                 replyDetail = .init(
                     eventID: replyEventId, senderID: sender,
                     senderDisplayName: replyDisplayName, body: replyBody,
-                    formattedBody: replyFormattedBody
+                    formattedBody: replyFormattedBody,
+                    imageURL: replyImageURL
                 )
             case .pending:
                 replyDetail = .init(eventID: replyEventId, senderID: "", senderDisplayName: nil, body: "")

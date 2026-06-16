@@ -119,6 +119,11 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         /// The HTML-formatted body of the original message, if available.
         public let formattedBody: String?
 
+        /// The `mxc://` URL of the image, when the replied-to message is an
+        /// image. Used by ``ReplyPreviewBubble`` to show a small thumbnail
+        /// instead of the filename text.
+        public let imageURL: String?
+
         /// Creates a new ``ReplyDetail`` value.
         ///
         /// - Parameters:
@@ -127,18 +132,21 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         ///   - senderDisplayName: The display name of the original sender.
         ///   - body: The body text of the original message.
         ///   - formattedBody: The HTML-formatted body, if available.
+        ///   - imageURL: The `mxc://` URL when the original is an image message.
         nonisolated public init(
             eventID: String,
             senderID: String,
             senderDisplayName: String? = nil,
             body: String,
-            formattedBody: String? = nil
+            formattedBody: String? = nil,
+            imageURL: String? = nil
         ) {
             self.eventID = eventID
             self.senderID = senderID
             self.senderDisplayName = senderDisplayName
             self.body = body
             self.formattedBody = formattedBody
+            self.imageURL = imageURL
         }
 
         /// The best available display name for the original sender, falling back to the user ID.
