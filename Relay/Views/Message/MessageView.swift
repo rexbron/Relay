@@ -32,6 +32,20 @@ struct MessageView: View {
     /// Whether to display the sender's name above the bubble (for the first message in a group).
     var showSenderName: Bool = false
 
+    /// Whether the replied-to message is immediately above this one in the
+    /// timeline, allowing the reply preview bubble to be omitted.
+    var replyIsAdjacentAbove: Bool = false
+
+    /// Whether the reply-to message is adjacent above *and* on the same side
+    /// (both incoming or both outgoing). Only in this case can we skip the
+    /// preview bubble, since the user can see the original directly above.
+    private var replyIsAdjacentSameSide: Bool {
+        guard replyIsAdjacentAbove, let reply = message.replyDetail else { return false }
+        let replyIsOutgoing = actions.currentUserID != nil
+            && reply.senderID == actions.currentUserID
+        return message.isOutgoing == replyIsOutgoing
+    }
+
     @AppStorage("appearance.coloredBubbles") private var coloredBubbles = false
     @Environment(\.timelineActions) private var actions
     @Environment(\.swipeOffset) private var swipeOffset
@@ -72,6 +86,26 @@ struct MessageView: View {
                 }
 
                 VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 1) {
+                    if message.replyDetail != nil {
+                        if !replyIsAdjacentSameSide, let reply = message.replyDetail {
+                            ReplyPreviewBubble(reply: reply)
+                        }
+
+                        HStack(spacing: 0) {
+                            if message.isOutgoing {
+                                Spacer(minLength: 0)
+                            }
+                            Rectangle()
+                                .fill(Color(.separatorColor))
+                                .frame(width: 2, height: replyIsAdjacentSameSide ? 12 : 24)
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 2)
+                            if !message.isOutgoing {
+                                Spacer(minLength: 0)
+                            }
+                        }
+                    }
+
                     if showSenderName && !message.isOutgoing {
                         Text(message.displayName)
                             .font(.caption)
@@ -81,69 +115,53 @@ struct MessageView: View {
                             .padding(.bottom, 2)
                     }
 
-                    VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: -8) {
-                        if let reply = message.replyDetail {
-                            let replyIsOutgoing = actions.currentUserID != nil
-                                && reply.senderID == actions.currentUserID
-                            ReplyPreviewBubble(
-                                reply: reply,
-                                outgoing: replyIsOutgoing,
-                                coloredBubbles: coloredBubbles
-                            )
-                            .padding(message.isOutgoing ? .trailing : .leading, 20)
-                        }
-
-                        MessageBubbleContent(
-                            message: message,
-                            onPresentReactionPicker: {
-                                presentReactionPickerForBubble()
-                            }
-                        )
-                        
-                        .overlay(alignment: .leading) {
-                            // Reply arrow revealed during swipe. Counter-offset
-                            // keeps the arrow stationary at the bubble's leading
-                            // edge while the bubble slides right.
-                            if swipeOffset > 0 {
-                                swipeActionBar
-                                    .opacity(min(swipeOffset / 60, 1.0))
-                                    .offset(x: -swipeOffset)
-                            }
-                        }
-                        .overlay(alignment: message.isOutgoing ? .topLeading : .topTrailing) {
-                            if !message.reactions.isEmpty {
-                                MessageReactionBadges(
-                                    reactions: message.reactions,
-                                    isOutgoing: message.isOutgoing,
-                                    coloredBubbles: coloredBubbles,
-                                    onToggle: { key in actions.toggleReaction(message.eventID, key) }
-                                )
-                                .offset(
-                                    x: -4,
-                                    y: -11
-                                )
-                            }
-                        }
-                        .padding(.top, hasTopOverlay ? 11 : 0)
-                        .padding(message.replyDetail != nil ? 2 : 0)
-                        .background {
-                            if message.replyDetail != nil {
-                                BubbleStyle.replyWrapperShape
-                                    .fill(Color(nsColor: .windowBackgroundColor))
-                            }
-                        }
-                        .onGeometryChange(for: CGRect.self) { proxy in
-                            proxy.frame(in: .named("timeline"))
-                        } action: { newFrame in
-                            bubbleFrame = newFrame
-                        }
-                        .onLongPressGesture {
-                            presentReactionPickerForBubble()
-                        }
-                    }
+                    messageBubble
                 }
                 .frame(maxWidth: 500, alignment: message.isOutgoing ? .trailing : .leading)
             }
+        }
+    }
+
+    // MARK: - Message Bubble
+
+    /// The main message bubble with reaction badges, swipe action, and
+    /// geometry tracking.
+    private var messageBubble: some View {
+        MessageBubbleContent(
+            message: message,
+            onPresentReactionPicker: {
+                presentReactionPickerForBubble()
+            }
+        )
+        .overlay(alignment: .leading) {
+            if swipeOffset > 0 {
+                swipeActionBar
+                    .opacity(min(swipeOffset / 60, 1.0))
+                    .offset(x: -swipeOffset)
+            }
+        }
+        .overlay(alignment: message.isOutgoing ? .topLeading : .topTrailing) {
+            if !message.reactions.isEmpty {
+                MessageReactionBadges(
+                    reactions: message.reactions,
+                    isOutgoing: message.isOutgoing,
+                    coloredBubbles: coloredBubbles,
+                    onToggle: { key in actions.toggleReaction(message.eventID, key) }
+                )
+                .offset(
+                    x: -4,
+                    y: -11
+                )
+            }
+        }
+        .padding(.top, hasTopOverlay ? 11 : 0)
+        .onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .named("timeline"))
+        } action: { newFrame in
+            bubbleFrame = newFrame
+        }
+        .onLongPressGesture {
+            presentReactionPickerForBubble()
         }
     }
 

@@ -15,42 +15,31 @@
 import RelayInterface
 import SwiftUI
 
-/// A muted message bubble rendered behind (and above) the main message content,
-/// partially covered by it. Shows a two-line preview of the replied-to message
-/// with styling that matches the original sender's bubble color.
+/// A clear-background outlined bubble showing a truncated preview of the
+/// replied-to message, styled after iMessage's inline reply context.
+///
+/// The bubble has a transparent fill with a thin border and muted text.
+/// Tapping it scrolls the timeline to the original message.
 struct ReplyPreviewBubble: View {
     /// The reply detail containing the original message's content and sender.
     let reply: TimelineMessage.ReplyDetail
 
-    /// Whether the replied-to message was sent by the current user.
-    let outgoing: Bool
-
-    /// Whether the colored-bubbles appearance preference is enabled.
-    let coloredBubbles: Bool
-
     @Environment(\.timelineActions) private var actions
 
     var body: some View {
-        let style = BubbleStyle.reply(
-            senderID: reply.senderID,
-            outgoing: outgoing,
-            coloredBubbles: coloredBubbles
-        )
-
         Button {
             actions.tapReply(reply.eventID)
         } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(Self.replyPreviewText(reply))
-                    .font(.body)
-                    .foregroundStyle(style.usesWhiteText ? .white : .primary)
-                    .lineLimit(2)
-                    .padding(.horizontal, BubbleStyle.horizontalPadding)
-                    .padding(.vertical, BubbleStyle.verticalPadding)
-                    .background(style.backgroundColor)
-                    .clipShape(BubbleStyle.shape)
-            }
-            .opacity(0.6)
+            Text(Self.replyPreviewText(reply))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .padding(.horizontal, BubbleStyle.horizontalPadding)
+                .padding(.vertical, BubbleStyle.verticalPadding)
+                .background {
+                    BubbleStyle.shape
+                        .strokeBorder(Color(.separatorColor), lineWidth: 1)
+                }
         }
         .buttonStyle(.plain)
     }

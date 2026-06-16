@@ -163,7 +163,8 @@ struct TimelineRowView: View, Equatable {
             MessageView(
                 message: message,
                 isLastInGroup: info.isLastInGroup,
-                showSenderName: info.showSenderName
+                showSenderName: info.showSenderName,
+                replyIsAdjacentAbove: info.replyIsAdjacentAbove
             )
             .id(message.id)
             .help(message.formattedTime)
