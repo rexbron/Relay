@@ -337,8 +337,10 @@ public final class CallViewModel: CallViewModelProtocol {
                 // is normally silent; if it fires we've landed on the
                 // v2 hash identity and peer-side decryption will fail
                 // until we also publish MSC4143 sticky events.
-                let matrixSidIdentity = "\(encryptionService.userID):\(encryptionService.deviceID)"
-                if let livekitIdentity = self.localParticipantID, livekitIdentity != matrixSidIdentity {
+                let matrixSidIdentity: String? = encryptionService.map { "\($0.userID):\($0.deviceID)" }
+                if let livekitIdentity = self.localParticipantID,
+                   let matrixSidIdentity,
+                   livekitIdentity != matrixSidIdentity {
                     activityLog?.log(
                         category: .call, severity: .warning, source: "CallViewModel",
                         summary: "LiveKit identity mismatch — frame encryption may misroute",
