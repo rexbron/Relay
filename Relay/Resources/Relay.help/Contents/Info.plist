@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleIdentifier</key>
-    <string>io.github.subpop.relay.help</string>
+    <string>app.subpop.Relay.help</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
