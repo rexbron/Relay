@@ -27,6 +27,11 @@ extension MessageTextView {
     /// The `.link` attribute is preserved on the attachment character so that
     /// click-to-navigate still works via ``MessageTextContent``.
     ///
+    /// When `highlightedUserId` is set, the mention pill matching that user is
+    /// rendered with the `.highlightedMention` style (red pill). When
+    /// `highlightKeywords` is non-empty, matching text is replaced with
+    /// non-clickable red keyword pills.
+    ///
     /// - Parameter pillStyle: The visual style for mention pills. Use
     ///   `.messageDefault` for incoming grey bubbles, `.messageWhiteText` for
     ///   outgoing blue or colored bubbles.
@@ -34,7 +39,9 @@ extension MessageTextView {
         _ source: NSAttributedString,
         foreground: NSColor,
         linkColor: NSColor,
-        pillStyle: MentionPillStyle = .messageDefault
+        pillStyle: MentionPillStyle = .messageDefault,
+        highlightedUserId: String? = nil,
+        highlightKeywords: [String] = []
     ) -> NSAttributedString {
         let result = NSMutableAttributedString(attributedString: source)
         let fullRange = NSRange(location: 0, length: result.length)
@@ -90,11 +97,14 @@ extension MessageTextView {
         // Replace mention link ranges with PillTextAttachment images.
         // Process in reverse order so earlier ranges stay valid.
         for mention in mentionRanges.reversed() {
+            let isHighlightedUser = highlightedUserId != nil
+                && mention.uri.isUser
+                && mention.uri.identifier == highlightedUserId
             let pill = PillTextAttachment(
                 userId: mention.uri.identifier,
                 displayName: mention.displayName,
                 font: baseFont,
-                style: pillStyle
+                style: isHighlightedUser ? .highlightedMention : pillStyle
             )
             let attachmentString = NSMutableAttributedString(attachment: pill)
             // Preserve the .link attribute so click-to-navigate still works.
@@ -104,6 +114,32 @@ extension MessageTextView {
                 .mentionDisplayName: mention.displayName,
             ], range: NSRange(location: 0, length: attachmentString.length))
             result.replaceCharacters(in: mention.range, with: attachmentString)
+        }
+
+        // Replace keyword matches with highlighted pill attachments.
+        // Collected first, then replaced in reverse order so ranges stay valid.
+        if !highlightKeywords.isEmpty {
+            var keywordRanges: [(range: NSRange, text: String)] = []
+            let plainText = result.string
+            for keyword in highlightKeywords {
+                var searchRange = plainText.startIndex..<plainText.endIndex
+                while let matchRange = plainText.range(
+                    of: keyword, options: [.caseInsensitive, .diacriticInsensitive],
+                    range: searchRange
+                ) {
+                    let nsRange = NSRange(matchRange, in: plainText)
+                    let matchedText = String(plainText[matchRange])
+                    keywordRanges.append((nsRange, matchedText))
+                    searchRange = matchRange.upperBound..<plainText.endIndex
+                }
+            }
+            for match in keywordRanges.sorted(by: { $0.range.location > $1.range.location }) {
+                let pill = PillTextAttachment(
+                    keyword: match.text, font: baseFont, style: .highlightedMention
+                )
+                let attachmentString = NSMutableAttributedString(attachment: pill)
+                result.replaceCharacters(in: match.range, with: attachmentString)
+            }
         }
 
         return result

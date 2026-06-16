@@ -82,8 +82,9 @@ struct TimelineRowView: View, Equatable {
     /// `false` for new messages and is set to `true` on appear.
     @State private var didAppear = false
 
-    /// Opens the reaction popover on ``MessageView`` when chosen from the row context menu.
-    @State private var triggerReactionPicker = false
+    /// The bubble frame captured from ``MessageView``, used when presenting
+    /// the reaction picker from the context menu.
+    @State private var lastBubbleFrame: CGRect = .zero
 
     nonisolated static func == (lhs: TimelineRowView, rhs: TimelineRowView) -> Bool {
         lhs.row.message == rhs.row.message
@@ -162,12 +163,16 @@ struct TimelineRowView: View, Equatable {
             MessageView(
                 message: message,
                 isLastInGroup: info.isLastInGroup,
-                showSenderName: info.showSenderName,
-                triggerReactionPickerFromParent: $triggerReactionPicker
+                showSenderName: info.showSenderName
             )
             .id(message.id)
             .help(message.formattedTime)
             .onAppear { onAppear(row) }
+            .onGeometryChange(for: CGRect.self) { proxy in
+                proxy.frame(in: .named("timeline"))
+            } action: { newFrame in
+                lastBubbleFrame = newFrame
+            }
             .contextMenu {
                 contextMenu
             }
@@ -210,7 +215,7 @@ struct TimelineRowView: View, Equatable {
             }
         case .addReaction:
             Button {
-                triggerReactionPicker = true
+                actions.presentReactionPicker(message.eventID, lastBubbleFrame, message.isOutgoing)
             } label: {
                 Label("Add Reaction\u{2026}", systemImage: "face.smiling")
             }

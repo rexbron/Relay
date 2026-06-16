@@ -91,6 +91,29 @@ nonisolated final class PillTextAttachment: NSTextAttachment, @unchecked Sendabl
         self.bounds = CGRect(origin: .zero, size: pillSize)
     }
 
+    /// Creates a pill attachment for a keyword highlight (no `@` prefix, no link).
+    init(keyword: String, font: NSFont, style: MentionPillStyle) {
+        self.userId = ""
+        self.displayName = keyword
+        self.pillFontSize = font.pointSize
+        super.init(data: nil, ofType: nil)
+        self.attachmentCell = nil
+
+        let fontSize = font.pointSize
+        let pillSize = MainActor.assumeIsolated {
+            MentionPillView.measureSize(
+                displayName: keyword,
+                font: NSFont.systemFont(ofSize: fontSize),
+                showAtPrefix: false
+            )
+        }
+        self.image = Self.renderPillImage(
+            userId: "", displayName: keyword, size: pillSize, style: style,
+            showAtPrefix: false
+        )
+        self.bounds = CGRect(origin: .zero, size: pillSize)
+    }
+
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("PillTextAttachment does not support NSCoding")
@@ -105,7 +128,8 @@ nonisolated final class PillTextAttachment: NSTextAttachment, @unchecked Sendabl
     /// The resulting `NSImage` has its logical size set to the 1x point size so
     /// TextKit positions it correctly.
     private static func renderPillImage(
-        userId: String, displayName: String, size: CGSize, style: MentionPillStyle
+        userId: String, displayName: String, size: CGSize, style: MentionPillStyle,
+        showAtPrefix: Bool = true
     ) -> NSImage {
         MainActor.assumeIsolated {
             let tintColor = StableNameColor.color(for: userId)
@@ -113,7 +137,8 @@ nonisolated final class PillTextAttachment: NSTextAttachment, @unchecked Sendabl
                 NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
                     ? .dark : .light
             let pillView = MentionPillView(
-                displayName: displayName, tintColor: tintColor, style: style
+                displayName: displayName, tintColor: tintColor, style: style,
+                showAtPrefix: showAtPrefix
             )
             .environment(\.colorScheme, colorScheme)
             let renderer = ImageRenderer(content: pillView)

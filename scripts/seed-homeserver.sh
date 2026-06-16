@@ -591,6 +591,32 @@ send_thread_reply() {
     LAST_EVENT_ID="$event_id"
 }
 
+# Send a reaction (emoji annotation) to the most recently sent message.
+# Uses the event ID stored in LAST_EVENT_ID by send_message or
+# send_thread_reply. If a specific event ID is given, reacts to that instead.
+# Usage: send_reaction <room_key> <sender_username> <emoji> [event_id]
+send_reaction() {
+    local room_key="$1"
+    local sender="$2"
+    local emoji="$3"
+    local target_event="${4:-$LAST_EVENT_ID}"
+    local room_id="${ROOMS[$room_key]:-${SPACES[$room_key]:-}}"
+    local token="${TOKENS[$sender]}"
+    next_txn
+    local txn="$NEXT_TXN_RESULT"
+
+    curl -s -X PUT "${SERVER_URL}/_matrix/client/v3/rooms/${room_id}/send/m.reaction/${txn}" \
+        -H "Authorization: Bearer ${token}" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"m.relates_to\": {
+                \"rel_type\": \"m.annotation\",
+                \"event_id\": \"${target_event}\",
+                \"key\": \"${emoji}\"
+            }
+        }" >/dev/null
+}
+
 # Wait for the homeserver to become available.
 # Usage: wait_for_server
 wait_for_server() {
@@ -904,6 +930,13 @@ send_message "announcements" "casey" "Q3 goals are now posted in the Product spa
 send_message "announcements" "morgan" "Reminder: Engineering office hours are every Thursday at 2pm PT. Bring your cross-team questions, architecture proposals, or anything you want to discuss. No agenda required."
 
 send_message "announcements" "casey" "We just crossed 10,000 active users on the platform. Huge milestone for the team. Thank you all for the incredible work this quarter."
+EVT_10K="$LAST_EVENT_ID"
+send_reaction "announcements" "morgan" "🎉" "$EVT_10K"
+send_reaction "announcements" "priya"  "🎉" "$EVT_10K"
+send_reaction "announcements" "alex"   "🚀" "$EVT_10K"
+send_reaction "announcements" "jordan" "❤️" "$EVT_10K"
+send_reaction "announcements" "sam"    "🎉" "$EVT_10K"
+send_reaction "announcements" "taylor" "🔥" "$EVT_10K"
 
 send_message "announcements" "morgan" "Heads up: we're upgrading our CI infrastructure this weekend (Saturday 10pm - Sunday 6am PT). Expect intermittent build failures during that window. Sam will post updates in #devops."
 
@@ -918,6 +951,9 @@ send_message "announcements" "casey" "We're hosting a design sprint next Wednesd
 send_message "announcements" "morgan" "Security reminder: please enable 2FA on your GitHub accounts if you haven't already. Sam is auditing access this week and accounts without 2FA will be flagged."
 
 send_message "announcements" "casey" "NPS scores are in from the latest survey: we jumped from 42 to 58 this quarter. Biggest driver was performance improvements. Shoutout to the entire engineering team."
+send_reaction "announcements" "sam"    "💪"
+send_reaction "announcements" "alex"   "🙌"
+send_reaction "announcements" "priya"  "🙌"
 
 send_message "announcements" "morgan" "The office will be closed Monday for the holiday. Enjoy the long weekend, everyone. If anything urgent comes up, the on-call rotation is in PagerDuty."
 
@@ -934,12 +970,18 @@ send_message "general" "jordan"  "I just published the updated style guide to th
 send_message "general" "riley"   "Nice, I'll check it out. We've been needing clearer spacing guidelines for the web dashboard."
 send_message "general" "casey"   "Quick reminder that sprint retro is at 3pm today. I'll send the Zoom link in a few."
 send_message "general" "sam"     "Build times are down 35% after the CI cache changes I shipped yesterday. If anyone notices anything weird with their builds, let me know."
+EVT_BUILD_TIMES="$LAST_EVENT_ID"
+send_reaction "general" "alex"   "🔥" "$EVT_BUILD_TIMES"
+send_reaction "general" "priya"  "🎉" "$EVT_BUILD_TIMES"
+send_reaction "general" "morgan" "👍" "$EVT_BUILD_TIMES"
 send_message "general" "taylor"  "That's a huge improvement, Sam. I noticed the test suite runs are faster too."
 send_message "general" "morgan"  "Great work, Sam. That's been a pain point for a while."
 send_message "general" "priya"   "Has anyone read that new blog post about structured concurrency patterns? Really well written: https://swiftbysundell.com/articles/structured-concurrency"
 send_message "general" "alex"    "Yeah, I read it last night. The section on task groups is especially relevant to what we're doing in the networking layer."
 send_message "general" "jordan"  "Not my area but I bookmarked it anyway. Always good to understand what the engineers are working with."
 send_message "general" "casey"   "Just got out of the customer call. They're really happy with the latest release. Specifically called out how fast the search feels now."
+send_reaction "general" "priya"  "🙌"
+send_reaction "general" "alex"   "❤️"
 send_message "general" "priya"   "That's great to hear. The Elasticsearch tuning we did last sprint is paying off."
 send_message "general" "riley"   "Speaking of which, are we still planning to add search filters to the web UI this sprint?"
 send_message "general" "casey"   "Yes, it's in the sprint backlog. Let's sync on the specifics tomorrow."
@@ -947,6 +989,9 @@ send_message "general" "sam"     "Anyone up for a coffee chat today? I found a n
 send_message "general" "taylor"  "I'm in! Right after standup?"
 send_message "general" "jordan"  "Count me in too."
 send_message "general" "morgan"  "Congrats to the team on shipping the notifications feature. Users are already loving it based on early feedback."
+send_reaction "general" "casey"  "🎉"
+send_reaction "general" "riley"  "🎉"
+send_reaction "general" "taylor" "👍"
 send_message "general" "taylor"  "Has anyone figured out how to get Xcode 26 to stop re-indexing every time you switch branches? It's killing me."
 send_message "general" "alex"    "I've had the same issue. Deleting the DerivedData folder for the project usually fixes it, but it's annoying."
 send_message "general" "sam"     "I added a script to our tooling repo that clears derived data automatically on branch switch. Check out scripts/clean-branch.sh."
@@ -977,11 +1022,19 @@ send_thread_reply "random" "morgan" "One of the best shows I've seen in years. Y
 send_thread_reply "random" "alex"   "The set design alone is worth watching it for. Every frame is so intentional." "$THREAD_RANDOM_SHOW" "$LAST_EVENT_ID"
 send_thread_reply "random" "priya"  "I finished it last weekend. The finale is incredible." "$THREAD_RANDOM_SHOW" "$LAST_EVENT_ID"
 send_message "random" "sam"     "Fun fact: I automated my coffee machine with a Raspberry Pi. It now starts brewing when my first CI build of the day kicks off."
+send_reaction "random" "alex"   "😂"
+send_reaction "random" "jordan" "🤯"
+send_reaction "random" "riley"  "☕"
 THREAD_RANDOM_COFFEE="$LAST_EVENT_ID"
 send_thread_reply "random" "riley"  "That is either genius or deeply concerning. Possibly both." "$THREAD_RANDOM_COFFEE"
 send_thread_reply "random" "jordan" "I need this in my life. Can you share the setup?" "$THREAD_RANDOM_COFFEE" "$LAST_EVENT_ID"
 send_thread_reply "random" "taylor" "This is why I love this team." "$THREAD_RANDOM_COFFEE" "$LAST_EVENT_ID"
 send_message "random" "alex"    "Just saw this and thought of us: 'A QA engineer walks into a bar. Orders 1 beer. Orders 0 beers. Orders 99999999 beers. Orders -1 beers. Orders a lizard.'"
+EVT_QA_JOKE="$LAST_EVENT_ID"
+send_reaction "random" "taylor" "😂" "$EVT_QA_JOKE"
+send_reaction "random" "sam"    "😂" "$EVT_QA_JOKE"
+send_reaction "random" "priya"  "🤣" "$EVT_QA_JOKE"
+send_reaction "random" "morgan" "👀" "$EVT_QA_JOKE"
 send_message "random" "taylor"  "I feel personally attacked and also very seen."
 send_message "random" "casey"   "Trivia night this Thursday at The Brass Tap. Last time engineering lost to the product team and I will never let you forget it."
 send_message "random" "priya"   "That's because you had a sports category. That's basically cheating against us."
@@ -991,6 +1044,12 @@ send_message "random" "riley"   "Oh I saw that on Instagram. The variable font s
 send_message "random" "sam"     "My home lab now has more compute power than our staging environment. I might have a problem."
 send_message "random" "alex"    "You definitely have a problem, but it's one of the cooler problems to have."
 send_message "random" "taylor"  "Weekend project update: I taught my dog to bring me a seltzer from a mini fridge. Took 3 weeks and a lot of treats."
+EVT_DOG="$LAST_EVENT_ID"
+send_reaction "random" "alex"   "👍" "$EVT_DOG"
+send_reaction "random" "jordan" "🤩" "$EVT_DOG"
+send_reaction "random" "morgan" "🐕" "$EVT_DOG"
+send_reaction "random" "riley"  "😂" "$EVT_DOG"
+send_reaction "random" "sam"    "🏆" "$EVT_DOG"
 send_message "random" "jordan"  "Please tell me you have a video of this."
 send_message "random" "taylor"  "Obviously. I'll drop it in here Monday."
 
@@ -1040,6 +1099,8 @@ send_thread_reply "ios" "alex"   "Please do. Is it reproducible or intermittent?
 send_thread_reply "ios" "taylor" "Reproducible, but only at certain window widths. I'll capture a screen recording." "$THREAD_IOS_SIDEBAR" "$LAST_EVENT_ID"
 send_message "ios" "morgan"  "Nice work on the room list, Alex. How's the memory footprint looking compared to the old implementation?"
 send_message "ios" "alex"    "About 30% lower at steady state. The lazy loading means we're not keeping hundreds of views in memory anymore. The Observable framework handles invalidation really efficiently."
+send_reaction "ios" "morgan" "🔥"
+send_reaction "ios" "priya"  "👍"
 send_message "ios" "priya"   "I've been looking at how we handle the sync response on the client side. Right now we're doing too much work on the main actor. I think we should move the parsing to a background task."
 THREAD_IOS_ASYNC="$LAST_EVENT_ID"
 send_thread_reply "ios" "alex"  "Agreed. I was thinking we could use an AsyncStream to bridge the SDK callbacks and process them off the main actor, then only push the final state updates to the UI." "$THREAD_IOS_ASYNC"
@@ -1058,6 +1119,8 @@ send_message "ios" "priya"   "I finally got the end-to-end encryption key backup
 send_message "ios" "alex"    "Nice. How are you handling the case where the user has multiple devices?"
 send_message "ios" "priya"   "Cross-signing handles it. When you verify on one device, the SDK propagates trust to your other sessions automatically. I just needed to surface the right prompts."
 send_message "ios" "morgan"  "E2EE is going to be a big selling point. Great work getting that over the line."
+send_reaction "ios" "priya"  "❤️"
+send_reaction "ios" "alex"   "🙌"
 send_message "ios" "taylor"  "I've written about 40 UI tests for the room list. Coverage is at 85% now. The remaining 15% is edge cases around offline mode that are tricky to simulate."
 THREAD_IOS_TESTS="$LAST_EVENT_ID"
 send_thread_reply "ios" "alex"   "That's solid coverage. For the offline tests, we could inject a mock network layer that returns errors. Want me to set up the protocol for that?" "$THREAD_IOS_TESTS"
@@ -1106,7 +1169,12 @@ send_message "devops" "sam"    "Also heads up — I'm rotating the staging API k
 send_message "devops" "priya"  "Thanks for the heads up. I'll update my local config."
 send_message "devops" "sam"    "One more thing: I set up automated database backups for staging. They run every 6 hours and retain for 7 days. If anyone nukes the staging DB again, we can recover in minutes."
 send_message "devops" "morgan" "The 'again' in that sentence is doing a lot of work."
+send_reaction "devops" "sam"   "😂"
+send_reaction "devops" "priya" "💀"
 send_message "devops" "sam"    "Preview environments are live. Every PR now gets a deploy preview URL posted as a comment. Links expire after 48 hours of inactivity."
+EVT_PREVIEW_ENVS="$LAST_EVENT_ID"
+send_reaction "devops" "priya"  "🎉" "$EVT_PREVIEW_ENVS"
+send_reaction "devops" "morgan" "🚀" "$EVT_PREVIEW_ENVS"
 send_message "devops" "priya"  "Just tested it on my PR — works beautifully. The deploy took about 90 seconds."
 send_message "devops" "morgan" "This is going to change how we do code review. Being able to click and test live is huge."
 send_message "devops" "sam"    "Next on my list: setting up structured logging. Right now our logs are a mix of plain text and JSON. I want everything in JSON so we can query them properly in Grafana."
@@ -1126,6 +1194,8 @@ THREAD_CR_412="$LAST_EVENT_ID"
 send_thread_reply "code-review" "morgan" "I'll take first pass. How urgent is it?" "$THREAD_CR_412"
 send_thread_reply "code-review" "priya"  "Moderate — it's blocking the SSO work Casey wants for Q3, but no rush today." "$THREAD_CR_412" "$LAST_EVENT_ID"
 send_message "code-review" "alex"   "PR #415: new room list implementation for iOS. This is the LazyVStack refactor I mentioned in #ios. Would love eyes on the scroll state management in particular."
+send_reaction "code-review" "taylor" "👀"
+send_reaction "code-review" "morgan" "👀"
 THREAD_CR_415="$LAST_EVENT_ID"
 send_thread_reply "code-review" "taylor" "I'll review #415. I've been testing the feature branch so I have good context." "$THREAD_CR_415"
 send_message "code-review" "riley"  "PR #418: dashboard layout rewrite (CSS Grid migration). Straightforward refactor, no logic changes. Should be a quick review."
@@ -1178,6 +1248,8 @@ send_message "design-chat" "morgan" "Jordan, how are we handling the case where 
 send_message "design-chat" "jordan" "Good point. For joiners, the flow is simpler: accept invite, set up profile, quick tour. I'm designing both paths but the joiner flow is lighter — just 2 steps."
 send_message "design-chat" "jordan" "Also shared the empty state illustrations in Figma. There are 6 in the set: no messages, no rooms, no members, no search results, no notifications, and a generic 'nothing here yet' fallback."
 send_message "design-chat" "casey"  "These are beautiful. The illustration style is consistent and they feel warm without being childish. Exactly the right tone."
+send_reaction "design-chat" "alex"   "❤️"
+send_reaction "design-chat" "morgan" "👍"
 send_message "design-chat" "alex"   "I can start implementing the empty states on iOS this sprint. They'll be reusable components in our design system."
 send_mention "design-chat" "jordan" "Alex Kim, I just uploaded the final empty state illustrations to Figma with export-ready assets. The 'no messages' and 'no rooms' ones turned out really well." "@alex:pebble.dev"
 
@@ -1260,6 +1332,7 @@ send_message "dm-alex-priya" "priya"  "Almost — I added a 'role' field to each
 send_message "dm-alex-priya" "alex"   "Perfect, that's exactly what I needed for the member list UI. Thanks!"
 send_message "dm-alex-priya" "priya"  "No problem. Let me know if you run into anything. The endpoint is on staging now if you want to test against it."
 send_message "dm-alex-priya" "priya"  "Oh also — I saw your PR for the room list. The scroll performance fix is really clever. Nice work."
+send_reaction "dm-alex-priya" "alex" "❤️"
 send_message "dm-alex-priya" "alex"   "Thanks! I was nervous about the approach but the benchmarks speak for themselves."
 send_message "dm-alex-priya" "alex"   "Hey, one more thing — the E2E key backup flow you finished, does it handle the case where the user's key backup password is different from their account password?"
 send_message "dm-alex-priya" "priya"  "Yes, the backup uses a separate recovery key. The user can either save it as a file or protect it with a passphrase. Both flows are implemented."
@@ -1296,6 +1369,7 @@ send_message "dm-alex-morgan" "alex"   "Appreciate that. One thing — I'd like 
 send_message "dm-alex-morgan" "morgan" "Absolutely. Take the time. Investing in the foundation now pays off later. Just flag it in standup so the rest of the team knows."
 send_message "dm-alex-morgan" "alex"   "Will do. Thanks, Morgan."
 send_message "dm-alex-morgan" "morgan" "Also wanted to mention — I really liked your proposal for the mesh gradient avatars. Small touch but it makes the app feel more polished."
+send_reaction "dm-alex-morgan" "alex" "🙏"
 send_message "dm-alex-morgan" "alex"   "Thanks! It was fun to experiment with. The new SwiftUI APIs make that kind of thing surprisingly easy."
 send_message "dm-alex-morgan" "morgan" "That's what I love about our stack. How's the TestFlight build looking for Friday?"
 send_message "dm-alex-morgan" "alex"   "On track. All the room list changes are merged, Taylor is running the regression pass tomorrow. Barring any surprises we should be good."

@@ -36,6 +36,10 @@ enum MentionPillStyle: Sendable {
 
     /// Outgoing blue bubble or any colored bubble — frosted white.
     case messageWhiteText
+
+    /// A mention of the current user in a highlighted message — red
+    /// background with white text to draw attention.
+    case highlightedMention
 }
 
 /// A capsule-shaped pill view for inline mention display.
@@ -54,15 +58,20 @@ struct MentionPillView: View {
     /// The visual style of the pill. Defaults to `.compose`.
     var style: MentionPillStyle = .compose
 
+    /// Whether to prepend `@` to the display name. Defaults to `true`.
+    /// Set to `false` for keyword highlight pills.
+    var showAtPrefix: Bool = true
+
     private var pillText: String {
-        displayName.hasPrefix("@") ? displayName : "@\(displayName)"
+        if !showAtPrefix { return displayName }
+        return displayName.hasPrefix("@") ? displayName : "@\(displayName)"
     }
 
     private var textColor: Color {
         switch style {
         case .compose, .messageDefault:
             .primary
-        case .messageWhiteText:
+        case .messageWhiteText, .highlightedMention:
             .white
         }
     }
@@ -75,6 +84,8 @@ struct MentionPillView: View {
             tintColor.opacity(0.2)
         case .messageWhiteText:
             .white.opacity(0.3)
+        case .highlightedMention:
+            .red
         }
     }
 
@@ -96,8 +107,13 @@ struct MentionPillView: View {
     private static let verticalPadding: CGFloat = 1
 
     /// Measures the size the pill will occupy for layout purposes.
-    static func measureSize(displayName: String, font: NSFont) -> CGSize {
-        let label = displayName.hasPrefix("@") ? displayName : "@\(displayName)"
+    static func measureSize(displayName: String, font: NSFont, showAtPrefix: Bool = true) -> CGSize {
+        let label: String
+        if !showAtPrefix {
+            label = displayName
+        } else {
+            label = displayName.hasPrefix("@") ? displayName : "@\(displayName)"
+        }
         let text = label as NSString
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: font.pointSize - 1, weight: .bold),

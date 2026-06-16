@@ -32,24 +32,22 @@ struct MessageView: View {
     /// Whether to display the sender's name above the bubble (for the first message in a group).
     var showSenderName: Bool = false
 
-    /// Parent-driven reaction picker (e.g. SwiftUI row context menu). Ignored when `false`.
-    var triggerReactionPickerFromParent: Binding<Bool> = .constant(false)
-
     @AppStorage("appearance.coloredBubbles") private var coloredBubbles = false
     @Environment(\.timelineActions) private var actions
     @Environment(\.swipeOffset) private var swipeOffset
     @Environment(\.swipeIsLocked) private var swipeIsLocked
-    @State private var showEmojiPicker = false
+    @State private var bubbleFrame: CGRect = .zero
+
+    /// Whether reaction badges overlap the top edge, requiring extra top
+    /// padding to avoid clipping.
+    private var hasTopOverlay: Bool {
+        !message.reactions.isEmpty
+    }
 
     var body: some View {
         bubbleContent
             .offset(x: swipeOffset)
             .frame(maxWidth: .infinity, alignment: message.isOutgoing ? .trailing : .leading)
-            .onChange(of: triggerReactionPickerFromParent.wrappedValue) {
-                guard triggerReactionPickerFromParent.wrappedValue else { return }
-                showEmojiPicker = true
-                triggerReactionPickerFromParent.wrappedValue = false
-            }
     }
 
     // MARK: - Bubble Content
@@ -97,8 +95,11 @@ struct MessageView: View {
 
                         MessageBubbleContent(
                             message: message,
-                            onPresentReactionPicker: { showEmojiPicker = true }
+                            onPresentReactionPicker: {
+                                presentReactionPickerForBubble()
+                            }
                         )
+                        
                         .overlay(alignment: .leading) {
                             // Reply arrow revealed during swipe. Counter-offset
                             // keeps the arrow stationary at the bubble's leading
@@ -109,13 +110,21 @@ struct MessageView: View {
                                     .offset(x: -swipeOffset)
                             }
                         }
-                        .overlay(alignment: .topTrailing) {
-                            if message.isHighlighted {
-                                highlightBadge
-                                    .offset(x: 4, y: -4)
+                        .overlay(alignment: message.isOutgoing ? .topLeading : .topTrailing) {
+                            if !message.reactions.isEmpty {
+                                MessageReactionBadges(
+                                    reactions: message.reactions,
+                                    isOutgoing: message.isOutgoing,
+                                    coloredBubbles: coloredBubbles,
+                                    onToggle: { key in actions.toggleReaction(message.eventID, key) }
+                                )
+                                .offset(
+                                    x: -4,
+                                    y: -11
+                                )
                             }
                         }
-                        .padding(.top, message.isHighlighted && !showSenderName ? 4 : 0)
+                        .padding(.top, hasTopOverlay ? 11 : 0)
                         .padding(message.replyDetail != nil ? 2 : 0)
                         .background {
                             if message.replyDetail != nil {
@@ -123,32 +132,26 @@ struct MessageView: View {
                                     .fill(Color(nsColor: .windowBackgroundColor))
                             }
                         }
-                        .onLongPressGesture {
-                            showEmojiPicker = true
+                        .onGeometryChange(for: CGRect.self) { proxy in
+                            proxy.frame(in: .named("timeline"))
+                        } action: { newFrame in
+                            bubbleFrame = newFrame
                         }
-                        .popover(
-                            isPresented: $showEmojiPicker,
-                            attachmentAnchor: .point(message.isOutgoing ? .topLeading : .topTrailing),
-                            arrowEdge: .top
-                        ) {
-                            EmojiPickerPopover { emoji in
-                                actions.toggleReaction(message.eventID, emoji)
-                                showEmojiPicker = false
-                            }
+                        .onLongPressGesture {
+                            presentReactionPickerForBubble()
                         }
                     }
                 }
                 .frame(maxWidth: 500, alignment: message.isOutgoing ? .trailing : .leading)
             }
-
-            if !message.reactions.isEmpty {
-                ReactionsView(
-                    reactions: message.reactions,
-                    onToggle: { key in actions.toggleReaction(message.eventID, key) }
-                )
-                .padding(.leading, message.isOutgoing ? 0 : 34)
-            }
         }
+    }
+
+    // MARK: - Reaction Picker
+
+    /// Presents the reaction picker overlay for this message's bubble.
+    private func presentReactionPickerForBubble() {
+        actions.presentReactionPicker(message.eventID, bubbleFrame, message.isOutgoing)
     }
 
     // MARK: - Swipe Action Bar
@@ -171,16 +174,6 @@ struct MessageView: View {
         .allowsHitTesting(swipeIsLocked)
     }
 
-    // MARK: - Message Badges
-
-    /// A small badge indicating this message mentions the current user.
-    private var highlightBadge: some View {
-        Image(systemName: "at")
-            .font(.system(size: 9, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: 16, height: 16)
-            .background(.red, in: Circle())
-    }
 }
 
 // MARK: - Previews
@@ -211,6 +204,21 @@ struct MessageView: View {
                         key: "\u{2764}\u{FE0F}", count: 1,
                         senderIDs: ["@me:matrix.org"],
                         highlightedByCurrentUser: true
+                    ),
+                    .init(
+                        key: "🤖", count: 1,
+                        senderIDs: ["@bob:matrix.org"],
+                        highlightedByCurrentUser: false
+                    ),
+                    .init(
+                        key: "🦞", count: 1,
+                        senderIDs: ["@bob:matrix.org"],
+                        highlightedByCurrentUser: false
+                    ),
+                    .init(
+                        key: "🤡", count: 1,
+                        senderIDs: ["@bob:matrix.org"],
+                        highlightedByCurrentUser: false
                     )
                 ]
             )

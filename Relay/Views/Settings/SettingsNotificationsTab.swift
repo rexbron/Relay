@@ -399,6 +399,64 @@ private struct KeywordTag: View {
     }
 }
 
+// MARK: - Flow Layout
+
+/// A custom `Layout` that arranges subviews in a horizontal flow, wrapping to
+/// the next line when the available width is exceeded.
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = computeRows(proposal: proposal, subviews: subviews)
+        var height: CGFloat = 0
+        var maxRowWidth: CGFloat = 0
+        // swiftlint:disable:next identifier_name
+        for (i, row) in rows.enumerated() {
+            let rowHeight = row.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
+            let rowWidth = row.reduce(CGFloat(0)) { $0 + $1.sizeThatFits(.unspecified).width }
+            + CGFloat(max(0, row.count - 1)) * spacing
+            height += rowHeight + (i > 0 ? spacing : 0)
+            maxRowWidth = max(maxRowWidth, rowWidth)
+        }
+        return CGSize(width: maxRowWidth, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let rows = computeRows(proposal: proposal, subviews: subviews)
+        // swiftlint:disable:next identifier_name
+        var y = bounds.minY
+        // swiftlint:disable:next identifier_name
+        for (i, row) in rows.enumerated() {
+            if i > 0 { y += spacing }
+            // swiftlint:disable:next identifier_name
+            var x = bounds.minX
+            let rowHeight = row.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
+            for subview in row {
+                let size = subview.sizeThatFits(.unspecified)
+                subview.place(at: CGPoint(x: x, y: y), proposal: .init(size))
+                x += size.width + spacing
+            }
+            y += rowHeight
+        }
+    }
+
+    private func computeRows(proposal: ProposedViewSize, subviews: Subviews) -> [[LayoutSubviews.Element]] {
+        let maxWidth = proposal.width ?? .infinity
+        var rows: [[LayoutSubviews.Element]] = [[]]
+        var currentWidth: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if currentWidth + size.width + spacing > maxWidth, !rows[rows.count - 1].isEmpty {
+                rows.append([])
+                currentWidth = 0
+            }
+            rows[rows.count - 1].append(subview)
+            currentWidth += size.width + spacing
+        }
+        return rows
+    }
+}
+
 #Preview {
     TabView {
         SettingsNotificationsTab()

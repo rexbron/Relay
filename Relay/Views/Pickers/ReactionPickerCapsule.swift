@@ -15,26 +15,29 @@
 import AppKit
 import SwiftUI
 
-/// A compact, single-row emoji reaction picker styled after Apple Messages.
+/// A horizontally scrollable capsule of recently used emoji for quick reactions.
 ///
-/// Displays a horizontally scrollable capsule of common emoji with a trailing
-/// button to open the system Character Palette for the full emoji catalog.
-struct EmojiPickerPopover: View {
+/// Displays emoji from ``RecentEmojiStore`` with a trailing button to open the
+/// system Character Palette for the full emoji catalog. Styled as a material
+/// capsule intended to float above a message bubble inside ``ReactionPickerOverlay``.
+struct ReactionPickerCapsule: View {
     /// Called with the selected emoji string when the user taps an emoji.
     let onSelect: (String) -> Void
 
+    @Environment(\.recentEmojiStore) private var recentEmojiStore
     @State private var openCharacterPalette = false
-
-    private static let emoji: [String] = [
-        "👍", "👎", "❤️", "😂", "😮", "🙏", "🔥", "🎉", "👀", "✨"
-    ]
 
     var body: some View {
         HStack(spacing: 0) {
-            // swiftlint:disable:next identifier_name
-            ForEach(Self.emoji, id: \.self) { e in
-                EmojiCell(emoji: e) { onSelect(e) }
+            ScrollView(.horizontal) {
+                HStack(spacing: 0) {
+                    // swiftlint:disable:next identifier_name
+                    ForEach(recentEmojiStore.recentEmoji, id: \.self) { e in
+                        EmojiCell(emoji: e) { onSelect(e) }
+                    }
+                }
             }
+            .scrollIndicators(.hidden)
 
             Divider()
                 .frame(height: 20)
@@ -52,7 +55,10 @@ struct EmojiPickerPopover: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 4)
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
+        .background(.ultraThinMaterial, in: Capsule())
+        .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+        .fixedSize(horizontal: true, vertical: true)
         .background {
             EmojiCaptureField(activate: $openCharacterPalette) { text in
                 onSelect(text)
@@ -134,7 +140,8 @@ private struct EmojiCell: View {
 }
 
 #Preview {
-    EmojiPickerPopover { emoji in
+    ReactionPickerCapsule { emoji in
         print("Selected: \(emoji)")
     }
+    .padding()
 }

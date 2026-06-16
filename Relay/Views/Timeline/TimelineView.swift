@@ -80,6 +80,9 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     @State private var isTimelineDropTargeted = false
     @State private var timelineActionsRef = TimelineActions()
     @State private var successorRoomId: String?
+    @State private var reactionPickerMessageId: String?
+    @State private var reactionPickerBubbleFrame: CGRect = .zero
+    @State private var reactionPickerIsOutgoing = false
     init(
         roomId: String,
         roomName: String,
@@ -258,6 +261,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             // @State / @Environment references which remain valid for the
             // lifetime of this view.
             configureTimelineActions()
+            timelineActionsRef.highlightKeywords = (try? await matrixService.getNotificationKeywords()) ?? []
 
             // Cache room summary properties — avoids O(n) room scan on every body evaluation.
             let roomSummary = matrixService.rooms.first(where: { $0.id == roomId })
@@ -431,6 +435,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     private var messageList: some View {
         timelineRenderer
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .coordinateSpace(name: "timeline")
             .overlay(alignment: .top) { loadingMoreOverlay }
             .onChange(of: viewModel.messagesVersion) {
                 let previousLastID = cachedMessageRows.last?.id
@@ -481,6 +486,25 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             }
             .overlay(alignment: .bottomTrailing) { scrollToBottomButton }
             .overlay { loadingOrEmptyOverlay }
+            .overlay {
+                if reactionPickerMessageId != nil {
+                    ReactionPickerOverlay(
+                        bubbleFrame: reactionPickerBubbleFrame,
+                        isOutgoing: reactionPickerIsOutgoing,
+                        onSelect: { emoji in
+                            if let messageId = reactionPickerMessageId {
+                                RecentEmojiStore.shared.recordUsage(emoji)
+                                timelineActionsRef.toggleReaction(messageId, emoji)
+                            }
+                        },
+                        onDismiss: {
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                reactionPickerMessageId = nil
+                            }
+                        }
+                    )
+                }
+            }
     }
 
     /// Populates the stable ``TimelineActions`` instance with the current
@@ -518,6 +542,13 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
         actions.roomTap = onRoomTap
         actions.contextAction = { action in
             self.handleContextAction(action)
+        }
+        actions.presentReactionPicker = { messageId, bubbleFrame, isOutgoing in
+            self.reactionPickerBubbleFrame = bubbleFrame
+            self.reactionPickerIsOutgoing = isOutgoing
+            withAnimation(.easeOut(duration: 0.15)) {
+                self.reactionPickerMessageId = messageId
+            }
         }
         actions.highlightDismissed = {
             self.highlightedMessageId = nil
