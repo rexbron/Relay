@@ -175,6 +175,54 @@ final class TimelineInspectorViewModel {
         await reload()
     }
 
+    // MARK: - Alias Actions
+
+    func updateCanonicalAlias(_ alias: String?, altAliases: [String]) async throws {
+        guard let matrixService else { return }
+        try await matrixService.updateCanonicalAlias(roomId: roomId, alias: alias, altAliases: altAliases)
+
+        // Optimistically update local details so the UI reflects the change
+        // immediately, without waiting for the SDK sync to propagate the
+        // state event local echo.
+        if let current = details {
+            details = RoomDetails(
+                id: current.id,
+                name: current.name,
+                topic: current.topic,
+                avatarURL: current.avatarURL,
+                isEncrypted: current.isEncrypted,
+                isPublic: current.isPublic,
+                isDirect: current.isDirect,
+                canonicalAlias: alias,
+                alternativeAliases: altAliases,
+                memberCount: current.memberCount,
+                members: current.members,
+                pinnedEventIds: current.pinnedEventIds,
+                joinRule: current.joinRule,
+                historyVisibility: current.historyVisibility,
+                permissions: current.permissions,
+                powerLevelSettings: current.powerLevelSettings
+            )
+        }
+    }
+
+    @discardableResult
+    func publishRoomAlias(_ alias: String) async throws -> Bool {
+        guard let matrixService else { return false }
+        return try await matrixService.publishRoomAlias(roomId: roomId, alias: alias)
+    }
+
+    @discardableResult
+    func removeRoomAlias(_ alias: String) async throws -> Bool {
+        guard let matrixService else { return false }
+        return try await matrixService.removeRoomAlias(roomId: roomId, alias: alias)
+    }
+
+    func isRoomAliasAvailable(_ alias: String) async throws -> Bool {
+        guard let matrixService else { return false }
+        return try await matrixService.isRoomAliasAvailable(alias: alias)
+    }
+
     // MARK: - Permission Actions
 
     func updatePowerLevelSettings(_ settings: RoomPowerLevelSettings) async throws {
@@ -204,6 +252,9 @@ final class TimelineInspectorViewModel {
     /// Whether the current user can change the room's history visibility.
     var canEditHistoryVisibility: Bool { permissions?.canEditHistoryVisibility ?? false }
 
+    /// Whether the current user can edit the room's canonical alias and alternative aliases.
+    var canEditCanonicalAlias: Bool { permissions?.canEditCanonicalAlias ?? false }
+
     /// Whether the current user can edit any room access setting (join rules or history visibility).
     var canEditAccess: Bool { canEditJoinRules || canEditHistoryVisibility }
 
@@ -211,6 +262,14 @@ final class TimelineInspectorViewModel {
 
     var currentUserId: String? {
         matrixService?.userId()
+    }
+
+    /// The current user's homeserver domain, derived from their user ID.
+    /// Used to construct full room aliases (e.g. `#room:matrix.org`).
+    var homeserver: String? {
+        guard let userId = currentUserId,
+              let atIndex = userId.firstIndex(of: ":") else { return nil }
+        return String(userId[userId.index(after: atIndex)...])
     }
 
     /// Reloads room details from the server.
@@ -241,7 +300,8 @@ final class TimelineInspectorViewModel {
             canEditName: true, canEditTopic: true, canEditAvatar: true,
             canInvite: true, canKick: true, canBan: true,
             canRedactOther: true, canChangePermissions: true,
-            canPin: true, canEditJoinRules: true, canEditHistoryVisibility: true
+            canPin: true, canEditJoinRules: true, canEditHistoryVisibility: true,
+            canEditCanonicalAlias: true
         ) : RoomPermissions()
         let previewPowerLevelSettings: RoomPowerLevelSettings? = asAdmin
             ? RoomPowerLevelSettings() : nil
@@ -252,6 +312,7 @@ final class TimelineInspectorViewModel {
             isEncrypted: true,
             isDirect: isDirect,
             canonicalAlias: "#design-team:matrix.org",
+            alternativeAliases: ["#design:matrix.org"],
             memberCount: 5,
             members: [
                 RoomMemberDetails(

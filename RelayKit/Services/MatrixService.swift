@@ -840,6 +840,30 @@ public final class MatrixService: MatrixServiceProtocol {
         try await room.removeAvatar()
     }
 
+    // MARK: Room Alias Management
+
+    public func updateCanonicalAlias(roomId: String, alias: String?, altAliases: [String]) async throws {
+        guard let room = room(id: roomId) else { return }
+        try await room.updateCanonicalAlias(alias: alias, altAliases: altAliases)
+    }
+
+    @discardableResult
+    public func publishRoomAlias(roomId: String, alias: String) async throws -> Bool {
+        guard let room = room(id: roomId) else { return false }
+        return try await room.publishRoomAliasInRoomDirectory(alias: alias)
+    }
+
+    @discardableResult
+    public func removeRoomAlias(roomId: String, alias: String) async throws -> Bool {
+        guard let room = room(id: roomId) else { return false }
+        return try await room.removeRoomAliasFromRoomDirectory(alias: alias)
+    }
+
+    public func isRoomAliasAvailable(alias: String) async throws -> Bool {
+        let client = try requireClient()
+        return try await client.isRoomAliasAvailable(alias: alias)
+    }
+
     public func editableSpaces() async -> [EditableSpace] {
         guard let client = currentClient else { return [] }
         let service = await client.spaceService()
@@ -940,7 +964,8 @@ public final class MatrixService: MatrixServiceProtocol {
         let isEncrypted = info?.encryptionState != .notEncrypted
         let isPublic = info?.isPublic ?? false
         let isDirect = info?.isDirect ?? false
-        let canonicalAlias = info?.canonicalAlias
+        let canonicalAlias = room.canonicalAlias()
+        let alternativeAliases = room.alternativeAliases()
 
         let memberCount = info?.joinedMembersCount ?? room.joinedMembersCount()
 
@@ -988,6 +1013,7 @@ public final class MatrixService: MatrixServiceProtocol {
                 canPin: pl.canOwnUserSendState(stateEvent: .roomPinnedEvents),
                 canEditJoinRules: pl.canOwnUserSendState(stateEvent: .roomJoinRules),
                 canEditHistoryVisibility: pl.canOwnUserSendState(stateEvent: .roomHistoryVisibility),
+                canEditCanonicalAlias: pl.canOwnUserSendState(stateEvent: .roomCanonicalAlias),
                 canSendMessages: pl.canOwnUserSendMessage(message: .roomMessage)
             )
             let values = pl.values()
@@ -1014,6 +1040,7 @@ public final class MatrixService: MatrixServiceProtocol {
             isPublic: isPublic,
             isDirect: isDirect,
             canonicalAlias: canonicalAlias,
+            alternativeAliases: alternativeAliases,
             memberCount: memberCount,
             members: memberDetails,
             pinnedEventIds: pinnedEventIds,

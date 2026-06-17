@@ -358,6 +358,12 @@ public final class ClientProxy: ClientProxyProtocol, @unchecked Sendable {
         try await client.joinRoomByIdOrAlias(roomIdOrAlias: roomIdOrAlias, serverNames: serverNames)
     }
 
+    // MARK: - Room Alias Management
+
+    public func isRoomAliasAvailable(alias: String) async throws -> Bool {
+        try await client.isRoomAliasAvailable(alias: alias)
+    }
+
     // MARK: - Room Account Data
 
     public func observeRoomAccountDataEvent(
