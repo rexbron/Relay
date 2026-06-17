@@ -412,10 +412,11 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                             AvatarView(name: currentRoom.name,
                                        mxcURL: currentRoom.avatarURL,
                                        size: 28)
-                            .padding(.leading, 4)
                             Text(currentRoom.name)
                                 .font(.title3)
                                 .fontWeight(.semibold)
+                                .truncationMode(.tail)
+                                .frame(maxWidth: 100)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 4)
 
@@ -423,7 +424,6 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(.secondary)
-                                    .padding(.trailing, 8)
                                     .glassEffectID("inspectorToggle", in: toolbarNamespace)
                             } else {
                                 Button {
@@ -433,7 +433,6 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                                         .font(.system(size: 12, weight: .bold))
                                 }
                                 .buttonStyle(.plain)
-                                .padding(.trailing, 8)
                                 .glassEffectID("inspectorToggle", in: toolbarNamespace)
                                 .help("Close Inspector")
                             }
@@ -441,7 +440,6 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                     }
                     .contentShape(.capsule)
                 }
-                .buttonStyle(.plain)
                 .help(showingInspector ? "Hide Inspector" : "Show Inspector")
             }
         }
