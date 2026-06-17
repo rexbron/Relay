@@ -7,7 +7,20 @@
       "layers" : [
         {
           "fill" : {
-            "solid" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
+            "linear-gradient" : [
+              "display-p3:0.38403,0.64839,1.04685,1.00000",
+              "extended-srgb:0.00000,0.53333,1.00000,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.5,
+                "y" : 0
+              },
+              "stop" : {
+                "x" : 0.5,
+                "y" : 0.7
+              }
+            }
           },
           "image-name" : "Medium.png",
           "name" : "Medium",
@@ -24,8 +37,9 @@
         "kind" : "neutral",
         "opacity" : 0.5
       },
+      "specular" : true,
       "translucency" : {
-        "enabled" : true,
+        "enabled" : false,
         "value" : 0.5
       }
     },
@@ -34,7 +48,7 @@
       "layers" : [
         {
           "fill" : {
-            "solid" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
+            "automatic-gradient" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
           },
           "image-name" : "Short.png",
           "name" : "Short",
@@ -52,7 +66,7 @@
         "opacity" : 0.5
       },
       "translucency" : {
-        "enabled" : true,
+        "enabled" : false,
         "value" : 0.5
       }
     },
@@ -62,7 +76,7 @@
           "fill-specializations" : [
             {
               "value" : {
-                "solid" : "extended-gray:0.50000,1.00000"
+                "automatic-gradient" : "extended-gray:0.50000,1.00000"
               }
             },
             {
@@ -88,7 +102,7 @@
         "opacity" : 0.5
       },
       "translucency" : {
-        "enabled" : true,
+        "enabled" : false,
         "value" : 0.5
       }
     },
@@ -99,7 +113,7 @@
           "fill-specializations" : [
             {
               "value" : {
-                "solid" : "extended-gray:0.50000,1.00000"
+                "automatic-gradient" : "extended-gray:0.50000,1.00000"
               }
             },
             {
@@ -125,7 +139,7 @@
         "opacity" : 0.5
       },
       "translucency" : {
-        "enabled" : true,
+        "enabled" : false,
         "value" : 0.5
       }
     }
