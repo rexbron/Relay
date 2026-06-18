@@ -412,22 +412,9 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 4)
 
-                            if !showingInspector {
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(.secondary)
-                                    .glassEffectID("inspectorToggle", in: toolbarNamespace)
-                            } else {
-                                Button {
-                                    dismissInspector()
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 12, weight: .bold))
-                                }
-                                .buttonStyle(.plain)
-                                .glassEffectID("inspectorToggle", in: toolbarNamespace)
-                                .help("Close Inspector")
-                            }
+                            Image(systemName: showingInspector ? "xmark" : "chevron.right")
+                                .font(.system(size: 12, weight: showingInspector ? .bold : .semibold))
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .contentShape(.capsule)
