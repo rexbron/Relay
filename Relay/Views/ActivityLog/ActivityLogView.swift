@@ -276,9 +276,7 @@ struct ActivityLogView: View {
 
         ToolbarItem(placement: .automatic) {
             Button {
-                withAnimation {
-                    showingInspector.toggle()
-                }
+                showingInspector.toggle()
             } label: {
                 Label("Toggle Inspector", systemImage: "sidebar.trailing")
             }

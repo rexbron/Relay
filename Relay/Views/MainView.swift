@@ -62,9 +62,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
 
     private func showUserProfile(_ profile: UserProfile) {
         inspectorSelectedProfile = profile
-        withAnimation(.easeInOut(duration: 0.25)) {
-            showingInspector = true
-        }
+        showingInspector = true
     }
 
     @State private var showQuickSwitch = false
@@ -313,9 +311,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 selectedRoomId: $selectedRoomId,
                 onOpenSettings: {
                     inspectorInitialTab = .general
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        showingInspector.toggle()
-                    }
+                    showingInspector = true
                 }
             )
             .inspector(isPresented: $showingInspector) {
@@ -395,9 +391,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
         GlassEffectContainer {
             HStack(spacing: 8) {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        showingInspector.toggle()
-                    }
+                    showingInspector.toggle()
                 } label: {
                     HStack(spacing: 0) {
                         if let currentRoom {
@@ -604,9 +598,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     // MARK: - Inspector Panel
 
     private func dismissInspector() {
-        withAnimation(.easeInOut(duration: 0.25)) {
-            showingInspector = false
-        }
+        showingInspector = false
     }
 
     private func inspectorPanel(roomId: String) -> some View {
@@ -619,9 +611,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                     do {
                         let dmRoomId = try await matrixService.createDirectMessage(userId: userId)
                         selectedRoomId = dmRoomId
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            showingInspector = false
-                        }
+                        showingInspector = false
                     } catch {
                         errorReporter.report(.dmCreationFailed(error.localizedDescription))
                     }
@@ -641,9 +631,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                     do {
                         let dmRoomId = try await matrixService.createDirectMessage(userId: userId)
                         selectedRoomId = dmRoomId
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            showingInspector = false
-                        }
+                        showingInspector = false
                     } catch {
                         errorReporter.report(.dmCreationFailed(error.localizedDescription))
                     }
