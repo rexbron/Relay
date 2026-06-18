@@ -26,7 +26,6 @@ struct InviteListRow: View {
     let onDecline: () -> Void
     let onTap: () -> Void
 
-    @Namespace private var animation
     @State private var isAccepting = false
     @State private var rowWidth: CGFloat = 0
 
@@ -55,7 +54,6 @@ struct InviteListRow: View {
     private var compactBody: some View {
         Button(action: onTap) {
             AvatarView(name: room.name, mxcURL: room.avatarURL, size: 60)
-                .matchedGeometryEffect(id: "avatar", in: animation)
                 .overlay(alignment: .bottomTrailing) {
                     Image(systemName: "envelope.fill")
                         .font(.system(size: 7))
@@ -74,7 +72,6 @@ struct InviteListRow: View {
         Button(action: onTap) {
             HStack(spacing: 10) {
                 AvatarView(name: room.name, mxcURL: room.avatarURL, size: 48)
-                    .matchedGeometryEffect(id: "avatar", in: animation)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 4) {
