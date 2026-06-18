@@ -303,7 +303,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
             .inspector(isPresented: $showingInspector) {
                 inspectorPanel(roomId: selectedRoomId)
                     .id(selectedRoomId)
-                    .inspectorColumnWidth(min: 220, ideal: 240, max: 300)
+                    .inspectorColumnWidth(min: 240, ideal: 260, max: 320)
             }
         } else if let selectedSpaceId,
                   let spaceSummary = matrixService.spaces.first(where: { $0.id == selectedSpaceId }) {
@@ -321,7 +321,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
             .inspector(isPresented: $showingInspector) {
                 spaceInspectorPanel(spaceId: selectedSpaceId)
                     .id(selectedSpaceId)
-                    .inspectorColumnWidth(min: 200, ideal: 260, max: 320)
+                    .inspectorColumnWidth(min: 240, ideal: 260, max: 320)
             }
         } else {
             ContentUnavailableView(
