@@ -30,7 +30,7 @@ struct InspectorTabBar: View {
             }
         }
         .padding(3)
-        .background(.fill.quaternary, in: Capsule())
+        .background(.fill.secondary, in: Capsule())
     }
 
     private func tabButton(_ tab: InspectorTab) -> some View {

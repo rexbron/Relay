@@ -135,8 +135,6 @@ struct TimelineInspectorView: View {
         VStack(spacing: 0) {
             tabBar
 
-            Divider()
-
             tabContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -167,7 +165,7 @@ struct TimelineInspectorView: View {
     private var tabBar: some View {
         InspectorTabBar(selection: $selectedTab, tabs: availableTabs)
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.top, 8)
     }
 
     // MARK: - Tab Content
