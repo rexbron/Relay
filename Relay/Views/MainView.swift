@@ -356,17 +356,13 @@ struct MainView: View { // swiftlint:disable:this type_body_length
             ToolbarItem(placement: .secondaryAction) {
                 inviteToolbarCapsule(for: previewingInvite)
             }
-        } else if selectedRoomId != nil {
+        } else if let selectedRoomId, currentRoom != nil {
             ToolbarItem(placement: .secondaryAction) {
                 toolbarTitleCapsule
             }
-        }
-        
-        if previewingInvite == nil {
-            if let selectedRoomId, currentRoom != nil {
-                ToolbarItem(placement: .primaryAction) {
-                    startCallButton(roomId: selectedRoomId)
-                }
+
+            ToolbarItem(placement: .primaryAction) {
+                startCallButton(roomId: selectedRoomId)
             }
         }
     }
