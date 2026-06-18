@@ -314,7 +314,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 onOpenSettings: {
                     inspectorInitialTab = .general
                     withAnimation(.easeInOut(duration: 0.25)) {
-                        showingInspector = true
+                        showingInspector.toggle()
                     }
                 }
             )
