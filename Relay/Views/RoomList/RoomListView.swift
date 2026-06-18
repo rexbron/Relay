@@ -118,6 +118,7 @@ struct RoomListView: View {
         .focusSection()
         .toolbar {
             ToolbarItemGroup(placement: .automatic) {
+                roomDirectoryButton
                 sortMenu
             }
         }
@@ -155,6 +156,26 @@ struct RoomListView: View {
         } message: { invite in
             Text("Decline the invitation to \"\(invite.name)\"? You'll need to be re-invited to join later.")
         }
+    }
+
+    // MARK: - Room Directory
+
+    private var roomDirectoryButton: some View {
+        Menu {
+            Button("Create Room\u{2026}") {
+                appActions.showCreateRoom = true
+            }
+            Button("Join Room\u{2026}") {
+                appActions.showJoinRoom = true
+            }
+            Divider()
+            Button("Room Directory\u{2026}") {
+                appActions.showRoomDirectory = true
+            }
+        } label: {
+            Label("Room Directory", systemImage: "plus.bubble")
+        }
+        .help("Room Directory")
     }
 
     // MARK: - Sort Menu

@@ -346,10 +346,6 @@ struct MainView: View { // swiftlint:disable:this type_body_length
 
     @ToolbarContentBuilder
     private var windowToolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
-            roomDirectoryButton
-        }
-
         if let previewingInvite {
             ToolbarItem(placement: .navigation) {
                 Button("Back", systemImage: "chevron.left") {
@@ -457,24 +453,6 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
         }
-    }
-
-    private var roomDirectoryButton: some View {
-        Menu {
-            Button("Create Room\u{2026}") {
-                appActions.showCreateRoom = true
-            }
-            Button("Join Room\u{2026}") {
-                appActions.showJoinRoom = true
-            }
-            Divider()
-            Button("Room Directory\u{2026}") {
-                appActions.showRoomDirectory = true
-            }
-        } label: {
-            Label("Room Directory", systemImage: "plus.bubble")
-        }
-        .help("Room Directory")
     }
 
     // MARK: - Call Handling
