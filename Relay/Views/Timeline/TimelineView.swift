@@ -912,10 +912,11 @@ private struct TranslationSlot: View {
                     let response = try await activeSession.translate(body)
                     return response.targetText
                 }
-                // Done. Clear local state and try to pick up the next
-                // queued request immediately.
+                // Done. Clear the busy flag and try to pick up the next
+                // queued request immediately. We intentionally do NOT nil
+                // `configuration` — keeping it lets `tryClaimNext` detect a
+                // repeat language pair and re-run via `invalidate()`.
                 currentRequest = nil
-                configuration = nil
                 tryClaimNext()
             }
             .onAppear {
@@ -926,17 +927,30 @@ private struct TranslationSlot: View {
             }
     }
 
-    /// If this slot is idle, pulls the next queued request and assigns
-    /// the translation Configuration so SwiftUI's `.translationTask`
-    /// fires for it. No-op if already busy or queue is empty.
+    /// If this slot is idle, pulls the next queued request and drives
+    /// SwiftUI's `.translationTask` to run for it. No-op if already busy
+    /// or the queue is empty.
+    ///
+    /// `.translationTask` only re-fires when the `Configuration` value
+    /// changes. If the next request uses the same source→target pair as
+    /// the slot's last run (e.g. the user re-translates a message after
+    /// reverting to the original), assigning an equal configuration would
+    /// be a no-op and the task would never run — leaving the row stuck on
+    /// the loading spinner. In that case we call `invalidate()`, Apple's
+    /// mechanism for re-running with an unchanged configuration.
     @MainActor private func tryClaimNext() {
         guard currentRequest == nil else { return }
         guard let request = viewModel.claimNextTranslation() else { return }
         currentRequest = request
-        configuration = TranslationSession.Configuration(
+        let newConfiguration = TranslationSession.Configuration(
             source: Locale.Language(identifier: request.sourceLanguageTag),
             target: Locale.Language(identifier: request.targetLanguageTag)
         )
+        if configuration == newConfiguration {
+            configuration?.invalidate()
+        } else {
+            configuration = newConfiguration
+        }
     }
 }
 

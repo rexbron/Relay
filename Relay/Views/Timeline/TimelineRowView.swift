@@ -235,7 +235,7 @@ struct TimelineRowView: View, Equatable {
                 Button {
                     actions.contextAction(.translate(message))
                 } label: {
-                    Label("Translate", systemImage: "translate")
+                    Label("Translate Message", systemImage: "translate")
                 }
             }
         case .loading:
