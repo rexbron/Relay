@@ -210,6 +210,10 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func setRoomTopic(roomId: String, topic: String) async throws {}
     func uploadRoomAvatar(roomId: String, mimeType: String, data: Data) async throws {}
     func removeRoomAvatar(roomId: String) async throws {}
+    func updateCanonicalAlias(roomId: String, alias: String?, altAliases: [String]) async throws {}
+    func publishRoomAlias(roomId: String, alias: String) async throws -> Bool { true }
+    func removeRoomAlias(roomId: String, alias: String) async throws -> Bool { true }
+    func isRoomAliasAvailable(alias: String) async throws -> Bool { true }
     func editableSpaces() async -> [EditableSpace] {
         [
             EditableSpace(roomId: "!space-work:matrix.org", name: "Work"),

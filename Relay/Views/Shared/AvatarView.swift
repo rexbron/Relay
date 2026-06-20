@@ -85,7 +85,7 @@ struct AvatarView: View {
     }
 
     private func color(for name: String) -> Color {
-        StableNameColor.color(for: name)
+        Color(stableColorFor: name)
     }
 }
 

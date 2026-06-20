@@ -167,11 +167,10 @@ struct TimelineLazyVStackView: View {
             // means we're checking proximity to real messages, not padding.
             let visibleBottom = geometry.contentOffset.y + geometry.containerSize.height
             let distanceFromContent = max(0, geometry.contentSize.height - visibleBottom)
-            let nearBottom = distanceFromContent < 100
             return ScrollMetrics(
-                nearBottom: nearBottom,
-                offsetY: geometry.contentOffset.y,
-                distanceFromContent: distanceFromContent
+                nearBottom: distanceFromContent < 100,
+                nearTop: geometry.contentOffset.y < 600,
+                nearEnd: distanceFromContent < 50
             )
         } action: { old, new in
             // Sticky-bottom latch: when the raw geometry says "near
@@ -195,10 +194,10 @@ struct TimelineLazyVStackView: View {
             // scrolling and the SDK isn't already loading. This prevents
             // runaway re-triggers from content-size-change geometry
             // updates during pagination bursts.
-            if new.offsetY < 600, !rows.isEmpty, !isLoadingMore, isUserScrolling {
+            if new.nearTop, !rows.isEmpty, !isLoadingMore, isUserScrolling {
                 onPaginateBackward()
             }
-            if !hasReachedEnd, new.distanceFromContent < 50 {
+            if !hasReachedEnd, new.nearEnd {
                 onPaginateForward()
             }
         }
@@ -269,10 +268,20 @@ struct TimelineLazyVStackView: View {
 /// Combined scroll geometry values derived in a single
 /// `onScrollGeometryChange` pass to avoid the "multiple updates per frame"
 /// warning that occurs when using separate modifiers.
+///
+/// All fields are threshold-based booleans rather than raw `CGFloat`
+/// values. This prevents sub-pixel geometry fluctuations (e.g. during
+/// an inspector resize) from producing "new" `ScrollMetrics` that
+/// re-trigger the action with identical logical state, which causes
+/// "Geometry action is cycling between duplicate values" warnings.
 private struct ScrollMetrics: Equatable {
+    /// Whether the scroll position is within 100pt of the content bottom.
     var nearBottom: Bool
-    var offsetY: CGFloat
-    var distanceFromContent: CGFloat
+    /// Whether the scroll offset is within the backward-pagination zone.
+    var nearTop: Bool
+    /// Whether the scroll position is within 50pt of the content end
+    /// (forward-pagination zone).
+    var nearEnd: Bool
 }
 
 // MARK: - Swipe Scroll Handler

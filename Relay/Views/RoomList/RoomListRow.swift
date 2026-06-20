@@ -20,7 +20,6 @@ import SwiftUI
 struct RoomListRow: View {
     let room: RoomSummary
 
-    @Namespace private var animation
     @State private var rowWidth: CGFloat = 0
 
     private static let compactThreshold: CGFloat = 140
@@ -70,7 +69,6 @@ struct RoomListRow: View {
 
     private var compactBody: some View {
         AvatarView(name: room.name, mxcURL: room.avatarURL, size: 60)
-            .matchedGeometryEffect(id: "avatar", in: animation)
             .overlay(alignment: .topTrailing) {
                 if showBadge {
                     Circle()
@@ -90,7 +88,6 @@ struct RoomListRow: View {
     private var fullBody: some View {
         HStack(spacing: 10) {
             AvatarView(name: room.name, mxcURL: room.avatarURL, size: 48)
-                .matchedGeometryEffect(id: "avatar", in: animation)
                 .overlay(alignment: .topTrailing) {
                     muteIndicator
                 }

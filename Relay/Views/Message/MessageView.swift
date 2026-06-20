@@ -35,8 +35,19 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
     /// Whether to display the sender's name above the bubble (for the first message in a group).
     var showSenderName: Bool = false
 
-    /// Parent-driven reaction picker (e.g. SwiftUI row context menu). Ignored when `false`.
-    var triggerReactionPickerFromParent: Binding<Bool> = .constant(false)
+    /// Whether the replied-to message is immediately above this one in the
+    /// timeline, allowing the reply preview bubble to be omitted.
+    var replyIsAdjacentAbove: Bool = false
+
+    /// Whether the reply-to message is adjacent above *and* on the same side
+    /// (both incoming or both outgoing). Only in this case can we skip the
+    /// preview bubble, since the user can see the original directly above.
+    private var replyIsAdjacentSameSide: Bool {
+        guard replyIsAdjacentAbove, let reply = message.replyDetail else { return false }
+        let replyIsOutgoing = actions.currentUserID != nil
+            && reply.senderID == actions.currentUserID
+        return message.isOutgoing == replyIsOutgoing
+    }
 
     /// Per-message translation state. When `.translated`, the rendered
     /// body and parsed Markdown/HTML come from the translation; in all
@@ -60,17 +71,18 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
     @Environment(\.timelineActions) private var actions
     @Environment(\.swipeOffset) private var swipeOffset
     @Environment(\.swipeIsLocked) private var swipeIsLocked
-    @State private var showEmojiPicker = false
+    @State private var bubbleFrame: CGRect = .zero
+
+    /// Whether reaction badges overlap the top edge, requiring extra top
+    /// padding to avoid clipping.
+    private var hasTopOverlay: Bool {
+        !message.reactions.isEmpty || showsTranslationBadge
+    }
 
     var body: some View {
         bubbleContent
             .offset(x: swipeOffset)
             .frame(maxWidth: .infinity, alignment: message.isOutgoing ? .trailing : .leading)
-            .onChange(of: triggerReactionPickerFromParent.wrappedValue) {
-                guard triggerReactionPickerFromParent.wrappedValue else { return }
-                showEmojiPicker = true
-                triggerReactionPickerFromParent.wrappedValue = false
-            }
     }
 
     // MARK: - Bubble Content
@@ -95,6 +107,26 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                 }
 
                 VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 1) {
+                    if message.replyDetail != nil {
+                        if !replyIsAdjacentSameSide, let reply = message.replyDetail {
+                            ReplyPreviewBubble(reply: reply)
+                        }
+
+                        HStack(spacing: 0) {
+                            if message.isOutgoing {
+                                Spacer(minLength: 0)
+                            }
+                            Rectangle()
+                                .fill(Color(.separatorColor))
+                                .frame(width: 2, height: replyIsAdjacentSameSide ? 12 : 24)
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 2)
+                            if !message.isOutgoing {
+                                Spacer(minLength: 0)
+                            }
+                        }
+                    }
+
                     if showSenderName && !message.isOutgoing {
                         Text(message.displayName)
                             .font(.caption)
@@ -104,80 +136,70 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                             .padding(.bottom, 2)
                     }
 
-                    VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: -8) {
-                        if let reply = message.replyDetail {
-                            let replyIsOutgoing = actions.currentUserID != nil
-                                && reply.senderID == actions.currentUserID
-                            ReplyPreviewBubble(
-                                reply: reply,
-                                outgoing: replyIsOutgoing,
-                                coloredBubbles: coloredBubbles
-                            )
-                            .padding(message.isOutgoing ? .trailing : .leading, 20)
-                        }
-
-                        MessageBubbleContent(
-                            message: message,
-                            translation: translation,
-                            onPresentReactionPicker: { showEmojiPicker = true }
-                        )
-                        .overlay(alignment: .leading) {
-                            // Reply arrow revealed during swipe. Counter-offset
-                            // keeps the arrow stationary at the bubble's leading
-                            // edge while the bubble slides right.
-                            if swipeOffset > 0 {
-                                swipeActionBar
-                                    .opacity(min(swipeOffset / 60, 1.0))
-                                    .offset(x: -swipeOffset)
-                            }
-                        }
-                        .overlay(alignment: .topTrailing) {
-                            if message.isHighlighted {
-                                highlightBadge
-                                    .offset(x: 4, y: -4)
-                            } else if showsTranslationBadge {
-                                translationBadge
-                                    .padding(4)
-                                    .offset(x: 8, y: -8)
-                            }
-                        }
-                        .padding(.top, (message.isHighlighted && !showSenderName) ? 4 : (showsTranslationBadge && !showSenderName ? 10 : 0))
-                        .padding(message.replyDetail != nil ? 2 : 0)
-                        .background {
-                            if message.replyDetail != nil {
-                                BubbleStyle.replyWrapperShape
-                                    .fill(Color(nsColor: .windowBackgroundColor))
-                            }
-                        }
-                        .onLongPressGesture {
-                            showEmojiPicker = true
-                        }
-                        .popover(
-                            isPresented: $showEmojiPicker,
-                            attachmentAnchor: .point(message.isOutgoing ? .topLeading : .topTrailing),
-                            arrowEdge: .top
-                        ) {
-                            EmojiPickerPopover(
-                                onSelect: { emoji in
-                                    actions.toggleReaction(message.eventID, emoji)
-                                    showEmojiPicker = false
-                                },
-                                trailingAction: translationTrailingAction
-                            )
-                        }
-                    }
+                    messageBubble
                 }
                 .frame(maxWidth: 500, alignment: message.isOutgoing ? .trailing : .leading)
             }
+        }
+    }
 
-            if !message.reactions.isEmpty {
-                ReactionsView(
-                    reactions: message.reactions,
-                    onToggle: { key in actions.toggleReaction(message.eventID, key) }
-                )
-                .padding(.leading, message.isOutgoing ? 0 : 34)
+    // MARK: - Message Bubble
+
+    /// The main message bubble with reaction badges, swipe action, and
+    /// geometry tracking.
+    private var messageBubble: some View {
+        MessageBubbleContent(
+            message: message,
+            translation: translation,
+            onPresentReactionPicker: {
+                presentReactionPickerForBubble()
+            }
+        )
+        .overlay(alignment: .leading) {
+            if swipeOffset > 0 {
+                swipeActionBar
+                    .opacity(min(swipeOffset / 60, 1.0))
+                    .offset(x: -swipeOffset)
             }
         }
+        .overlay(alignment: message.isOutgoing ? .topLeading : .topTrailing) {
+            if !message.reactions.isEmpty {
+                MessageReactionBadges(
+                    reactions: message.reactions,
+                    isOutgoing: message.isOutgoing,
+                    coloredBubbles: coloredBubbles,
+                    onToggle: { key in actions.toggleReaction(message.eventID, key) }
+                )
+                .offset(
+                    x: -4,
+                    y: -11
+                )
+            }
+        }
+        // Translation glyph on the corner opposite the reaction badges so
+        // the two never collide.
+        .overlay(alignment: message.isOutgoing ? .topTrailing : .topLeading) {
+            if showsTranslationBadge {
+                translationBadge
+                    .offset(x: message.isOutgoing ? 6 : -6, y: -11)
+            }
+        }
+        .padding(.top, hasTopOverlay ? 11 : 0)
+        .onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .named("timeline"))
+        } action: { newFrame in
+            bubbleFrame = newFrame
+        }
+        .onLongPressGesture {
+            presentReactionPickerForBubble()
+        }
+    }
+
+    // MARK: - Reaction Picker
+
+    /// Presents the reaction picker overlay for this message's bubble.
+    private func presentReactionPickerForBubble() {
+        actions.presentReactionPicker(message.eventID, bubbleFrame, message.isOutgoing)
     }
 
     // MARK: - Swipe Action Bar
@@ -200,43 +222,7 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
         .allowsHitTesting(swipeIsLocked)
     }
 
-    // MARK: - Message Badges
-
-    /// A small badge indicating this message mentions the current user.
-    private var highlightBadge: some View {
-        Image(systemName: "at")
-            .font(.system(size: 9, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: 16, height: 16)
-            .background(.red, in: Circle())
-    }
-
-    /// Builds the long-press popover's translate action. Returns `nil`
-    /// when there's nothing the user can do — non-translatable text,
-    /// already-readable language, etc. — so the divider+button only
-    /// appears when meaningful.
-    private var translationTrailingAction: EmojiPickerPopover.TrailingAction? {
-        guard let perform = onTranslationAction else { return nil }
-        switch translation {
-        case .translated:
-            return EmojiPickerPopover.TrailingAction(
-                label: "Show Original",
-                systemImage: "translate",
-                perform: { perform(); showEmojiPicker = false }
-            )
-        case .loading:
-            // No actionable button while a translation is in flight;
-            // the corner badge shows progress.
-            return nil
-        case .idle, .failed:
-            guard canTranslate else { return nil }
-            return EmojiPickerPopover.TrailingAction(
-                label: "Translate",
-                systemImage: "translate",
-                perform: { perform(); showEmojiPicker = false }
-            )
-        }
-    }
+    // MARK: - Translation Badge
 
     /// Whether the corner badge should be shown for translation state.
     /// Only `.translated` and `.loading` get a badge; `.idle` and
@@ -249,9 +235,8 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
     }
 
     /// Translation badge — small `translate` glyph over a tinted disc.
-    /// Mirrors the geometry of ``highlightBadge`` so they read as a
-    /// matching set. Loading state swaps the glyph for a spinner so
-    /// the user sees progress.
+    /// Loading state swaps the glyph for a spinner so the user sees
+    /// progress.
     @ViewBuilder
     private var translationBadge: some View {
         switch translation {
@@ -298,6 +283,21 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
                         key: "\u{2764}\u{FE0F}", count: 1,
                         senderIDs: ["@me:matrix.org"],
                         highlightedByCurrentUser: true
+                    ),
+                    .init(
+                        key: "🤖", count: 1,
+                        senderIDs: ["@bob:matrix.org"],
+                        highlightedByCurrentUser: false
+                    ),
+                    .init(
+                        key: "🦞", count: 1,
+                        senderIDs: ["@bob:matrix.org"],
+                        highlightedByCurrentUser: false
+                    ),
+                    .init(
+                        key: "🤡", count: 1,
+                        senderIDs: ["@bob:matrix.org"],
+                        highlightedByCurrentUser: false
                     )
                 ]
             )

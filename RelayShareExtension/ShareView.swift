@@ -175,23 +175,13 @@ private struct RoomGridItem: View {
                 .clipShape(Circle())
         } else {
             Circle()
-                .fill(stableColor(for: room.name))
+                .fill(Color(stableColorFor: room.name))
                 .overlay {
                     Text(initials(for: room.name))
                         .font(.system(size: 18, weight: .medium, design: .rounded))
                         .foregroundStyle(.white)
                 }
         }
-    }
-
-    /// DJB2-based deterministic color, matching the main app's ``StableNameColor``.
-    private func stableColor(for name: String) -> Color {
-        var hash: UInt = 5381
-        for byte in name.utf8 {
-            hash = ((hash &<< 5) &+ hash) &+ UInt(byte)
-        }
-        let hue = Double(hash % 360) / 360.0
-        return Color(hue: hue, saturation: 0.45, brightness: 0.75)
     }
 
     private func initials(for name: String) -> String {

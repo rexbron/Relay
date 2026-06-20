@@ -44,6 +44,9 @@ public struct RoomDetails: Sendable {
     /// The canonical alias for the room (e.g. `"#design:matrix.org"`), if one exists.
     public let canonicalAlias: String?
 
+    /// Additional published aliases for the room beyond the canonical alias.
+    public let alternativeAliases: [String]
+
     /// The total number of members joined to this room.
     public let memberCount: UInt64
 
@@ -80,6 +83,7 @@ public struct RoomDetails: Sendable {
     ///   - isPublic: Whether the room is publicly joinable.
     ///   - isDirect: Whether this is a direct message conversation.
     ///   - canonicalAlias: The room's canonical alias.
+    ///   - alternativeAliases: Additional published aliases for the room.
     ///   - memberCount: The total number of joined members.
     ///   - members: The detailed member list.
     ///   - pinnedEventIds: The event IDs of pinned messages.
@@ -96,6 +100,7 @@ public struct RoomDetails: Sendable {
         isPublic: Bool = false,
         isDirect: Bool = false,
         canonicalAlias: String? = nil,
+        alternativeAliases: [String] = [],
         memberCount: UInt64 = 0,
         members: [RoomMemberDetails] = [],
         pinnedEventIds: [String] = [],
@@ -112,6 +117,7 @@ public struct RoomDetails: Sendable {
         self.isPublic = isPublic
         self.isDirect = isDirect
         self.canonicalAlias = canonicalAlias
+        self.alternativeAliases = alternativeAliases
         self.memberCount = memberCount
         self.members = members
         self.pinnedEventIds = pinnedEventIds

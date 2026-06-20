@@ -27,12 +27,18 @@ struct MessageGroupInfo: Equatable, Sendable {
     var isLastInGroup = true
     var showSenderName = false
 
+    /// Whether this message's reply-to target is the immediately preceding
+    /// message in the timeline. When `true`, the reply preview bubble can
+    /// be omitted since the original message is already visible directly above.
+    var replyIsAdjacentAbove = false
+
     nonisolated static func == (lhs: MessageGroupInfo, rhs: MessageGroupInfo) -> Bool {
         lhs.isFirst == rhs.isFirst
             && lhs.showDateHeader == rhs.showDateHeader
             && lhs.showGroupSpacer == rhs.showGroupSpacer
             && lhs.isLastInGroup == rhs.isLastInGroup
             && lhs.showSenderName == rhs.showSenderName
+            && lhs.replyIsAdjacentAbove == rhs.replyIsAdjacentAbove
     }
 
     static let `default` = MessageGroupInfo()
@@ -157,6 +163,12 @@ enum MessageRowBuilder {
                     let prev = messages[index - 1]
                     info.showSenderName = prev.isSystemEvent || prev.senderID != message.senderID
                 }
+            }
+
+            // Reply adjacency: skip the reply preview bubble when the
+            // replied-to message is the one directly above.
+            if let replyDetail = message.replyDetail, index > 0 {
+                info.replyIsAdjacentAbove = messages[index - 1].eventID == replyDetail.eventID
             }
 
             result.append(MessageRow(

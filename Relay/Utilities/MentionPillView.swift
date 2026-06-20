@@ -36,6 +36,10 @@ enum MentionPillStyle: Sendable {
 
     /// Outgoing blue bubble or any colored bubble — frosted white.
     case messageWhiteText
+
+    /// A mention of the current user in a highlighted message — red
+    /// background with white text to draw attention.
+    case highlightedMention
 }
 
 /// A capsule-shaped pill view for inline mention display.
@@ -47,22 +51,27 @@ enum MentionPillStyle: Sendable {
 struct MentionPillView: View {
     let displayName: String
 
-    /// The user's stable color derived from ``StableNameColor``.
+    /// The user's stable color derived from ``Color/init(stableColorFor:)``.
     /// Used as the pill's capsule background tint in `.compose` and `.messageDefault` styles.
     var tintColor: Color = .accentColor
 
     /// The visual style of the pill. Defaults to `.compose`.
     var style: MentionPillStyle = .compose
 
+    /// Whether to prepend `@` to the display name. Defaults to `true`.
+    /// Set to `false` for keyword highlight pills.
+    var showAtPrefix: Bool = true
+
     private var pillText: String {
-        displayName.hasPrefix("@") ? displayName : "@\(displayName)"
+        if !showAtPrefix { return displayName }
+        return displayName.hasPrefix("@") ? displayName : "@\(displayName)"
     }
 
     private var textColor: Color {
         switch style {
         case .compose, .messageDefault:
             .primary
-        case .messageWhiteText:
+        case .messageWhiteText, .highlightedMention:
             .white
         }
     }
@@ -75,6 +84,8 @@ struct MentionPillView: View {
             tintColor.opacity(0.2)
         case .messageWhiteText:
             .white.opacity(0.3)
+        case .highlightedMention:
+            .red
         }
     }
 
@@ -96,8 +107,13 @@ struct MentionPillView: View {
     private static let verticalPadding: CGFloat = 1
 
     /// Measures the size the pill will occupy for layout purposes.
-    static func measureSize(displayName: String, font: NSFont) -> CGSize {
-        let label = displayName.hasPrefix("@") ? displayName : "@\(displayName)"
+    static func measureSize(displayName: String, font: NSFont, showAtPrefix: Bool = true) -> CGSize {
+        let label: String
+        if !showAtPrefix {
+            label = displayName
+        } else {
+            label = displayName.hasPrefix("@") ? displayName : "@\(displayName)"
+        }
         let text = label as NSString
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: font.pointSize - 1, weight: .bold),
@@ -114,12 +130,12 @@ struct MentionPillView: View {
     VStack(spacing: 12) {
         MentionPillView(
             displayName: "Alice Smith",
-            tintColor: StableNameColor.color(for: "@alice:matrix.org"),
+            tintColor: Color(stableColorFor: "@alice:matrix.org"),
             style: .compose
         )
         MentionPillView(
             displayName: "Bob",
-            tintColor: StableNameColor.color(for: "@bob:matrix.org"),
+            tintColor: Color(stableColorFor: "@bob:matrix.org"),
             style: .compose
         )
     }
@@ -130,12 +146,12 @@ struct MentionPillView: View {
     VStack(spacing: 12) {
         MentionPillView(
             displayName: "Alice Smith",
-            tintColor: StableNameColor.color(for: "@alice:matrix.org"),
+            tintColor: Color(stableColorFor: "@alice:matrix.org"),
             style: .messageDefault
         )
         MentionPillView(
             displayName: "Bob",
-            tintColor: StableNameColor.color(for: "@bob:matrix.org"),
+            tintColor: Color(stableColorFor: "@bob:matrix.org"),
             style: .messageDefault
         )
     }
@@ -158,7 +174,7 @@ struct MentionPillView: View {
         MentionPillView(displayName: "Bob", style: .messageWhiteText)
     }
     .padding()
-    .background(StableNameColor.color(for: "@eve:matrix.org"))
+    .background(Color(stableColorFor: "@eve:matrix.org"))
 }
 
 #Preview("Colored Bubble — Cool") {
@@ -167,5 +183,5 @@ struct MentionPillView: View {
         MentionPillView(displayName: "Bob", style: .messageWhiteText)
     }
     .padding()
-    .background(StableNameColor.color(for: "@frank:matrix.org"))
+    .background(Color(stableColorFor: "@frank:matrix.org"))
 }

@@ -226,6 +226,14 @@ struct SpaceDetailView: View {
 
             if let viewModel {
                 HStack(spacing: 8) {
+                    if let onOpenSettings {
+                        Button("Settings", systemImage: "gearshape") {
+                            onOpenSettings()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    
                     if viewModel.isJoined {
                         Button("Leave Space", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
                             leaveCurrentSpace()
@@ -238,14 +246,6 @@ struct SpaceDetailView: View {
                         }
                         .buttonStyle(.bordered)
                         .tint(.accentColor)
-                        .controlSize(.small)
-                    }
-
-                    if viewModel.canManageChildren, let onOpenSettings {
-                        Button("Settings", systemImage: "gearshape") {
-                            onOpenSettings()
-                        }
-                        .buttonStyle(.bordered)
                         .controlSize(.small)
                     }
                 }

@@ -52,6 +52,10 @@ public struct RoomPermissions: Sendable {
     /// Whether the current user can change the room's history visibility.
     public let canEditHistoryVisibility: Bool
 
+    /// Whether the current user can edit the room's canonical alias and
+    /// alternative aliases (`m.room.canonical_alias` state event).
+    public let canEditCanonicalAlias: Bool
+
     /// Whether the current user can send message events in the room.
     public let canSendMessages: Bool
 
@@ -68,6 +72,7 @@ public struct RoomPermissions: Sendable {
         canPin: Bool = false,
         canEditJoinRules: Bool = false,
         canEditHistoryVisibility: Bool = false,
+        canEditCanonicalAlias: Bool = false,
         canSendMessages: Bool = true
     ) {
         self.canEditName = canEditName
@@ -81,11 +86,12 @@ public struct RoomPermissions: Sendable {
         self.canPin = canPin
         self.canEditJoinRules = canEditJoinRules
         self.canEditHistoryVisibility = canEditHistoryVisibility
+        self.canEditCanonicalAlias = canEditCanonicalAlias
         self.canSendMessages = canSendMessages
     }
 
-    /// Whether the current user can edit any room detail (name, topic, or avatar).
+    /// Whether the current user can edit any room detail (name, topic, avatar, or alias).
     public var canEditDetails: Bool {
-        canEditName || canEditTopic || canEditAvatar
+        canEditName || canEditTopic || canEditAvatar || canEditCanonicalAlias
     }
 }

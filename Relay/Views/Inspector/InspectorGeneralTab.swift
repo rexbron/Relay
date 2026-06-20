@@ -44,6 +44,7 @@ struct InspectorGeneralTab: View {
     private var canEditTopic: Bool { permissions?.canEditTopic ?? false }
     private var canEditAvatar: Bool { permissions?.canEditAvatar ?? false }
     private var canEditJoinRules: Bool { viewModel.canEditJoinRules }
+    private var canEditCanonicalAlias: Bool { viewModel.canEditCanonicalAlias }
     /// Directory visibility is a server-side setting that requires admin privileges.
     private var canEditVisibility: Bool { viewModel.isCurrentUserAdmin }
     private var canEditHistoryVisibility: Bool { viewModel.canEditHistoryVisibility }
@@ -80,6 +81,9 @@ struct InspectorGeneralTab: View {
                 }
                 if !isEditing {
                     InspectorAboutSection(details: details)
+                }
+                if !isEditing, canEditCanonicalAlias {
+                    InspectorAliasSection(viewModel: viewModel)
                 }
                 if context == .room, !details.pinnedEventIds.isEmpty, !isEditing {
                     InspectorPinnedSection(
@@ -535,6 +539,14 @@ private struct InspectorAboutSection: View {
                     Divider().padding(.vertical, 4)
                     InspectorInfoRow(label: "Alias", value: alias)
                 }
+
+                if !details.alternativeAliases.isEmpty {
+                    Divider().padding(.vertical, 4)
+                    InspectorInfoRow(
+                        label: "Additional Aliases",
+                        value: "\(details.alternativeAliases.count)"
+                    )
+                }
             }
             .padding(.vertical, 2)
         } label: {
@@ -543,6 +555,250 @@ private struct InspectorAboutSection: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal)
+    }
+}
+
+// MARK: - Alias Management Section
+
+/// Displays and manages room aliases (canonical and alternative) for users
+/// with `canEditCanonicalAlias` permission.
+private struct InspectorAliasSection: View {
+    let viewModel: TimelineInspectorViewModel
+
+    @State private var isAddingAlias = false
+    @State private var newAliasLocalPart = ""
+    @State private var aliasError: String?
+    @State private var isProcessing = false
+
+    private var details: RoomDetails? { viewModel.details }
+    private var canonicalAlias: String? { details?.canonicalAlias }
+    private var altAliases: [String] { details?.alternativeAliases ?? [] }
+
+    /// All aliases (canonical first, then alternatives) for display.
+    private var allAliases: [String] {
+        var result: [String] = []
+        if let canonical = canonicalAlias {
+            result.append(canonical)
+        }
+        result.append(contentsOf: altAliases)
+        return result
+    }
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 0) {
+                if allAliases.isEmpty {
+                    Text("No aliases configured")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    ForEach(Array(allAliases.enumerated()), id: \.element) { index, alias in
+                        if index > 0 {
+                            Divider().padding(.vertical, 4)
+                        }
+                        aliasRow(alias)
+                    }
+                }
+
+                if isAddingAlias {
+                    if !allAliases.isEmpty {
+                        Divider().padding(.vertical, 4)
+                    }
+                    addAliasField
+                }
+            }
+            .padding(.vertical, 2)
+        } label: {
+            HStack {
+                Label("Aliases", systemImage: "number")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                if !isAddingAlias {
+                    Button {
+                        isAddingAlias = true
+                        newAliasLocalPart = ""
+                        aliasError = nil
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Add alias")
+                }
+            }
+        }
+        .disabled(isProcessing)
+        .padding(.horizontal)
+    }
+
+    // MARK: - Alias Row
+
+    private func aliasRow(_ alias: String) -> some View {
+        HStack(spacing: 6) {
+            if alias == canonicalAlias {
+                Image(systemName: "star.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.yellow)
+                    .help("Primary alias")
+            } else {
+                Image(systemName: "star.fill")
+                    .font(.caption2)
+                    .hidden()
+            }
+
+            Text(alias)
+                .font(.callout)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+
+            Spacer()
+        }
+        .contextMenu {
+            if alias != canonicalAlias {
+                Button("Set as Primary", systemImage: "star") {
+                    setAsPrimary(alias)
+                }
+            }
+            Button("Remove", systemImage: "trash", role: .destructive) {
+                removeAlias(alias)
+            }
+        }
+    }
+
+    // MARK: - Add Alias Field
+
+    private var addAliasField: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Text("#")
+                    .font(.callout.monospaced())
+                    .foregroundStyle(.secondary)
+
+                TextField("localpart", text: $newAliasLocalPart)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.callout)
+                    .onSubmit { addAlias() }
+
+                if let homeserver = viewModel.homeserver {
+                    Text(":\(homeserver)")
+                        .font(.callout.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            HStack(spacing: 6) {
+                Button("Cancel") {
+                    isAddingAlias = false
+                    aliasError = nil
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button("Add") {
+                    addAlias()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(newAliasLocalPart.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            if let error = aliasError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    private func addAlias() {
+        let localPart = newAliasLocalPart.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !localPart.isEmpty else { return }
+        guard let homeserver = viewModel.homeserver else {
+            aliasError = "Unable to determine homeserver."
+            return
+        }
+
+        let fullAlias = "#\(localPart):\(homeserver)"
+        isProcessing = true
+        aliasError = nil
+
+        Task {
+            defer { isProcessing = false }
+            do {
+                // Check availability first.
+                let available = try await viewModel.isRoomAliasAvailable(fullAlias)
+                guard available else {
+                    aliasError = "Alias is already in use."
+                    return
+                }
+
+                // Publish the alias in the room directory.
+                try await viewModel.publishRoomAlias(fullAlias)
+
+                // Add to the canonical alias state event.
+                if canonicalAlias == nil {
+                    // No canonical alias yet -- set this as the primary.
+                    try await viewModel.updateCanonicalAlias(fullAlias, altAliases: altAliases)
+                } else {
+                    // Append as an alternative alias.
+                    var updatedAlt = altAliases
+                    updatedAlt.append(fullAlias)
+                    try await viewModel.updateCanonicalAlias(canonicalAlias, altAliases: updatedAlt)
+                }
+
+                isAddingAlias = false
+                newAliasLocalPart = ""
+            } catch {
+                aliasError = error.localizedDescription
+            }
+        }
+    }
+
+    private func setAsPrimary(_ alias: String) {
+        isProcessing = true
+        Task {
+            defer { isProcessing = false }
+            // Build the new alt aliases list: old canonical (if any) + remaining alts,
+            // excluding the alias being promoted.
+            var newAlt = altAliases.filter { $0 != alias }
+            if let oldCanonical = canonicalAlias {
+                newAlt.insert(oldCanonical, at: 0)
+            }
+            try? await viewModel.updateCanonicalAlias(alias, altAliases: newAlt)
+        }
+    }
+
+    private func removeAlias(_ alias: String) {
+        isProcessing = true
+        Task {
+            defer { isProcessing = false }
+            // Unpublish from the room directory.
+            _ = try? await viewModel.removeRoomAlias(alias)
+
+            // Update the canonical alias state event.
+            if alias == canonicalAlias {
+                // Removing the canonical -- promote the first alt, or clear.
+                let newCanonical = altAliases.first
+                let newAlt = Array(altAliases.dropFirst())
+                try? await viewModel.updateCanonicalAlias(newCanonical, altAliases: newAlt)
+            } else {
+                // Removing an alternative alias.
+                let newAlt = altAliases.filter { $0 != alias }
+                try? await viewModel.updateCanonicalAlias(canonicalAlias, altAliases: newAlt)
+            }
+        }
     }
 }
 

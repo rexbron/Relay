@@ -45,6 +45,13 @@ struct MessageTextView: NSViewRepresentable {
     /// The current user's room-level permissions for gating context menu actions.
     var permissions: RoomPermissions?
 
+    /// When set, the mention pill matching this user ID is rendered with a
+    /// prominent highlight style to indicate the message mentions the user.
+    var highlightedUserId: String?
+
+    /// Keywords to highlight with a background color in the message body.
+    var highlightKeywords: [String] = []
+
     private var foregroundColor: NSColor {
         isOutgoing ? .white : .labelColor
     }
@@ -112,7 +119,8 @@ struct MessageTextView: NSViewRepresentable {
         let coordinator = context.coordinator
         let resolved = Self.applyColorOverrides(
             attributedString, foreground: foregroundColor, linkColor: linkColor,
-            pillStyle: pillStyle
+            pillStyle: pillStyle, highlightedUserId: highlightedUserId,
+            highlightKeywords: highlightKeywords
         )
         coordinator.lastAttributedString = attributedString
         coordinator.lastIsOutgoing = isOutgoing
@@ -149,7 +157,9 @@ struct MessageTextView: NSViewRepresentable {
                 attributedString,
                 foreground: foregroundColor,
                 linkColor: linkColor,
-                pillStyle: pillStyle
+                pillStyle: pillStyle,
+                highlightedUserId: highlightedUserId,
+                highlightKeywords: highlightKeywords
             )
             coordinator.lastAttributedString = attributedString
             coordinator.lastIsOutgoing = isOutgoing

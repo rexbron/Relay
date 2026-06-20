@@ -415,6 +415,15 @@ public protocol ClientProxyProtocol: AnyObject, Sendable {
     /// - Throws: `ClientError` if joining fails.
     func joinRoomByIdOrAlias(roomIdOrAlias: String, serverNames: [String]) async throws -> Room
 
+    // MARK: - Room Alias Management
+
+    /// Checks whether a room alias is available on the homeserver.
+    ///
+    /// - Parameter alias: The full room alias to check (e.g. `"#room:matrix.org"`).
+    /// - Returns: `true` if the alias is not currently in use.
+    /// - Throws: `ClientError` if the check fails.
+    func isRoomAliasAvailable(alias: String) async throws -> Bool
+
     // MARK: - Room Account Data
 
     /// Observes a room account data event.

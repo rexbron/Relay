@@ -18,9 +18,9 @@ import Foundation
 /// user's ID and their notification keywords.
 ///
 /// This centralizes the client-side highlight detection logic used by both
-/// ``TimelineMessageMapper`` (for the timeline "@" badge) and ``RoomListManager``
-/// (for notification events and unread indicators). Using a single implementation
-/// ensures consistent matching behavior across the app.
+/// ``TimelineMessageMapper`` (for inline mention/keyword pill highlighting) and
+/// ``RoomListManager`` (for notification events and unread indicators). Using a
+/// single implementation ensures consistent matching behavior across the app.
 enum HighlightMatcher {
     /// Returns whether the given message body matches highlight rules.
     ///

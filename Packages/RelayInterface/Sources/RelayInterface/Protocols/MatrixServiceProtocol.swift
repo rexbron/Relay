@@ -740,6 +740,50 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     /// - Parameter roomId: The Matrix room identifier.
     func removeRoomAvatar(roomId: String) async throws
 
+    // MARK: Room Alias Management
+
+    /// Updates the canonical alias and alternative aliases for a room.
+    ///
+    /// Sends an `m.room.canonical_alias` state event with the given primary
+    /// alias and alternative aliases list.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - alias: The new canonical alias (e.g. `"#room:matrix.org"`), or `nil` to clear it.
+    ///   - altAliases: The list of alternative aliases to include in the state event.
+    func updateCanonicalAlias(roomId: String, alias: String?, altAliases: [String]) async throws
+
+    /// Publishes a room alias in the homeserver's room directory.
+    ///
+    /// This registers the alias on the server so it can resolve to this room.
+    /// After publishing, the alias should also be added to the canonical alias
+    /// state event (either as the canonical alias or an alternative alias).
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - alias: The full room alias to publish (e.g. `"#room:matrix.org"`).
+    /// - Returns: `true` if the alias was successfully published.
+    @discardableResult
+    func publishRoomAlias(roomId: String, alias: String) async throws -> Bool
+
+    /// Removes a room alias from the homeserver's room directory.
+    ///
+    /// This unregisters the alias so it no longer resolves to this room. The
+    /// alias should also be removed from the canonical alias state event.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - alias: The full room alias to remove (e.g. `"#room:matrix.org"`).
+    /// - Returns: `true` if the alias was successfully removed.
+    @discardableResult
+    func removeRoomAlias(roomId: String, alias: String) async throws -> Bool
+
+    /// Checks whether a room alias is available on the homeserver.
+    ///
+    /// - Parameter alias: The full room alias to check (e.g. `"#room:matrix.org"`).
+    /// - Returns: `true` if the alias is not currently in use.
+    func isRoomAliasAvailable(alias: String) async throws -> Bool
+
     // MARK: Space Management
 
     /// Returns the list of spaces where the current user has permission to
@@ -900,6 +944,12 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func setRoomTopic(roomId: String, topic: String) async throws {}
     func uploadRoomAvatar(roomId: String, mimeType: String, data: Data) async throws {}
     func removeRoomAvatar(roomId: String) async throws {}
+    func updateCanonicalAlias(roomId: String, alias: String?, altAliases: [String]) async throws {}
+    @discardableResult
+    func publishRoomAlias(roomId: String, alias: String) async throws -> Bool { false }
+    @discardableResult
+    func removeRoomAlias(roomId: String, alias: String) async throws -> Bool { false }
+    func isRoomAliasAvailable(alias: String) async throws -> Bool { false }
     func editableSpaces() async -> [EditableSpace] { [] }
     func addChildToSpace(childId: String, spaceId: String) async throws {}
     func removeChildFromSpace(childId: String, spaceId: String) async throws {}

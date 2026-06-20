@@ -73,6 +73,10 @@ final class TimelineActions: Equatable {
     /// Dispatches a context menu action (reply, copy, pin, edit, delete).
     var contextAction: (TimelineRowContextAction) -> Void = { _ in }
 
+    /// Presents the reaction picker overlay for a message. Parameters:
+    /// (event ID, bubble frame in the timeline coordinate space, isOutgoing).
+    var presentReactionPicker: (String, CGRect, Bool) -> Void = { _, _, _ in }
+
     /// Dismisses the highlight animation on the currently highlighted message.
     var highlightDismissed: () -> Void = {}
 
@@ -83,6 +87,10 @@ final class TimelineActions: Equatable {
     /// The Matrix user ID of the signed-in user. Used to determine whether
     /// replied-to messages are outgoing.
     var currentUserID: String?
+
+    /// The user's notification keywords, used to highlight matching text
+    /// in message bubbles when the message is flagged as highlighted.
+    var highlightKeywords: [String] = []
 
     /// Observable state tracking which collapsed system event groups the user
     /// has expanded. Keyed by the first message's ID in each collapsed group.
