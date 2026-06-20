@@ -276,19 +276,19 @@ private struct ColoredBubblePreview: View {
             VStack(alignment: .leading, spacing: 3) {
                 MiniOutgoingBubble(
                     text: "How's it going?",
-                    color: StableNameColor.color(for: "@me:matrix.org")
+                    color: Color(stableColorFor: "@me:matrix.org")
                 )
                 MiniIncomingBubble(
                     text: "Pretty good!",
-                    color: StableNameColor.color(for: "@alice:matrix.org")
+                    color: Color(stableColorFor: "@alice:matrix.org")
                 )
                 MiniIncomingBubble(
                     text: "You?",
-                    color: StableNameColor.color(for: "@bob:matrix.org")
+                    color: Color(stableColorFor: "@bob:matrix.org")
                 )
                 MiniOutgoingBubble(
                     text: "Great!",
-                    color: StableNameColor.color(for: "@me:matrix.org")
+                    color: Color(stableColorFor: "@me:matrix.org")
                 )
             }
             .padding(8)

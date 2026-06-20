@@ -51,7 +51,7 @@ enum MentionPillStyle: Sendable {
 struct MentionPillView: View {
     let displayName: String
 
-    /// The user's stable color derived from ``StableNameColor``.
+    /// The user's stable color derived from ``Color/init(stableColorFor:)``.
     /// Used as the pill's capsule background tint in `.compose` and `.messageDefault` styles.
     var tintColor: Color = .accentColor
 
@@ -130,12 +130,12 @@ struct MentionPillView: View {
     VStack(spacing: 12) {
         MentionPillView(
             displayName: "Alice Smith",
-            tintColor: StableNameColor.color(for: "@alice:matrix.org"),
+            tintColor: Color(stableColorFor: "@alice:matrix.org"),
             style: .compose
         )
         MentionPillView(
             displayName: "Bob",
-            tintColor: StableNameColor.color(for: "@bob:matrix.org"),
+            tintColor: Color(stableColorFor: "@bob:matrix.org"),
             style: .compose
         )
     }
@@ -146,12 +146,12 @@ struct MentionPillView: View {
     VStack(spacing: 12) {
         MentionPillView(
             displayName: "Alice Smith",
-            tintColor: StableNameColor.color(for: "@alice:matrix.org"),
+            tintColor: Color(stableColorFor: "@alice:matrix.org"),
             style: .messageDefault
         )
         MentionPillView(
             displayName: "Bob",
-            tintColor: StableNameColor.color(for: "@bob:matrix.org"),
+            tintColor: Color(stableColorFor: "@bob:matrix.org"),
             style: .messageDefault
         )
     }
@@ -174,7 +174,7 @@ struct MentionPillView: View {
         MentionPillView(displayName: "Bob", style: .messageWhiteText)
     }
     .padding()
-    .background(StableNameColor.color(for: "@eve:matrix.org"))
+    .background(Color(stableColorFor: "@eve:matrix.org"))
 }
 
 #Preview("Colored Bubble — Cool") {
@@ -183,5 +183,5 @@ struct MentionPillView: View {
         MentionPillView(displayName: "Bob", style: .messageWhiteText)
     }
     .padding()
-    .background(StableNameColor.color(for: "@frank:matrix.org"))
+    .background(Color(stableColorFor: "@frank:matrix.org"))
 }

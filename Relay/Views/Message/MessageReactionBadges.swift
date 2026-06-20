@@ -103,7 +103,7 @@ struct MessageReactionBadges: View {
 /// A single reaction badge: emoji in a small circle with optional count and border.
 ///
 /// When colored bubbles are enabled, the circle fill color is derived from the
-/// first sender of this reaction via ``StableNameColor``, so each reactor gets
+/// first sender of this reaction via ``Color/init(stableColorFor:)``, so each reactor gets
 /// their own color. Otherwise a neutral gray is used.
 private struct ReactionBadge: View {
     let reaction: TimelineMessage.ReactionGroup
@@ -114,7 +114,7 @@ private struct ReactionBadge: View {
 
     private var fillColor: Color {
         if coloredBubbles, let firstSender = reaction.senderIDs.first {
-            return StableNameColor.color(for: firstSender)
+            return Color(stableColorFor: firstSender)
         }
         return Color(.accent)
     }

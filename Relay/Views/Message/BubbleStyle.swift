@@ -60,10 +60,10 @@ struct BubbleStyle {
         let background: Color
         if message.isOutgoing {
             background = coloredBubbles
-                ? StableNameColor.color(for: message.senderID)
+                ? Color(stableColorFor: message.senderID)
                 : .accentColor
         } else if coloredBubbles {
-            background = StableNameColor.color(for: message.senderID)
+            background = Color(stableColorFor: message.senderID)
         } else {
             background = Color(.unemphasizedSelectedContentBackgroundColor)
         }
@@ -83,7 +83,7 @@ struct BubbleStyle {
         let usesWhite = outgoing || coloredBubbles
         let background: Color
         if coloredBubbles {
-            background = StableNameColor.color(for: senderID)
+            background = Color(stableColorFor: senderID)
         } else if outgoing {
             background = .accentColor
         } else {

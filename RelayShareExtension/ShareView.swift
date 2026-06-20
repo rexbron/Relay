@@ -184,7 +184,7 @@ private struct RoomGridItem: View {
         }
     }
 
-    /// DJB2-based deterministic color, matching the main app's ``StableNameColor``.
+    /// DJB2-based deterministic color, matching the main app's ``Color/init(stableColorFor:)``.
     private func stableColor(for name: String) -> Color {
         var hash: UInt = 5381
         for byte in name.utf8 {
