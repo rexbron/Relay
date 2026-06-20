@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import AppKit
-import Foundation
 import RelayInterface
 
 /// A mock implementation of ``MatrixServiceProtocol`` for use in SwiftUI previews.
@@ -22,12 +21,14 @@ import RelayInterface
 /// All mutating operations are no-ops (or operate only on the in-memory sample data).
 @Observable
 final class PreviewMatrixService: MatrixServiceProtocol {
+    let activityLog: any ActivityLogProtocol = PreviewActivityLog()
     var authState: AuthState = .loggedIn(userId: "@preview:matrix.org")
     var syncState: SyncState = .running
     var rooms: [RoomSummary] = PreviewMatrixService.sampleRooms
     var spaces: [RoomSummary] = PreviewMatrixService.sampleSpaces
     var isSyncing: Bool { false }
     var hasLoadedRooms: Bool = true
+    var isNetworkConnected: Bool = true
     var isSessionVerified: Bool = true
     var hasCheckedVerificationState: Bool = true
     var pendingVerificationRequest: IncomingVerificationRequest?
@@ -43,6 +44,7 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func logout() async {}
     func clearLocalData() async {}
     func startSyncIfNeeded() {}
+    func donateOutgoingInteraction(roomId: String) {}
     func userId() -> String? { "@preview:matrix.org" }
     func avatarThumbnail(mxcURL: String, size: CGFloat) async -> NSImage? { nil }
     func makeTimelineViewModel(roomId: String) -> (any TimelineViewModelProtocol)? {
@@ -62,10 +64,10 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func declineInvite(roomId: String) async throws {
         rooms.removeAll { $0.id == roomId }
     }
-    func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String { "!new:matrix.org" }
     func createRoom(options: CreateRoomOptions) async throws -> String { "!new:matrix.org" }
     func createDirectMessage(userId: String) async throws -> String { "!dm:matrix.org" }
     func makeRoomDirectoryViewModel() -> (any RoomDirectoryViewModelProtocol)? { PreviewRoomDirectoryViewModel() }
+    func makeMessageSearchService() -> (any MessageSearchServiceProtocol)? { nil }
     func makeRoomPreviewViewModel(roomId: String) -> (any RoomPreviewViewModelProtocol)? {
         PreviewRoomPreviewViewModel(roomId: roomId)
     }
@@ -101,8 +103,8 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func sendTypingNotice(roomId: String, isTyping: Bool) async {}
     func markAsRead(roomId: String, sendPublicReceipt: Bool) async {
         if let room = rooms.first(where: { $0.id == roomId }) {
-            room.unreadMessages = 0
-            room.unreadMentions = 0
+            room.notificationCount = 0
+            room.highlightCount = 0
         }
     }
     func fullyReadEventId(roomId: String) async -> String? { nil }
@@ -193,6 +195,7 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func setRoomNotificationMode(roomId: String, mode: RoomNotificationMode) async throws {}
     func restoreDefaultRoomNotificationMode(roomId: String) async throws {}
     func setMemberPowerLevel(roomId: String, userId: String, powerLevel: Int64) async throws {}
+    func updatePowerLevelSettings(roomId: String, settings: RoomPowerLevelSettings) async throws {}
     func updateJoinRule(roomId: String, rule: String) async throws {}
     func updateHistoryVisibility(roomId: String, visibility: String) async throws {}
     func updateRoomVisibility(roomId: String, isPublic: Bool) async throws {}
@@ -217,8 +220,18 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func addChildToSpace(childId: String, spaceId: String) async throws {}
     func removeChildFromSpace(childId: String, spaceId: String) async throws {}
 
-    func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)? {
+    func makeSessionVerificationViewModel(acceptingIncomingRequest: Bool) async throws -> (any SessionVerificationViewModelProtocol)? {
         PreviewSessionVerificationViewModel()
+    }
+
+    func makeCallViewModel(roomId: String) async -> (any CallViewModelProtocol)? {
+        PreviewCallViewModel()
+    }
+
+    func callCredentials(for roomId: String) async throws -> (livekitURL: String, token: String, sfuServiceURL: String) {
+        // Simulate a brief credential fetch; previews never actually connect.
+        try? await Task.sleep(for: .milliseconds(500))
+        return (livekitURL: "wss://preview.livekit.example.com", token: "preview-jwt-token", sfuServiceURL: "https://preview.livekit.example.com")
     }
 
     func declinePendingVerificationRequest() async {
@@ -227,6 +240,8 @@ final class PreviewMatrixService: MatrixServiceProtocol {
 
     func isCurrentSessionVerified() async -> Bool { true }
     func encryptionState() async -> EncryptionStatus { EncryptionStatus(backupEnabled: true, recoveryEnabled: true) }
+    func hasDevicesToVerifyAgainst() async throws -> Bool { false }
+    func recoverWithKey(_ recoveryKey: String) async throws {}
 
     func getDevices() async throws -> [DeviceInfo] {
         [
@@ -254,38 +269,6 @@ final class PreviewMatrixService: MatrixServiceProtocol {
         ]
     }
 
-    func searchDirectory(query: String) async throws -> [DirectoryRoom] {
-        let all = [
-            DirectoryRoom(
-                roomId: "!design:matrix.org", name: "Design Team",
-                topic: "UI/UX design discussion",
-                alias: "#design:matrix.org", memberCount: 42
-            ),
-            DirectoryRoom(
-                roomId: "!swift:matrix.org", name: "Swift Developers",
-                topic: "All things Swift",
-                alias: "#swift:matrix.org", memberCount: 1200,
-                isWorldReadable: true
-            ),
-            DirectoryRoom(
-                roomId: "!hq:matrix.org", name: "Matrix HQ",
-                topic: "General Matrix chat",
-                alias: "#matrix-hq:matrix.org", memberCount: 8500,
-                isWorldReadable: true
-            ),
-            DirectoryRoom(
-                roomId: "!rust:matrix.org", name: "Rust Programming",
-                topic: "Rust language discussion",
-                alias: "#rust:matrix.org", memberCount: 650
-            )
-        ]
-        guard !query.isEmpty else { return all }
-        return all.filter {
-            ($0.name ?? "").localizedCaseInsensitiveContains(query)
-                || ($0.alias ?? "").localizedCaseInsensitiveContains(query)
-        }
-    }
-
     /// Sample room data used to populate the room list in previews.
     static let sampleRooms: [RoomSummary] = [
         RoomSummary(
@@ -299,8 +282,8 @@ final class PreviewMatrixService: MatrixServiceProtocol {
                 options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
             ),
             lastMessageTimestamp: .now.addingTimeInterval(-300),
-            unreadCount: 3,
-            unreadMentions: 1,
+            notificationCount: 3,
+            highlightCount: 1,
             isDirect: false,
             pinnedEventIds: ["$pinned1", "$pinned2"],
             isFavourite: true,
@@ -316,7 +299,6 @@ final class PreviewMatrixService: MatrixServiceProtocol {
                 options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
             ),
             lastMessageTimestamp: .now.addingTimeInterval(-7200),
-            unreadCount: 0,
             isDirect: true,
             isFavourite: true,
             parentSpaceIds: ["!space-friends:matrix.org"]
@@ -329,7 +311,6 @@ final class PreviewMatrixService: MatrixServiceProtocol {
             lastAuthor: nil,
             lastMessage: nil,
             lastMessageTimestamp: nil,
-            unreadCount: 0,
             isDirect: false,
             notificationMode: .mute,
             parentSpaceIds: ["!space-work:matrix.org"]
@@ -341,7 +322,7 @@ final class PreviewMatrixService: MatrixServiceProtocol {
             lastAuthor: "Charlie",
             lastMessage: AttributedString("Sent an image"),
             lastMessageTimestamp: .now.addingTimeInterval(-86400 * 2),
-            unreadCount: 12,
+            notificationCount: 12,
             isDirect: true,
             parentSpaceIds: ["!space-friends:matrix.org"]
         ),

@@ -71,9 +71,13 @@ final class ComposeViewModel {
 
     // MARK: - Text View Bridge
 
-    /// Closure set by ``ComposeBar`` to insert a mention pill into the text view.
+    /// Closure set by ``ComposeTextView`` to insert a mention pill into the text view.
     /// Called by ``selectMention(_:)`` to bridge from the view model to the
     /// `ComposeTextView.Coordinator`.
+    ///
+    /// Excluded from observation because this is a callback bridge, not
+    /// display state. Writing it must not invalidate the view graph.
+    @ObservationIgnored
     var insertMentionHandler: ((_ userId: String, _ displayName: String) -> Void)?
 
     // MARK: - Supported Types
@@ -134,11 +138,6 @@ final class ComposeViewModel {
         mentionSelectedIndex = 0
     }
 
-    /// Removes a previously inserted mention.
-    func removeMention(_ mention: Mention) {
-        mentions.removeAll { $0.id == mention.id }
-    }
-
     // MARK: - Reply / Edit
 
     /// Cancels the current reply.
@@ -174,7 +173,11 @@ final class ComposeViewModel {
         let pendingAttachments = attachments
         guard !trimmedText.isEmpty || !pendingAttachments.isEmpty else { return }
 
-        let mentionedUserIds = mentions.map(\.userId)
+        // Filter out stale mentions whose pills were deleted from the text
+        // view, and deduplicate user IDs for the m.mentions event field.
+        let mentionedUserIds = Array(
+            Set(mentions.filter { text.contains($0.userId) }.map(\.userId))
+        )
         let messageText = markdownWithMentions().trimmingCharacters(in: .whitespacesAndNewlines)
 
         if let editing = editingMessage {
@@ -214,6 +217,7 @@ final class ComposeViewModel {
                     url: attachment.url, caption: caption.isEmpty ? nil : caption
                 )
             }
+            matrixService.donateOutgoingInteraction(roomId: roomId)
         }
     }
 
@@ -417,7 +421,7 @@ final class ComposeViewModel {
         let utType = UTType(filenameExtension: url.pathExtension) ?? .data
         guard utType.conforms(to: .image) else { return nil }
         guard let image = NSImage(contentsOf: url) else { return nil }
-        let maxDimension: CGFloat = 56
+        let maxDimension: CGFloat = 160
         let size = image.size
         let scale = min(maxDimension / size.width, maxDimension / size.height, 1.0)
         let targetSize = NSSize(width: size.width * scale, height: size.height * scale)
@@ -429,14 +433,34 @@ final class ComposeViewModel {
 
     /// Converts the draft text + mentions into markdown with Matrix.to links.
     ///
-    /// Scans the text for each mention's user ID and replaces occurrences with
-    /// a Matrix.to markdown link: `[DisplayName](https://matrix.to/#/@user:server)`.
+    /// Builds the result in a single forward pass: the original text is
+    /// copied segment-by-segment, and each mention's user ID is replaced
+    /// with a Matrix.to markdown link inline. Because the output is built
+    /// sequentially and the original text is only read (never searched
+    /// after mutation), duplicate mentions of the same user are each
+    /// substituted exactly once.
     func markdownWithMentions() -> String {
-        var result = text
+        guard !mentions.isEmpty else { return text }
+
+        // Locate each mention's range in the original text, left-to-right.
+        var ranges: [(range: Range<String.Index>, mention: Mention)] = []
+        var searchStart = text.startIndex
         for mention in mentions {
-            let link = "[\(mention.displayName)](https://matrix.to/#/\(mention.userId))"
-            result = result.replacing(mention.userId, with: link)
+            if let range = text.range(of: mention.userId, range: searchStart..<text.endIndex) {
+                ranges.append((range, mention))
+                searchStart = range.upperBound
+            }
         }
+
+        // Build the markdown string in a single forward pass.
+        var result = ""
+        var cursor = text.startIndex
+        for (range, mention) in ranges {
+            result += text[cursor..<range.lowerBound]
+            result += "[\(mention.displayName)](https://matrix.to/#/\(mention.userId))"
+            cursor = range.upperBound
+        }
+        result += text[cursor..<text.endIndex]
         return result
     }
 

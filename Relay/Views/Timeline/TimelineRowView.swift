@@ -46,24 +46,18 @@ extension EnvironmentValues {
 /// Extracted from ``TimelineView`` so that SwiftUI can diff and re-evaluate each
 /// row independently based only on its own inputs, rather than re-evaluating the
 /// entire parent view's 20+ `@State` properties on every frame.
+///
+/// Interactive callbacks (reply, reaction, context menu, etc.) are read from
+/// the ``TimelineActions`` environment value, injected by the renderer.
 struct TimelineRowView: View, Equatable {
     let row: MessageRow
     let isNewlyAppended: Bool
-    let showUnreadMarker: Bool
-    let firstUnreadMessageId: String?
-    let highlightedMessageId: String?
+    let isHighlighted: Bool
+    let isUnreadDivider: Bool
     let showURLPreviews: Bool
-    let currentUserID: String?
 
-    var onToggleReaction: (String, String) -> Void
-    var onTapReply: (String) -> Void
-    var onReply: (TimelineMessage) -> Void
-    var onAvatarDoubleTap: (TimelineMessage) -> Void
-    var onUserTap: (String) -> Void
-    var onRoomTap: ((String) -> Void)?
+    /// Called when this row appears on screen (for read receipt advancement).
     var onAppear: (MessageRow) -> Void
-    var onContextAction: (TimelineRowContextAction) -> Void
-    var onHighlightDismissed: () -> Void
     /// Returns the current per-message translation state. Closure-typed so
     /// the row doesn't need a reference to the whole timeline view model.
     var translationStateProvider: (String) -> MessageTranslationState = { _ in .idle }
@@ -77,11 +71,24 @@ struct TimelineRowView: View, Equatable {
     /// re-renders on state transitions.
     var translationsVersion: UInt = 0
 
-    /// Observable swipe state from the table view controller. When the user
-    /// swipes this row, the offset and reply arrow are rendered here.
-    var swipeState: TimelineSwipeState?
+    /// The horizontal swipe offset for this row, or 0 when not swiped.
+    /// Pre-computed by the parent renderer from the shared swipe state so
+    /// that `TimelineRowView` does not need to observe the `@Observable`
+    /// swipe state object directly (which would invalidate every visible
+    /// row on each swipe frame).
+    var swipeOffset: CGFloat = 0
 
+    /// Whether the swipe action bar on this row is locked open.
+    var swipeIsLocked: Bool = false
+
+    /// Explicitly provided actions (used by the NSTableView renderer where
+    /// environment injection isn't possible on the concrete type).
+    var injectedActions: TimelineActions?
+
+    @Environment(\.timelineActions) private var environmentActions
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var actions: TimelineActions { injectedActions ?? environmentActions }
 
     /// Drives the entry animation for newly appended messages. Starts
     /// `false` for new messages and is set to `true` on appear.
@@ -97,74 +104,42 @@ struct TimelineRowView: View, Equatable {
             && lhs.row.translation == rhs.row.translation
             && lhs.translationsVersion == rhs.translationsVersion
             && lhs.isNewlyAppended == rhs.isNewlyAppended
-            && lhs.showUnreadMarker == rhs.showUnreadMarker
-            && lhs.firstUnreadMessageId == rhs.firstUnreadMessageId
-            && lhs.highlightedMessageId == rhs.highlightedMessageId
+            && lhs.swipeOffset == rhs.swipeOffset
+            && lhs.swipeIsLocked == rhs.swipeIsLocked
+            && lhs.isHighlighted == rhs.isHighlighted
+            && lhs.isUnreadDivider == rhs.isUnreadDivider
             && lhs.showURLPreviews == rhs.showURLPreviews
-            && lhs.currentUserID == rhs.currentUserID
     }
 
     private var message: TimelineMessage { row.message }
     private var info: MessageGroupInfo { row.info }
 
-    /// The current swipe offset for this row, or 0 if not being swiped.
-    private var currentSwipeOffset: CGFloat {
-        guard let swipeState, swipeState.swipingMessageId == row.message.id else { return 0 }
-        return swipeState.offset
-    }
-
-    /// Whether the action bar on this row is locked open.
-    private var isSwipeLocked: Bool {
-        guard let swipeState, swipeState.swipingMessageId == row.message.id else { return false }
-        return swipeState.isLocked
-    }
-
     /// Whether this row should animate in.
     private var shouldAnimate: Bool { isNewlyAppended && !didAppear }
 
     var body: some View {
-        rowContent
-            .padding(.horizontal, 16)
-            .environment(\.swipeOffset, currentSwipeOffset)
-            .environment(\.swipeIsLocked, isSwipeLocked)
-            .offset(x: currentSwipeOffset)
-            .opacity(shouldAnimate ? 0 : 1)
-            .animation(
-                isNewlyAppended ? .easeOut(duration: 0.2) : nil,
-                value: didAppear
-            )
-            .onAppear {
-                if isNewlyAppended && !didAppear {
-                    didAppear = true
-                }
-            }
-    }
-
-    // MARK: - Swipe Action Bar
-
-    /// Action bar with reply and thread buttons, slides in from the left
-    /// while the row slides right. Rendered as a background so it stays
-    /// stationary while the row content shifts.
-    private var swipeActionBar: some View {
-        // Scale the reply button when swiping past the lock threshold (100pt)
-        // to hint that a long swipe (140pt+) triggers reply directly.
-        let longSwipeProgress = max(0, min((currentSwipeOffset - 100) / 80, 1.0))
-        let replyScale = 1.0 + longSwipeProgress * 0.8
-
-        return Button("Reply", systemImage: "arrowshape.turn.up.left.fill") {
-            onReply(message)
+        VStack(spacing: 0) {
+            rowContent
         }
-        .labelStyle(.iconOnly)
-        .scaleEffect(replyScale)
-        .font(.title3)
-        .foregroundStyle(longSwipeProgress > 0 ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-        .buttonStyle(.plain)
-        .allowsHitTesting(isSwipeLocked)
+        .padding(.horizontal, 16)
+        .environment(\.timelineActions, injectedActions ?? environmentActions)
+        .environment(\.swipeOffset, swipeOffset)
+        .environment(\.swipeIsLocked, swipeIsLocked)
+        .opacity(shouldAnimate ? 0 : 1)
+        .animation(
+            isNewlyAppended ? .easeOut(duration: 0.1) : nil,
+            value: didAppear
+        )
+        .onAppear {
+            if isNewlyAppended && !didAppear {
+                didAppear = true
+            }
+        }
     }
 
     @ViewBuilder
     private var rowContent: some View {
-        if showUnreadMarker && message.id == firstUnreadMessageId {
+        if isUnreadDivider {
             unreadMarker
         }
 
@@ -181,66 +156,46 @@ struct TimelineRowView: View, Equatable {
             Spacer().frame(height: 8)
         }
 
-        if message.isSystemEvent {
+        if let collapsedEvents = row.collapsedSystemEvents {
+            CollapsedSystemEventsView(
+                messages: collapsedEvents,
+                groupID: message.id,
+                expandedGroups: actions.expandedGroups
+            )
+            .id(message.id)
+            .onAppear { onAppear(row) }
+        } else if message.isSystemEvent {
             SystemEventView(message: message)
                 .id(message.id)
                 .help(message.formattedTime)
                 .onAppear { onAppear(row) }
-                .messageHighlight(highlightedMessageId == message.eventID) {
-                    onHighlightDismissed()
+                .messageHighlight(isHighlighted) {
+                    actions.highlightDismissed()
                 }
         } else {
-            ZStack(alignment: .leading) {
-                // Action bar sits behind the message, revealed as the row slides right
-                if currentSwipeOffset > 0 {
-                    swipeActionBar
-                        .opacity(min(currentSwipeOffset / 60, 1.0))
-                        .offset(x: message.isOutgoing ? 88 : -64,
-                                y: message.isOutgoing ? 0 : 8)
-                }
-
-                // Translation state is baked into `row.translation` by
-                // `TimelineView.rebuildCachedRows`. Reading it directly
-                // (rather than via the view-model closure) means the row
-                // re-renders correctly when the table reloads it after a
-                // translation lands — the new MessageRow value is the
-                // single source of truth, so observation indirection
-                // can't go stale.
-                let translation = row.translation
-
-                MessageView(
-                    message: message,
-                    isLastInGroup: info.isLastInGroup,
-                    showSenderName: info.showSenderName,
-                    onToggleReaction: { key in
-                        onToggleReaction(message.eventID, key)
-                    },
-                    onTapReply: { eventID in
-                        onTapReply(eventID)
-                    },
-                    onAvatarDoubleTap: {
-                        onAvatarDoubleTap(message)
-                    },
-                    onUserTap: { userId in
-                        onUserTap(userId)
-                    },
-                    onRoomTap: onRoomTap,
-                    currentUserID: currentUserID,
-                    onMessageContextAction: onContextAction,
-                    triggerReactionPickerFromParent: $triggerReactionPicker,
-                    translation: translation,
-                    canTranslate: canTranslateProvider(message.id),
-                    onTranslationAction: {
-                        // Single callback toggles based on current state:
-                        // .translated → revert; otherwise → translate.
-                        if case .translated = row.translation {
-                            onContextAction(.showOriginal(message))
-                        } else {
-                            onContextAction(.translate(message))
-                        }
+            MessageView(
+                message: message,
+                isLastInGroup: info.isLastInGroup,
+                showSenderName: info.showSenderName,
+                triggerReactionPickerFromParent: $triggerReactionPicker,
+                // Translation state is baked into `row.translation` by the
+                // row builder, so reading it directly keeps the row the
+                // single source of truth when the table reloads it after a
+                // translation lands.
+                translation: row.translation,
+                canTranslate: canTranslateProvider(message.id),
+                onTranslationAction: {
+                    // Single callback toggles based on current state:
+                    // .translated → revert; otherwise → translate. Dispatched
+                    // through the injected TimelineActions, the upstream
+                    // row-action path.
+                    if case .translated = row.translation {
+                        actions.contextAction(.showOriginal(message))
+                    } else {
+                        actions.contextAction(.translate(message))
                     }
-                )
-            }
+                }
+            )
             .id(message.id)
             // When translated, hover tooltip surfaces the original body
             // (more useful than the timestamp on a translated row).
@@ -249,12 +204,12 @@ struct TimelineRowView: View, Equatable {
             .contextMenu {
                 contextMenu
             }
-            .messageHighlight(highlightedMessageId == message.eventID) {
-                onHighlightDismissed()
+            .messageHighlight(isHighlighted) {
+                actions.highlightDismissed()
             }
 
             if showURLPreviews, message.kind == .text,
-               let url = TimelineView.firstPreviewURL(in: message.body) {
+               let url = URLPreviewExtractor.firstPreviewURL(in: message.body) {
                 LinkPreviewView(url: url, isOutgoing: message.isOutgoing, messageID: message.id)
                     .padding(.leading, message.isOutgoing ? 0 : 34)
                     .frame(maxWidth: .infinity, alignment: message.isOutgoing ? .trailing : .leading)
@@ -266,7 +221,7 @@ struct TimelineRowView: View, Equatable {
 
     @ViewBuilder
     private var contextMenu: some View {
-        ForEach(TimelineMessageContextMenu.entries(for: message).enumerated(), id: \.offset) { _, entry in
+        ForEach(TimelineMessageContextMenu.entries(for: message, permissions: actions.permissions).enumerated(), id: \.offset) { _, entry in
             contextMenuEntry(entry)
         }
         translationMenuEntry
@@ -284,7 +239,7 @@ struct TimelineRowView: View, Equatable {
             if canTranslateProvider(message.id) {
                 Divider()
                 Button {
-                    onContextAction(.translate(message))
+                    actions.contextAction(.translate(message))
                 } label: {
                     Label("Translate", systemImage: "translate")
                 }
@@ -298,7 +253,7 @@ struct TimelineRowView: View, Equatable {
         case .translated:
             Divider()
             Button {
-                onContextAction(.showOriginal(message))
+                actions.contextAction(.showOriginal(message))
             } label: {
                 Label("Show Original", systemImage: "translate")
             }
@@ -310,13 +265,13 @@ struct TimelineRowView: View, Equatable {
         switch entry {
         case .reply:
             Button {
-                onContextAction(.reply(message))
+                actions.contextAction(.reply(message))
             } label: {
                 Label("Reply", systemImage: "arrowshape.turn.up.left")
             }
         case .copyMessage:
             Button {
-                onContextAction(.copy(message.body))
+                actions.contextAction(.copy(message.body))
             } label: {
                 Label("Copy Message", systemImage: "doc.on.doc")
             }
@@ -324,17 +279,17 @@ struct TimelineRowView: View, Equatable {
             Button {
                 triggerReactionPicker = true
             } label: {
-                Label("Add Reaction…", systemImage: "face.smiling")
+                Label("Add Reaction\u{2026}", systemImage: "face.smiling")
             }
         case .togglePin:
             Button {
-                onContextAction(.togglePin(message.eventID))
+                actions.contextAction(.togglePin(message.eventID))
             } label: {
                 Label("Pin/Unpin", systemImage: "pin")
             }
         case .edit:
             Button {
-                onContextAction(.edit(message))
+                actions.contextAction(.edit(message))
             } label: {
                 Label("Edit Message", systemImage: "pencil")
             }
@@ -342,7 +297,7 @@ struct TimelineRowView: View, Equatable {
             Divider()
         case .delete:
             Button(role: .destructive) {
-                onContextAction(.delete(message))
+                actions.contextAction(.delete(message))
             } label: {
                 Label("Delete Message", systemImage: "trash")
             }
@@ -364,23 +319,26 @@ struct TimelineRowView: View, Equatable {
         .transition(.opacity)
     }
 
-    // MARK: - Date Labels
+}
 
-    private func dateSectionLabel(for date: Date) -> String {
-        let calendar = Calendar.current
-        let now = Date.now
+// MARK: - Date Labels
 
-        if calendar.isDateInToday(date) {
-            return date.formatted(date: .omitted, time: .shortened)
-        } else if calendar.isDateInYesterday(date) {
-            return "Yesterday \(date.formatted(date: .omitted, time: .shortened))"
-        } else if calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) {
-            return date.formatted(.dateTime.weekday(.wide).hour().minute())
-        } else if calendar.isDate(date, equalTo: now, toGranularity: .year) {
-            return date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
-        } else {
-            return date.formatted(.dateTime.year().month(.abbreviated).day().hour().minute())
-        }
+/// Formats a date into a human-readable section label for timeline date headers.
+/// Used by ``TimelineRowView`` and ``CollapsedSystemEventsView``.
+func dateSectionLabel(for date: Date) -> String {
+    let calendar = Calendar.current
+    let now = Date.now
+
+    if calendar.isDateInToday(date) {
+        return date.formatted(date: .omitted, time: .shortened)
+    } else if calendar.isDateInYesterday(date) {
+        return "Yesterday \(date.formatted(date: .omitted, time: .shortened))"
+    } else if calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) {
+        return date.formatted(.dateTime.weekday(.wide).hour().minute())
+    } else if calendar.isDate(date, equalTo: now, toGranularity: .year) {
+        return date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+    } else {
+        return date.formatted(.dateTime.year().month(.abbreviated).day().hour().minute())
     }
 }
 
@@ -398,30 +356,21 @@ extension MessageTranslationState {
 
 // MARK: - Previews
 
-private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .default) -> TimelineRowView {
+private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .default) -> some View {
     TimelineRowView(
         row: .init(message: message, info: info, isPaginationTrigger: false, translation: .idle),
         isNewlyAppended: false,
-        showUnreadMarker: false,
-        firstUnreadMessageId: nil,
-        highlightedMessageId: nil,
+        isHighlighted: false,
+        isUnreadDivider: false,
         showURLPreviews: true,
-        currentUserID: "@me:matrix.org",
-        onToggleReaction: { _, _ in },
-        onTapReply: { _ in },
-        onReply: { _ in },
-        onAvatarDoubleTap: { _ in },
-        onUserTap: { _ in },
-        onRoomTap: nil,
-        onAppear: { _ in },
-        onContextAction: { _ in },
-        onHighlightDismissed: {}
+        onAppear: { _ in }
     )
+    .environment(\.timelineActions, TimelineActions(currentUserID: "@me:matrix.org"))
 }
 
 #Preview("Conversation") {
     let messages = PreviewTimelineViewModel.sampleMessages
-    let rows = TimelineView.buildRows(for: messages, hasReachedStart: true)
+    let rows = MessageRowBuilder.buildRows(for: messages, hasReachedStart: true)
 
     ScrollView {
         VStack(spacing: 2) {
@@ -429,25 +378,16 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
                 TimelineRowView(
                     row: row,
                     isNewlyAppended: false,
-                    showUnreadMarker: false,
-                    firstUnreadMessageId: nil,
-                    highlightedMessageId: nil,
+                    isHighlighted: false,
+                    isUnreadDivider: false,
                     showURLPreviews: true,
-                    currentUserID: "@me:matrix.org",
-                    onToggleReaction: { _, _ in },
-                    onTapReply: { _ in },
-                    onReply: { _ in },
-                    onAvatarDoubleTap: { _ in },
-                    onUserTap: { _ in },
-                    onRoomTap: nil,
-                    onAppear: { _ in },
-                    onContextAction: { _ in },
-                    onHighlightDismissed: {}
+                    onAppear: { _ in }
                 )
             }
         }
         .padding()
     }
+    .environment(\.timelineActions, TimelineActions(currentUserID: "@me:matrix.org"))
     .frame(width: 500, height: 700)
 }
 
@@ -493,9 +433,9 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
               body: "Check out this new feature!",
               timestamp: .now, isOutgoing: true,
               reactions: [
-                .init(key: "🎉", count: 3, senderIDs: ["@alice:matrix.org", "@bob:matrix.org", "@charlie:matrix.org"], highlightedByCurrentUser: false),
-                .init(key: "🚀", count: 1, senderIDs: ["@alice:matrix.org"], highlightedByCurrentUser: false),
-                .init(key: "👍", count: 2, senderIDs: ["@bob:matrix.org", "@me:matrix.org"], highlightedByCurrentUser: true)
+                .init(key: "\u{1F389}", count: 3, senderIDs: ["@alice:matrix.org", "@bob:matrix.org", "@charlie:matrix.org"], highlightedByCurrentUser: false),
+                .init(key: "\u{1F680}", count: 1, senderIDs: ["@alice:matrix.org"], highlightedByCurrentUser: false),
+                .init(key: "\u{1F44D}", count: 2, senderIDs: ["@bob:matrix.org", "@me:matrix.org"], highlightedByCurrentUser: true)
               ]),
         info: .init(isLastInGroup: true)
     )
@@ -515,7 +455,7 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
 
 #Preview("Unread Marker") {
     let messages = Array(PreviewTimelineViewModel.sampleMessages.prefix(5))
-    let rows = TimelineView.buildRows(for: messages, hasReachedStart: true)
+    let rows = MessageRowBuilder.buildRows(for: messages, hasReachedStart: true)
 
     ScrollView {
         VStack(spacing: 2) {
@@ -523,25 +463,70 @@ private func previewRow(_ message: TimelineMessage, info: MessageGroupInfo = .de
                 TimelineRowView(
                     row: row,
                     isNewlyAppended: false,
-                    showUnreadMarker: true,
-                    firstUnreadMessageId: "5",
-                    highlightedMessageId: nil,
+                    isHighlighted: false,
+                    isUnreadDivider: row.message.id == "5",
                     showURLPreviews: true,
-                    currentUserID: "@me:matrix.org",
-                    onToggleReaction: { _, _ in },
-                    onTapReply: { _ in },
-                    onReply: { _ in },
-                    onAvatarDoubleTap: { _ in },
-                    onUserTap: { _ in },
-                    onRoomTap: nil,
-                    onAppear: { _ in },
-                    onContextAction: { _ in },
-                    onHighlightDismissed: {}
+                    onAppear: { _ in }
                 )
             }
         }
         .padding()
     }
+    .environment(\.timelineActions, TimelineActions(currentUserID: "@me:matrix.org"))
     .frame(width: 500, height: 500)
 }
 
+#Preview("Swipe Action Bar") {
+    VStack(spacing: 16) {
+        TimelineRowView(
+            row: .init(
+                message: .init(id: "1", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
+                      body: "Incoming message with swipe",
+                      timestamp: .now, isOutgoing: false),
+                info: .init(isLastInGroup: true, showSenderName: true),
+                isPaginationTrigger: false
+            ),
+            isNewlyAppended: false,
+            isHighlighted: false,
+            isUnreadDivider: false,
+            showURLPreviews: true,
+            onAppear: { _ in },
+            swipeOffset: 80
+        )
+
+        TimelineRowView(
+            row: .init(
+                message: .init(id: "2", senderID: "@me:matrix.org",
+                      body: "Outgoing message with swipe",
+                      timestamp: .now, isOutgoing: true),
+                info: .init(isLastInGroup: true),
+                isPaginationTrigger: false
+            ),
+            isNewlyAppended: false,
+            isHighlighted: false,
+            isUnreadDivider: false,
+            showURLPreviews: true,
+            onAppear: { _ in },
+            swipeOffset: 80
+        )
+
+        TimelineRowView(
+            row: .init(
+                message: .init(id: "3", senderID: "@me:matrix.org",
+                      body: "Short",
+                      timestamp: .now, isOutgoing: true),
+                info: .init(isLastInGroup: true),
+                isPaginationTrigger: false
+            ),
+            isNewlyAppended: false,
+            isHighlighted: false,
+            isUnreadDivider: false,
+            showURLPreviews: true,
+            onAppear: { _ in },
+            swipeOffset: 80
+        )
+    }
+    .environment(\.timelineActions, TimelineActions(currentUserID: "@me:matrix.org"))
+    .padding()
+    .frame(width: 500)
+}

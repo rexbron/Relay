@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import RelayInterface
 import SwiftUI
 
 // MARK: - Preview Helpers
@@ -29,33 +30,24 @@ struct PreviewTimeline: View {
     }
 
     var body: some View {
-        let rows = TimelineView.buildRows(for: viewModel.messages, hasReachedStart: true)
+        let rows = MessageRowBuilder.buildRows(for: viewModel.messages, hasReachedStart: true)
         ScrollView {
             LazyVStack(spacing: 2) {
                 ForEach(rows) { row in
                     TimelineRowView(
                         row: row,
                         isNewlyAppended: false,
-                        showUnreadMarker: showUnreadMarker,
-                        firstUnreadMessageId: viewModel.firstUnreadMessageId,
-                        highlightedMessageId: nil,
+                        isHighlighted: false,
+                        isUnreadDivider: showUnreadMarker && row.message.id == viewModel.firstUnreadMessageId,
                         showURLPreviews: true,
-                        currentUserID: "@me:matrix.org",
-                        onToggleReaction: { _, _ in },
-                        onTapReply: { _ in },
-                        onReply: { _ in },
-                        onAvatarDoubleTap: { _ in },
-                        onUserTap: { _ in },
-                        onRoomTap: nil,
-                        onAppear: { _ in },
-                        onContextAction: { _ in },
-                        onHighlightDismissed: {}
+                        onAppear: { _ in }
                     )
                 }
             }
             .padding()
         }
         .defaultScrollAnchor(.bottom)
+        .environment(\.timelineActions, TimelineActions(currentUserID: "@me:matrix.org"))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             HStack {
                 TextField("Message", text: .constant(""))

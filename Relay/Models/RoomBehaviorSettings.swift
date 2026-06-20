@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import Foundation
-import Observation
 import SwiftUI
 
 /// Per-room behavior overrides stored locally in UserDefaults.
@@ -73,12 +71,6 @@ final class RoomBehaviorStore {
         } else {
             cache[roomId] = overrides
         }
-        save()
-    }
-
-    /// Clears all overrides for a room, restoring global defaults.
-    func clearOverrides(for roomId: String) {
-        cache.removeValue(forKey: roomId)
         save()
     }
 

@@ -47,19 +47,7 @@ struct ImageMessageView: View {
     }
 
     private var displaySize: CGSize {
-        let maxWidth: CGFloat = 280
-        let maxHeight: CGFloat = 320
-        // swiftlint:disable:next identifier_name
-        if let w = mediaInfo.width, let h = mediaInfo.height, w > 0, h > 0 {
-            let aspect = CGFloat(w) / CGFloat(h)
-            let width = min(CGFloat(w), maxWidth)
-            let height = width / aspect
-            if height > maxHeight {
-                return CGSize(width: maxHeight * aspect, height: maxHeight)
-            }
-            return CGSize(width: width, height: height)
-        }
-        return CGSize(width: maxWidth, height: 200)
+        mediaInfo.displaySize()
     }
 
     /// Whether this message contains a GIF image, detected by MIME type or file extension.
@@ -212,14 +200,15 @@ struct ImageMessageView: View {
         isLoadingFullImage = true
         defer { isLoadingFullImage = false }
 
-        guard let data = await matrixService.mediaContent(
-            mxcURL: mediaInfo.mxcURL,
-            mediaSourceJSON: mediaInfo.mediaSourceJSON
-        ) else { return }
-
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(mediaInfo.filename)
         do {
-            try data.write(to: url)
+            let url = try await MediaFileHelper.downloadToTemporaryFile(
+                mediaInfo: mediaInfo, matrixService: matrixService
+            )
+            // Resign first responder so QLPreviewPanel can find the
+            // SwiftUI .quickLookPreview handler in the responder chain.
+            // Without this, an active ComposeInputTextView keeps the
+            // panel from locating its data source.
+            NSApp.keyWindow?.makeFirstResponder(nil)
             quickLookURL = url
         } catch {
             errorReporter.report(.mediaPreviewFailed(filename: mediaInfo.filename, reason: error.localizedDescription))
@@ -227,20 +216,11 @@ struct ImageMessageView: View {
     }
 
     private func saveImage() async {
-        guard let data = await matrixService.mediaContent(
-            mxcURL: mediaInfo.mxcURL,
-            mediaSourceJSON: mediaInfo.mediaSourceJSON
-        ) else { return }
-
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = mediaInfo.filename
-        panel.allowedContentTypes = [.image]
-        panel.canCreateDirectories = true
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
         do {
-            try data.write(to: url)
+            try await MediaFileHelper.saveToFile(
+                mediaInfo: mediaInfo, matrixService: matrixService,
+                contentTypes: [.image]
+            )
         } catch {
             errorReporter.report(.mediaSaveFailed(filename: mediaInfo.filename, reason: error.localizedDescription))
         }

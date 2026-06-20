@@ -14,9 +14,6 @@
 
 import Foundation
 import RelayInterface
-import OSLog
-
-private let logger = Logger(subsystem: "RelayKit", category: "SessionVerification")
 
 /// Concrete implementation of ``SessionVerificationViewModelProtocol`` backed by
 /// a ``SessionVerificationControllerProxyProtocol``.
@@ -41,17 +38,46 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
     /// The SAS emoji to display for comparison during the `.showingEmojis` state.
     public private(set) var emojis: [RelayInterface.VerificationEmoji] = []
 
+    /// Whether other verified devices exist for interactive (SAS) verification.
+    public private(set) var hasOtherDevices: Bool = true
+
     @ObservationIgnored private let controller: any SessionVerificationControllerProxyProtocol
+    @ObservationIgnored private let service: any MatrixServiceProtocol
     @ObservationIgnored private var observationTask: Task<Void, Never>?
+    @ObservationIgnored private let activityLog: ActivityLog?
     private let errorReporter: ErrorReporter
 
-    /// - Parameter controller: A proxy wrapping the SDK's verification controller.
-    ///   The proxy must outlive any individual verification flow so that state
-    ///   updates continue to arrive.
-    public init(controller: any SessionVerificationControllerProxyProtocol, errorReporter: ErrorReporter) {
+    /// - Parameters:
+    ///   - controller: A proxy wrapping the SDK's verification controller.
+    ///     The proxy must outlive any individual verification flow so that state
+    ///     updates continue to arrive.
+    ///   - service: The Matrix service used for recovery key verification and
+    ///     checking whether other verified devices exist.
+    ///   - activityLog: Optional activity log for reporting verification events.
+    ///   - acceptingIncomingRequest: When `true`, the view model starts in the
+    ///     waiting state and immediately accepts the pending incoming request
+    ///     from the controller, skipping the idle choice view.
+    public init(
+        controller: any SessionVerificationControllerProxyProtocol,
+        service: any MatrixServiceProtocol,
+        errorReporter: ErrorReporter,
+        activityLog: ActivityLog? = nil,
+        acceptingIncomingRequest: Bool = false
+    ) {
         self.controller = controller
+        self.service = service
         self.errorReporter = errorReporter
+        self.activityLog = activityLog
+
+        if acceptingIncomingRequest {
+            state = .waitingForOtherDevice
+        }
+
         observationTask = Task { [weak self] in
+            await self?.checkForOtherDevices()
+            if acceptingIncomingRequest {
+                await self?.acceptPendingIncomingRequest()
+            }
             await self?.observeFlowState()
         }
     }
@@ -73,8 +99,10 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
         // If an incoming request is already pending, accept it instead of
         // sending a competing outgoing request.
         if case .receivedRequest(let details) = controller.flowState {
-            logger.info(
-                "Incoming request already pending from \(details.deviceId), accepting instead of sending new request"
+            activityLog?.log(
+                category: .auth, severity: .info, source: "SessionVerification",
+                summary: "Accepting pending incoming request",
+                metadata: ["deviceId": details.deviceId]
             )
             await handleIncomingRequest(details)
             return
@@ -83,10 +111,17 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
         state = .requesting
         do {
             try await controller.requestDeviceVerification()
-            logger.info("Verification request sent, waiting for other device")
+            activityLog?.log(
+                category: .auth, severity: .info, source: "SessionVerification",
+                summary: "Verification request sent"
+            )
             state = .waitingForOtherDevice
         } catch {
-            logger.error("Failed to request verification: \(error)")
+            activityLog?.log(
+                category: .auth, severity: .error, source: "SessionVerification",
+                summary: "Verification request failed",
+                detail: error.localizedDescription
+            )
             state = .failed(error.localizedDescription)
             errorReporter.report(.verificationFailed(error.localizedDescription))
         }
@@ -98,7 +133,11 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
         do {
             try await controller.approveVerification()
         } catch {
-            logger.error("Failed to approve verification: \(error)")
+            activityLog?.log(
+                category: .auth, severity: .error, source: "SessionVerification",
+                summary: "Verification approval failed",
+                detail: error.localizedDescription
+            )
             state = .failed(error.localizedDescription)
             errorReporter.report(.verificationFailed(error.localizedDescription))
         }
@@ -108,9 +147,17 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
     public func declineVerification() async {
         do {
             try await controller.declineVerification()
+            activityLog?.log(
+                category: .auth, severity: .info, source: "SessionVerification",
+                summary: "Verification declined"
+            )
             state = .cancelled
         } catch {
-            logger.error("Failed to decline verification: \(error)")
+            activityLog?.log(
+                category: .auth, severity: .error, source: "SessionVerification",
+                summary: "Failed to decline verification",
+                detail: error.localizedDescription
+            )
             state = .failed(error.localizedDescription)
             errorReporter.report(.verificationFailed(error.localizedDescription))
         }
@@ -120,11 +167,67 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
     public func cancelVerification() async {
         do {
             try await controller.cancelVerification()
+            activityLog?.log(
+                category: .auth, severity: .info, source: "SessionVerification",
+                summary: "Verification cancelled"
+            )
             state = .cancelled
         } catch {
-            logger.error("Failed to cancel verification: \(error)")
+            activityLog?.log(
+                category: .auth, severity: .error, source: "SessionVerification",
+                summary: "Failed to cancel verification",
+                detail: error.localizedDescription
+            )
             state = .failed(error.localizedDescription)
             errorReporter.report(.verificationFailed(error.localizedDescription))
+        }
+    }
+
+    /// Resets the flow back to idle.
+    public func resetToIdle() {
+        state = .idle
+    }
+
+    /// Transitions to the recovery key entry state.
+    public func startRecoveryKeyEntry() {
+        state = .enteringRecoveryKey
+    }
+
+    /// Submits a recovery key to verify the session via secret storage.
+    public func submitRecoveryKey(_ key: String) async {
+        state = .recoveringWithKey
+        do {
+            try await service.recoverWithKey(key)
+            activityLog?.log(
+                category: .auth, severity: .info, source: "SessionVerification",
+                summary: "Session verified via recovery key"
+            )
+            state = .verified
+        } catch {
+            activityLog?.log(
+                category: .auth, severity: .error, source: "SessionVerification",
+                summary: "Recovery key verification failed",
+                detail: error.localizedDescription
+            )
+            state = .failed("Invalid recovery key. Check the key and try again.")
+            errorReporter.report(.verificationFailed(error.localizedDescription))
+        }
+    }
+
+    // MARK: - Device Check
+
+    /// Checks whether other verified devices exist for interactive verification.
+    private func checkForOtherDevices() async {
+        do {
+            let result = try await service.hasDevicesToVerifyAgainst()
+            hasOtherDevices = result
+        } catch {
+            activityLog?.log(
+                category: .auth, severity: .warning, source: "SessionVerification",
+                summary: "Failed to check for other devices",
+                detail: error.localizedDescription
+            )
+            // Default to true so SAS remains available as a fallback.
         }
     }
 
@@ -193,20 +296,44 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
             handleVerificationData(data)
 
         case .finished:
+            activityLog?.log(
+                category: .auth, severity: .info, source: "SessionVerification",
+                summary: "Session verified via SAS"
+            )
             state = .verified
 
         case .cancelled:
             guard !state.isTerminal else { return }
+            activityLog?.log(
+                category: .auth, severity: .warning, source: "SessionVerification",
+                summary: "Verification cancelled by other device"
+            )
             state = .cancelled
 
         case .failed:
             guard !state.isTerminal else { return }
+            activityLog?.log(
+                category: .auth, severity: .error, source: "SessionVerification",
+                summary: "Verification failed"
+            )
             state = .failed("Verification failed.")
             errorReporter.report(.verificationFailed("Verification failed."))
         }
     }
 
     // MARK: - Flow State Handlers
+
+    /// Accepts the pending incoming request currently on the controller.
+    ///
+    /// Called once during init when `acceptingIncomingRequest` is `true`. The
+    /// controller's flow state is expected to be `.receivedRequest` because
+    /// `resetFlowState()` was skipped. If the state is something else, this
+    /// method falls through silently and lets `observeFlowState()` handle it.
+    @MainActor
+    private func acceptPendingIncomingRequest() async {
+        guard case .receivedRequest(let details) = controller.flowState else { return }
+        await handleIncomingRequest(details)
+    }
 
     /// Handles an incoming verification request from another device.
     ///
@@ -216,9 +343,16 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
     /// and triggers ``handleAccepted()`` to start SAS negotiation.
     @MainActor
     private func handleIncomingRequest(_ details: SessionVerificationRequestDetails) async {
-        logger.info("Incoming verification request from \(details.deviceId)")
+        activityLog?.log(
+            category: .auth, severity: .info, source: "SessionVerification",
+            summary: "Incoming verification request",
+            metadata: ["deviceId": details.deviceId]
+        )
 
-        guard case .idle = state else { return }
+        switch state {
+        case .idle, .waitingForOtherDevice: break
+        default: return
+        }
 
         state = .waitingForOtherDevice
         do {
@@ -227,9 +361,16 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
                 flowId: details.flowId
             )
             try await controller.acceptVerificationRequest()
-            logger.info("Accepted incoming verification request")
+            activityLog?.log(
+                category: .auth, severity: .info, source: "SessionVerification",
+                summary: "Accepted incoming verification request"
+            )
         } catch {
-            logger.error("Failed to accept incoming request: \(error)")
+            activityLog?.log(
+                category: .auth, severity: .error, source: "SessionVerification",
+                summary: "Failed to accept incoming request",
+                detail: error.localizedDescription
+            )
             state = .failed(error.localizedDescription)
             errorReporter.report(.verificationFailed(error.localizedDescription))
         }
@@ -242,7 +383,11 @@ public final class SessionVerificationViewModel: SessionVerificationViewModelPro
         do {
             try await controller.startSasVerification()
         } catch {
-            logger.error("Failed to start SAS verification: \(error)")
+            activityLog?.log(
+                category: .auth, severity: .error, source: "SessionVerification",
+                summary: "Failed to start SAS verification",
+                detail: error.localizedDescription
+            )
             state = .failed(error.localizedDescription)
             errorReporter.report(.verificationFailed(error.localizedDescription))
         }

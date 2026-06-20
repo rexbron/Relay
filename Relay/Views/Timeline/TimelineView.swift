@@ -29,6 +29,8 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     @Environment(\.matrixService) private var matrixService
     @Environment(\.errorReporter) private var errorReporter
     @Environment(\.gifSearchService) private var gifSearchService
+    @Environment(\.composeDraftStore) private var composeDraftStore
+    @Environment(\.scrollAnchorStore) private var scrollAnchorStore
 
     /// The Matrix room identifier for the displayed room.
     let roomId: String
@@ -57,6 +59,9 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     /// read receipts, and drag-and-drop are all disabled.
     var readOnly: Bool = false
 
+    /// The compose view model for this room, retrieved from the draft store
+    /// so unsent drafts survive room switches. Initialized as a temporary
+    /// placeholder; the actual draft is loaded from the store in `.task`.
     @State private var compose = ComposeViewModel()
     @State private var messageToDelete: TimelineMessage?
 
@@ -69,9 +74,10 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     @State private var fullyReadDebounceTask: Task<Void, Never>?
     @State private var lastFullyReadEventId: String?
     @State private var isDirectRoom = false
+    @State private var roomPermissions: RoomPermissions?
     @State private var highlightedMessageId: String?
     @State private var memberRefreshTask: Task<Void, Never>?
-    @State private var cachedMessageRows: [MessageRow] = []
+    @State private var cachedMessageRows: [MessageRow]
     @State private var isTimelineDropTargeted = false
     /// Number of parallel translation slots. Each slot owns its own
     /// `TranslationSession` via `.translationTask`, so up to this many
@@ -80,6 +86,38 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     /// concurrently, but we don't want to spam the system if the user
     /// triggers Translate-all someday.
     private static let translationSlotCount = 3
+    @State private var timelineActionsRef = TimelineActions()
+    @State private var successorRoomId: String?
+    init(
+        roomId: String,
+        roomName: String,
+        roomAvatarURL: String? = nil,
+        viewModel: any TimelineViewModelProtocol,
+        focusedMessageId: Binding<String?>,
+        onUserTap: ((UserProfile) -> Void)? = nil,
+        onRoomTap: ((String) -> Void)? = nil,
+        readOnly: Bool = false
+    ) {
+        self.roomId = roomId
+        self.roomName = roomName
+        self.roomAvatarURL = roomAvatarURL
+        _viewModel = State(wrappedValue: viewModel)
+        _focusedMessageId = focusedMessageId
+        self.onUserTap = onUserTap
+        self.onRoomTap = onRoomTap
+        self.readOnly = readOnly
+
+        // Seed the row cache from the view model's cached messages so
+        // the first body evaluation already has content to render.
+        // This avoids the empty frame that occurs when the table is
+        // created before .task has a chance to call rebuildCachedRows().
+        // The messages are passed unfiltered; .task applies the full
+        // filter (membership/state event preferences) immediately after.
+        _cachedMessageRows = State(initialValue: MessageRowBuilder.buildRows(
+            for: viewModel.messages,
+            hasReachedStart: viewModel.hasReachedStart
+        ))
+    }
 
     /// Number of membership events observed in the timeline, used to trigger
     /// a member list refresh when new joins/leaves arrive.
@@ -94,6 +132,9 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     @AppStorage("behavior.alwaysLoadNewest") private var alwaysLoadNewest = true
     @AppStorage("behavior.showMembershipEvents") private var globalShowMembershipEvents = true
     @AppStorage("behavior.showStateEvents") private var globalShowStateEvents = true
+    @AppStorage("labs.timelineUseLazyVStack") private var timelineUseLazyVStack = false
+
+    @State private var lazyVStackScrollPosition = ScrollPosition(idType: String.self, edge: .bottom)
 
     private var roomOverrides: RoomBehaviorOverrides {
         RoomBehaviorStore.shared.overrides(for: roomId)
@@ -119,6 +160,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
 
     var body: some View {
         messageList
+            .opacity(successorRoomId != nil ? 0.5 : 1)
             .environment(\.mediaAutoReveal, shouldAutoRevealMedia)
             .environment(\.gifAnimationOverride, roomOverrides.animateGIFs)
             .overlay {
@@ -136,9 +178,9 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                         MessageView(
                             message: reply,
                             isLastInGroup: true,
-                            showSenderName: !reply.isOutgoing,
-                            currentUserID: matrixService.userId()
+                            showSenderName: !reply.isOutgoing
                         )
+                        .environment(\.timelineActions, timelineActionsRef)
                         .allowsHitTesting(false)
                         .padding(.horizontal, 16)
                     }
@@ -146,8 +188,33 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 }
             }
             .overlay(alignment: .bottom) {
-                if !readOnly {
-                    composeBarSection
+                if successorRoomId != nil || (!readOnly && (roomPermissions?.canSendMessages ?? true)) {
+                    TimelineBottomBar(
+                        compose: compose,
+                        viewModel: viewModel,
+                        roomId: roomId,
+                        successorRoomId: successorRoomId,
+                        onRoomTap: onRoomTap,
+                        onSendWillScroll: { pendingScrollToBottom = true },
+                        onHeightChanged: { height in
+                            let changed = height != composeBarHeight
+                            composeBarHeight = height
+                            if !timelineUseLazyVStack {
+                                tableProxy.setContentInsets(NSEdgeInsets(
+                                    top: 0, left: 0, bottom: height + 4, right: 0
+                                ))
+                            }
+                            if changed, isNearBottom {
+                                if timelineUseLazyVStack {
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        lazyVStackScrollPosition.scrollTo(edge: .bottom)
+                                    }
+                                } else {
+                                    tableProxy.scrollToBottom(animated: true)
+                                }
+                            }
+                        }
+                    )
                 }
             }
             .onDrop(
@@ -207,8 +274,32 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             .accessibilityHidden(true)
         }
         .task {
-            // Cache isDirect once — avoids O(n) room scan on every body evaluation.
-            isDirectRoom = matrixService.rooms.first(where: { $0.id == roomId })?.isDirect ?? false
+            // Restore the compose view model from the draft store so unsent
+            // text, reply/edit context, and staged attachments survive room
+            // switches.
+            if !readOnly {
+                compose = composeDraftStore.draft(for: roomId)
+            }
+
+            // Bind the timeline action callbacks once. The closures capture
+            // @State / @Environment references which remain valid for the
+            // lifetime of this view.
+            configureTimelineActions()
+
+            // Cache room summary properties — avoids O(n) room scan on every body evaluation.
+            let roomSummary = matrixService.rooms.first(where: { $0.id == roomId })
+            isDirectRoom = roomSummary?.isDirect ?? false
+            successorRoomId = roomSummary?.successorRoomId
+
+            // Fetch room permissions to determine moderator capabilities.
+            let details = await matrixService.roomDetails(roomId: roomId)
+            roomPermissions = details?.permissions
+            timelineActionsRef.permissions = roomPermissions
+
+            // Seed the row cache immediately so cached messages from a
+            // previously visited room render in the first frame, before
+            // the async loadTimeline call reconnects to the SDK.
+            rebuildCachedRows()
 
             // Load focused on the fully-read marker if the user has opted out of "always load newest"
             var focusEventId: String?
@@ -217,8 +308,24 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             }
             await viewModel.loadTimeline(focusedOnEventId: focusEventId)
 
-            // Seed the row cache now that messages are available.
-            rebuildCachedRows()
+            // Restore scroll position from a previous visit to this room.
+            // If the user was scrolled up reading history, jump back to
+            // that position instead of snapping to the bottom.
+            let savedAnchor = scrollAnchorStore.take(roomId: roomId)
+            if let savedAnchor, !savedAnchor.isNearBottom, focusEventId == nil {
+                // Yield briefly so the table view has applied its initial
+                // snapshot before we attempt the scroll.
+                try? await Task.sleep(for: .milliseconds(50))
+                if !timelineUseLazyVStack {
+                    tableProxy.scrollToRow(id: savedAnchor.eventId, animated: false)
+                }
+                isNearBottom = false
+            } else if timelineUseLazyVStack, focusEventId == nil {
+                // defaultScrollAnchor(.bottom) handles the initial layout,
+                // but async data arrival needs an explicit nudge.
+                try? await Task.sleep(for: .milliseconds(50))
+                scrollToBottom(animated: false)
+            }
 
             // After loading, scroll to the focused event and briefly highlight it
             if let focusEventId {
@@ -227,18 +334,33 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
 
             guard !readOnly else { return }
 
-            await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts)
+            // Only mark as read when the user can see the latest messages.
+            // If we restored to a saved scroll position mid-history, wait
+            // until they scroll to the bottom (handled by onNearBottomChanged).
+            markAsReadIfNeeded()
 
             // Fetch room members for mention autocomplete
             compose.members = await matrixService.roomMembers(roomId: roomId)
 
         }
         .onDisappear {
+            // Save the scroll anchor before the view is destroyed so
+            // returning to this room can restore the scroll position.
+            if !timelineUseLazyVStack, let eventId = tableProxy.topVisibleEventId() {
+                scrollAnchorStore.save(
+                    roomId: roomId,
+                    anchor: ScrollAnchor(eventId: eventId, isNearBottom: isNearBottom)
+                )
+            }
+
             if !readOnly, sendTypingNotifications {
                 Task { await matrixService.sendTypingNotice(roomId: roomId, isTyping: false) }
             }
             memberRefreshTask?.cancel()
             unreadMarkerDismissTask?.cancel()
+        }
+        .onChange(of: matrixService.rooms.first(where: { $0.id == roomId })?.successorRoomId) { _, newValue in
+            successorRoomId = newValue
         }
         .onChange(of: viewModel.firstUnreadMessageId) { oldValue, newValue in
             // When the unread marker position is first computed (nil -> value),
@@ -286,7 +408,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
 
             if let message = viewModel.messages.first(where: { $0.eventID == eventId }) {
                 // Message is already loaded — scroll to it and highlight
-                tableProxy.scrollToRow(id: message.id)
+                scrollToRow(id: message.id)
                 highlightedMessageId = eventId
             } else {
                 // Message is not in the loaded timeline — load an event-focused timeline
@@ -322,24 +444,41 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     /// `filteredMessages` + `buildRows` pipeline only runs when the underlying
     /// data actually changes, not on every `body` evaluation.
     private func rebuildCachedRows() {
-        cachedMessageRows = Self.buildRows(
+        let newRows = MessageRowBuilder.buildRows(
             for: filteredMessages,
             hasReachedStart: viewModel.hasReachedStart,
             translationState: { messageId in
                 viewModel.translationState(for: messageId)
             }
         )
+        if newRows != cachedMessageRows {
+            cachedMessageRows = newRows
+        }
     }
 
-    /// The message list backed by an `NSTableView` for cell recycling and
-    /// stable scroll position during backward pagination.
+    /// The message list area containing the timeline renderer, overlays,
+    /// and shared scroll/pagination change handlers.
     private var messageList: some View {
-        timelineTable
-            .ignoresSafeArea()
+        timelineRenderer
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .top) { loadingMoreOverlay }
             .onChange(of: viewModel.messagesVersion) {
+                let previousLastID = cachedMessageRows.last?.id
                 rebuildCachedRows()
+
+                // Scroll-to-bottom: check if the last message changed
+                // *after* rebuilding rows so the target row already
+                // exists in the renderer's data source.
+                let newLastID = cachedMessageRows.last?.id
+                if newLastID != previousLastID {
+                    if viewModel.timelineFocus == .live, !viewModel.isLoadingMore {
+                        if isNearBottom || pendingScrollToBottom {
+                            pendingScrollToBottom = false
+                            scrollToBottom()
+                        }
+                    }
+                    markAsReadIfNeeded()
+                }
             }
             .onChange(of: viewModel.translationsVersion) {
                 rebuildCachedRows()
@@ -353,99 +492,138 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             .onChange(of: showStateEvents) {
                 rebuildCachedRows()
             }
-            .onChange(of: viewModel.messages.last?.id) {
-                guard viewModel.timelineFocus == .live else { return }
-                guard !viewModel.isLoadingMore else { return }
-                if isNearBottom || pendingScrollToBottom {
-                    pendingScrollToBottom = false
-                    tableProxy.scrollToBottom()
-                }
-                if isNearBottom, NSApp.isActive {
-                    Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
+            .onChange(of: viewModel.timelineFocus) {
+                if viewModel.timelineFocus == .live {
+                    pendingScrollToBottom = true
+                    markAsReadIfNeeded()
                 }
             }
-            .onChange(of: viewModel.timelineFocus) {
-                if viewModel.timelineFocus == .live, NSApp.isActive {
-                    pendingScrollToBottom = true
-                    Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
+            .onChange(of: viewModel.isLoadingMore) {
+                // After back-pagination settles, re-check whether a read
+                // receipt is needed. During pagination the scroll geometry
+                // may report nearBottom = false due to content size changes,
+                // causing markAsRead calls to be skipped. Once loading
+                // finishes and the scroll settles back at the bottom, this
+                // handler ensures the room is marked as read.
+                if !viewModel.isLoadingMore {
+                    markAsReadIfNeeded()
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-                if isNearBottom {
-                    Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
-                }
+                markAsReadIfNeeded()
             }
             .overlay(alignment: .bottomTrailing) { scrollToBottomButton }
             .overlay { loadingOrEmptyOverlay }
     }
 
-    private var timelineTable: some View {
-        TimelineTableViewRepresentable(
-            rows: cachedMessageRows,
-            hasReachedEnd: viewModel.hasReachedEnd,
-            isLive: viewModel.timelineFocus == .live,
-            showUnreadMarker: showUnreadMarker,
-            firstUnreadMessageId: viewModel.firstUnreadMessageId,
-            highlightedMessageId: highlightedMessageId,
-            showURLPreviews: showURLPreviews,
-            currentUserID: matrixService.userId(),
-            onToggleReaction: { messageId, key in
-                Task { await viewModel.toggleReaction(messageId: messageId, key: key) }
-            },
-            onTapReply: { eventID in
-                if let message = viewModel.messages.first(where: { $0.eventID == eventID }) {
-                    tableProxy.scrollToRow(id: message.id)
-                    highlightedMessageId = eventID
-                } else {
-                    focusedMessageId = eventID
-                }
-            },
-            onReply: { message in
-                withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
-                    compose.replyingTo = message
-                }
-            },
-            onAvatarDoubleTap: { message in
-                onUserTap?(UserProfile(message: message))
-            },
-            onUserTap: { userId in
-                let member = compose.members.first(where: { $0.userId == userId })
-                let profile = member.map { UserProfile(member: $0) }
-                    ?? UserProfile(userId: userId)
-                onUserTap?(profile)
-            },
-            onRoomTap: onRoomTap,
-            onAppear: { row in
-                advanceFullyReadMarker(to: row.message.eventID)
-            },
-            onContextAction: { action in
-                handleContextAction(action)
-            },
-            onHighlightDismissed: {
-                highlightedMessageId = nil
-            },
-            onNearBottomChanged: { nearBottom in
-                isNearBottom = nearBottom
-                if nearBottom, NSApp.isActive {
-                    Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
-                }
-            },
-            onPaginateBackward: {
-                guard !viewModel.isLoadingMore, !viewModel.hasReachedStart else { return }
-                Task { await viewModel.loadMoreHistory() }
-            },
-            onPaginateForward: {
-                Task { await viewModel.loadMoreFuture() }
-            },
-            translationStateProvider: { messageId in
-                viewModel.translationState(for: messageId)
-            },
-            canTranslateProvider: { messageId in
-                viewModel.canTranslateMessage(messageId)
-            },
-            translationsVersion: viewModel.translationsVersion,
-            scrollProxy: tableProxy
-        )
+    /// Populates the stable ``TimelineActions`` instance with the current
+    /// closures and values. Called once from `.task` to bind the callbacks
+    /// that capture `@State` / `@Environment` references. Because the
+    /// instance identity is stable, re-injecting it into the environment
+    /// does not invalidate child views.
+    private func configureTimelineActions() {
+        let actions = timelineActionsRef
+        actions.toggleReaction = { messageId, key in
+            Task { await self.viewModel.toggleReaction(messageId: messageId, key: key) }
+        }
+        actions.tapReply = { eventID in
+            if let message = self.viewModel.messages.first(where: { $0.eventID == eventID }) {
+                self.scrollToRow(id: message.id)
+                self.highlightedMessageId = eventID
+            } else {
+                self.focusedMessageId = eventID
+            }
+        }
+        actions.reply = { message in
+            withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
+                self.compose.replyingTo = message
+            }
+        }
+        actions.avatarDoubleTap = { message in
+            self.onUserTap?(UserProfile(message: message))
+        }
+        actions.userTap = { userId in
+            let member = self.compose.members.first(where: { $0.userId == userId })
+            let profile = member.map { UserProfile(member: $0) }
+                ?? UserProfile(userId: userId)
+            self.onUserTap?(profile)
+        }
+        actions.roomTap = onRoomTap
+        actions.contextAction = { action in
+            self.handleContextAction(action)
+        }
+        actions.highlightDismissed = {
+            self.highlightedMessageId = nil
+        }
+        actions.permissions = roomPermissions
+        actions.currentUserID = matrixService.userId()
+    }
+
+    /// Marks the room as read when the user can see the latest messages.
+    /// Guards on near-bottom, app-active, and non-read-only state.
+    private func markAsReadIfNeeded() {
+        guard !readOnly, isNearBottom, NSApp.isActive else { return }
+        Task { await matrixService.markAsRead(roomId: roomId, sendPublicReceipt: sendReadReceipts) }
+    }
+
+    @ViewBuilder
+    private var timelineRenderer: some View {
+        if timelineUseLazyVStack {
+            TimelineLazyVStackView(
+                rows: cachedMessageRows,
+                showUnreadMarker: showUnreadMarker,
+                firstUnreadMessageId: viewModel.firstUnreadMessageId,
+                highlightedMessageId: highlightedMessageId,
+                showURLPreviews: showURLPreviews,
+                actions: timelineActionsRef,
+                onNearBottomChanged: { nearBottom in
+                    isNearBottom = nearBottom
+                    markAsReadIfNeeded()
+                },
+                onPaginateBackward: {
+                    guard !viewModel.isLoadingMore, !viewModel.hasReachedStart else { return }
+                    Task { await viewModel.loadMoreHistory() }
+                },
+                onPaginateForward: { Task { await viewModel.loadMoreFuture() } },
+                onVisibleMessagesChanged: { visibleIDs in
+                    guard let newestVisibleID = visibleIDs.last,
+                          let row = cachedMessageRows.first(where: { $0.id == newestVisibleID })
+                    else { return }
+                    advanceFullyReadMarker(to: row.message.eventID)
+                },
+                onScrollSettled: { markAsReadIfNeeded() },
+                isLoadingMore: viewModel.isLoadingMore,
+                hasReachedEnd: viewModel.hasReachedEnd,
+                isLive: viewModel.timelineFocus == .live,
+                viewModel: viewModel,
+                bottomContentMargin: composeBarHeight + 4,
+                scrollPosition: $lazyVStackScrollPosition
+            )
+        } else {
+            TimelineTableViewRepresentable(
+                rows: cachedMessageRows,
+                hasReachedEnd: viewModel.hasReachedEnd,
+                isLive: viewModel.timelineFocus == .live,
+                showUnreadMarker: showUnreadMarker,
+                firstUnreadMessageId: viewModel.firstUnreadMessageId,
+                highlightedMessageId: highlightedMessageId,
+                showURLPreviews: showURLPreviews,
+                actions: timelineActionsRef,
+                viewModel: viewModel,
+                onAppear: { row in advanceFullyReadMarker(to: row.message.eventID) },
+                onNearBottomChanged: { nearBottom in
+                    isNearBottom = nearBottom
+                    markAsReadIfNeeded()
+                },
+                onPaginateBackward: {
+                    guard !viewModel.isLoadingMore, !viewModel.hasReachedStart else { return }
+                    Task { await viewModel.loadMoreHistory() }
+                },
+                onPaginateForward: { Task { await viewModel.loadMoreFuture() } },
+                scrollProxy: tableProxy
+            )
+            .ignoresSafeArea()
+        }
     }
 
     @ViewBuilder
@@ -468,7 +646,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 if viewModel.timelineFocus != .live {
                     Task { await viewModel.returnToLive() }
                 } else {
-                    tableProxy.scrollToBottom()
+                    scrollToBottom()
                 }
             } label: {
                 Image(systemName: viewModel.timelineFocus != .live ? "arrow.uturn.down" : "arrow.down")
@@ -484,59 +662,52 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
         }
     }
 
-    // MARK: - Compose Bar
-
-    private var composeBarSection: some View {
-        VStack(spacing: 0) {
-            TypingIndicatorOverlay(viewModel: viewModel)
-
-            ComposeBar(
-                compose: compose,
-                onSend: {
-                    compose.send(
-                        using: viewModel,
-                        matrixService: matrixService,
-                        roomId: roomId,
-                        sendTypingNotifications: sendTypingNotifications
-                    ) {
-                        pendingScrollToBottom = true
-                    }
-                },
-                onAttach: { urls in
-                    compose.stageAttachments(urls, errorReporter: errorReporter)
-                },
-                onGIFSelected: { gif in
-                    compose.sendGIF(
-                        gif,
-                        using: viewModel,
-                        gifSearchService: gifSearchService,
-                        errorReporter: errorReporter
-                    ) {
-                        pendingScrollToBottom = true
-                    }
-                }
-            )
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-        }
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { height in
-            composeBarHeight = height
-            tableProxy.setContentInsets(NSEdgeInsets(
-                top: 0, left: 0, bottom: height + 4, right: 0
-            ))
-        }
-    }
-
     @ViewBuilder
     private var loadingOrEmptyOverlay: some View {
-        if !viewModel.isLoading && viewModel.messages.isEmpty {
+        if viewModel.isLoading && viewModel.messages.isEmpty {
+            ProgressView()
+                .controlSize(.large)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if !viewModel.isLoading && viewModel.messages.isEmpty {
             ContentUnavailableView(
                 "No Messages Yet",
                 systemImage: "text.bubble",
                 description: Text("Send a message to get the conversation started.")
             )
+        }
+    }
+
+    // MARK: - Scroll Dispatch
+
+    /// Scrolls to the bottom of the timeline, dispatching to the active
+    /// renderer (NSTableView or LazyVStack).
+    private func scrollToBottom(animated: Bool = true) {
+        if timelineUseLazyVStack {
+            if animated {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    lazyVStackScrollPosition.scrollTo(edge: .bottom)
+                }
+            } else {
+                lazyVStackScrollPosition.scrollTo(edge: .bottom)
+            }
+        } else {
+            tableProxy.scrollToBottom(animated: animated)
+        }
+    }
+
+    /// Scrolls to a specific row by message ID, dispatching to the active
+    /// renderer.
+    private func scrollToRow(id: String, animated: Bool = true) {
+        if timelineUseLazyVStack {
+            if animated {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    lazyVStackScrollPosition.scrollTo(id: id, anchor: .center)
+                }
+            } else {
+                lazyVStackScrollPosition.scrollTo(id: id, anchor: .center)
+            }
+        } else {
+            tableProxy.scrollToRow(id: id, animated: animated)
         }
     }
 
@@ -551,9 +722,9 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     private func scrollToEventWhenAvailable(_ eventId: String) async {
         // If the message is already present, scroll immediately.
         if let message = viewModel.messages.first(where: { $0.eventID == eventId }) {
-            // Allow the table one layout pass to apply the snapshot.
+            // Allow the renderer one layout pass to apply the update.
             try? await Task.sleep(for: .milliseconds(100))
-            tableProxy.scrollToRow(id: message.id)
+            scrollToRow(id: message.id)
             highlightedMessageId = eventId
             return
         }
@@ -570,9 +741,9 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             }
             guard found else { break }
             if let message = viewModel.messages.first(where: { $0.eventID == eventId }) {
-                // Give the table time to apply the snapshot and measure row heights.
+                // Give the renderer time to lay out the new content.
                 try? await Task.sleep(for: .milliseconds(100))
-                tableProxy.scrollToRow(id: message.id)
+                scrollToRow(id: message.id)
                 highlightedMessageId = eventId
                 return
             }
@@ -581,7 +752,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
         // Best-effort fallback: if the message never appeared within the
         // timeout, try scrolling anyway in case it arrived just now.
         if let message = viewModel.messages.first(where: { $0.eventID == eventId }) {
-            tableProxy.scrollToRow(id: message.id)
+            scrollToRow(id: message.id)
         }
         highlightedMessageId = eventId
     }
@@ -590,13 +761,11 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
 
     /// Debounces fully-read receipt advancement as messages appear on screen.
     /// Only advances forward (to later messages in the timeline), never backward.
+    ///
+    /// This sends the `m.fully_read` receipt which tracks the user's read position
+    /// across devices. It is separate from `markAsRead` which sends `m.read` to
+    /// clear the room's unread badge.
     private func advanceFullyReadMarker(to eventId: String) {
-        guard !alwaysLoadNewest || !isNearBottom else {
-            // When "always load newest" is on and we're at the bottom,
-            // markAsRead already handles receipts via the bottom sentinel.
-            return
-        }
-
         // Only advance if this event is later in the timeline than the last marker
         if let lastId = lastFullyReadEventId,
            let lastIndex = viewModel.messages.firstIndex(where: { $0.eventID == lastId }),
@@ -667,54 +836,12 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     // (Backward pagination is now handled by TimelineTableViewController's
     // scroll detection, not by a sentinel view.)
 
-    // MARK: - URL Extraction
-
-    /// Cache for `firstPreviewURL` results to avoid running `NSDataDetector` on
-    /// every SwiftUI body evaluation.
-    static let urlCache = ParseCache<String, URL?>(capacity: 256)
-
-    /// Regex matching Matrix identifiers (`@user:server`, `#room:server`,
-    /// `!id:server`) whose server portion `NSDataDetector` misidentifies as
-    /// a standalone URL.
-    private static let matrixIdentifierPattern =
-        /[#@!][a-zA-Z0-9._=\-\/]+:[a-zA-Z0-9.\-]+(:[0-9]+)?/
-
-    /// Returns the first HTTP(S) URL found in the given string, excluding
-    /// `matrix.to` links and false positives from Matrix identifiers.
-    static func firstPreviewURL(in body: String) -> URL? {
-        urlCache.value(forKey: body) {
-            guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
-                return nil
-            }
-            let matches = detector.matches(in: body, range: NSRange(body.startIndex..., in: body))
-
-            // Collect ranges of Matrix identifiers so we can discard any URL
-            // that NSDataDetector extracted from the server portion of one.
-            let identifierRanges = body.matches(of: matrixIdentifierPattern).map(\.range)
-
-            for match in matches {
-                guard let url = match.url,
-                      let scheme = url.scheme?.lowercased(),
-                      scheme == "https" || scheme == "http",
-                      url.host?.lowercased() != "matrix.to" else { continue }
-
-                // Skip URLs whose detected range overlaps a Matrix identifier.
-                if let matchRange = Range(match.range, in: body),
-                   identifierRanges.contains(where: { $0.overlaps(matchRange) }) {
-                    continue
-                }
-
-                return url
-            }
-            return nil
-        }
-    }
-
     // MARK: - Filtering
 
     /// The messages to display, with system events filtered based on user preferences.
     private var filteredMessages: [TimelineMessage] {
-        viewModel.messages.filter { message in
+        if showMembershipEvents && showStateEvents { return viewModel.messages }
+        return viewModel.messages.filter { message in
             switch message.kind {
             case .membership, .profileChange:
                 return showMembershipEvents

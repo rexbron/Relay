@@ -16,9 +16,6 @@
 import AppKit
 import Foundation
 import RelayInterface
-import os
-
-private let logger = Logger(subsystem: "RelayKit", category: "MatrixService")
 
 /// The concrete implementation of ``MatrixServiceProtocol`` backed by the Matrix Rust SDK.
 ///
@@ -42,6 +39,7 @@ public final class MatrixService: MatrixServiceProtocol {
 
     public var isSyncing: Bool { syncState == .syncing || syncState == .running }
     public var hasLoadedRooms: Bool { roomListManager.hasLoadedRooms }
+    public var isNetworkConnected: Bool { networkMonitor.isConnected }
 
     public private(set) var isSessionVerified: Bool = false
     public private(set) var hasCheckedVerificationState: Bool = false
@@ -55,7 +53,20 @@ public final class MatrixService: MatrixServiceProtocol {
     /// The app layer sets this to post system notifications. The callback
     /// provides the room name, room ID, message body, and whether it's a mention.
     public var onNotificationEvent: ((RoomNotificationEvent) -> Void)? {
-        didSet { roomListManager.onNotificationEvent = onNotificationEvent }
+        didSet {
+            let externalHandler = onNotificationEvent
+            roomListManager.onNotificationEvent = { [weak self] event in
+                externalHandler?(event)
+                // Donate an incoming message intent for share sheet suggestions.
+                guard let self else { return }
+                if let roomSummary = self.rooms.first(where: { $0.id == event.roomId }) {
+                    self.intentDonation.donateIncomingMessage(
+                        roomSummary: roomSummary,
+                        senderName: event.messageAuthor
+                    )
+                }
+            }
+        }
     }
 
     // MARK: - Private State
@@ -77,28 +88,102 @@ public final class MatrixService: MatrixServiceProtocol {
 
     // MARK: - Sub-Services
 
-    private let auth = AuthenticationService()
     private let networkMonitor = NetworkMonitor()
+    private let auth: AuthenticationService
     private let syncManager: SyncManager
     private let roomListManager = RoomListManager()
     private let spaceListManager = SpaceListManager()
     private let media = MediaService()
     private let directorySearch = DirectorySearchService()
+    private let intentDonation = IntentDonationService()
+    private let _activityLog = ActivityLog()
+
+    public var activityLog: any ActivityLogProtocol { _activityLog }
 
     /// Creates a new ``MatrixService``. Call ``restoreSession()`` after initialization to
     /// attempt automatic sign-in from a previously saved keychain session.
     public init() {
-        syncManager = SyncManager(networkMonitor: networkMonitor)
+        auth = AuthenticationService(networkMonitor: networkMonitor)
+        auth.activityLog = _activityLog
+        syncManager = SyncManager(networkMonitor: networkMonitor, activityLog: _activityLog)
+        networkMonitor.activityLog = _activityLog
+        roomListManager.activityLog = _activityLog
     }
 
     // MARK: - Session Restore
 
     public func restoreSession() async {
-        if let (restoredClient, userId) = await auth.restoreSession() {
+        // Start the network monitor early so `AuthenticationService` can
+        // see the current connectivity state and so the SyncManager can
+        // wake us up when the network returns after an offline restore.
+        networkMonitor.start()
+
+        switch await auth.restoreSession() {
+        case .noSavedSession:
+            authState = .loggedOut
+            _activityLog.log(
+                category: .auth, severity: .info, source: "MatrixService",
+                summary: "No saved session found"
+            )
+
+        case .restored(let restoredClient, let userId):
             client = restoredClient
             await restoredClient.loadProfile()
             authState = .loggedIn(userId: userId)
-        } else {
+            _activityLog.log(
+                category: .auth, severity: .info, source: "MatrixService",
+                summary: "Session restored",
+                metadata: ["userId": userId]
+            )
+
+        case .offlineWithSavedSession(let userId, _):
+            authState = .loggedIn(userId: userId)
+            _activityLog.log(
+                category: .auth, severity: .warning, source: "MatrixService",
+                summary: "Offline with saved session — deferring sync",
+                metadata: ["userId": userId]
+            )
+            syncManager.onPendingOnlineRestore = { [weak self] in
+                await self?.retryPendingOnlineRestore()
+            }
+            syncManager.enterPendingOnlineRestore()
+
+        case .failed(let error):
+            authState = .error(error.localizedDescription)
+            _activityLog.log(
+                category: .auth, severity: .error, source: "MatrixService",
+                summary: "Session restore failed",
+                detail: error.localizedDescription
+            )
+        }
+    }
+
+    /// Called by ``SyncManager`` when it detects a network reconnect while
+    /// we're still in the offline-restored state. Re-runs
+    /// ``AuthenticationService/restoreSession()`` and, on success, hands
+    /// the freshly built ``ClientProxy`` to the sync pipeline.
+    private func retryPendingOnlineRestore() async {
+        switch await auth.restoreSession() {
+        case .restored(let restoredClient, let userId):
+            client = restoredClient
+            await restoredClient.loadProfile()
+            authState = .loggedIn(userId: userId)
+            // Tear down the placeholder pending-restore handler before
+            // performSync wires up the real onSyncServiceRestarted hook.
+            syncManager.onPendingOnlineRestore = nil
+            await performSync()
+
+        case .offlineWithSavedSession:
+            // Still can't reach the homeserver — stay offline. The
+            // network monitor will fire again when connectivity flips,
+            // and SyncManager will call us back.
+            break
+
+        case .failed(let error):
+            authState = .error(error.localizedDescription)
+
+        case .noSavedSession:
+            // Keychain went away under us mid-restore. Bounce to login.
             authState = .loggedOut
         }
     }
@@ -148,39 +233,29 @@ public final class MatrixService: MatrixServiceProtocol {
         // old client while logout is still tearing down.
         authState = .loggedOut
 
-        syncTask?.cancel()
-        syncTask = nil
-        verificationObservationTask?.cancel()
-        verificationObservationTask = nil
-        verificationStateTask?.cancel()
-        verificationStateTask = nil
-
-        networkMonitor.stop()
-        await syncManager.stop()
         try? await client?.logout()
-
         auth.clearSession()
-
-        client = nil
-        verificationController = nil
-        isSessionVerified = false
-        hasCheckedVerificationState = false
-        isVerificationFlowActive = false
-        pendingVerificationRequest = nil
-        shouldPresentVerificationSheet = false
-        roomListManager.reset()
-        spaceListManager.reset()
-        media.reset()
-        timelineViewModels = [:]
-        timelineAccessOrder = []
-        cachedNotificationKeywords = []
-        pendingDeepLink = nil
+        await teardown()
     }
 
     // MARK: - Clear Local Data
 
     public func clearLocalData() async {
-        // Tear down sync and background tasks, but keep the keychain session.
+        await teardown()
+
+        // Delete only the rebuildable cache (sync state, timeline events).
+        // The data directory (crypto store, device identity) is preserved
+        // so the session remains verified after restart.
+        AuthenticationService.resetCacheData()
+
+        // Restore the session from the keychain, rebuilding the client
+        // with the existing crypto store, then restart sync.
+        await restoreSession()
+        startSyncIfNeeded()
+    }
+
+    /// Cancels all background tasks, stops sync, and resets all in-memory state.
+    private func teardown() async {
         syncTask?.cancel()
         syncTask = nil
         verificationObservationTask?.cancel()
@@ -191,7 +266,6 @@ public final class MatrixService: MatrixServiceProtocol {
         networkMonitor.stop()
         await syncManager.stop()
 
-        // Release the current client so the SDK releases its file handles.
         client = nil
         verificationController = nil
         isSessionVerified = false
@@ -206,14 +280,6 @@ public final class MatrixService: MatrixServiceProtocol {
         timelineAccessOrder = []
         cachedNotificationKeywords = []
         pendingDeepLink = nil
-
-        // Delete the on-disk data and cache directories.
-        AuthenticationService.resetLocalSessionData()
-
-        // Restore the session from the keychain, rebuilding the client
-        // with a fresh data store, then restart sync.
-        await restoreSession()
-        startSyncIfNeeded()
     }
 
     // MARK: - Sync
@@ -224,12 +290,32 @@ public final class MatrixService: MatrixServiceProtocol {
     }
 
     private func performSync() async {
-        guard let client else { return }
+        guard let client = currentClient else { return }
+
+        _activityLog.log(
+            category: .sync, severity: .info, source: "MatrixService",
+            summary: "Starting sync pipeline"
+        )
 
         do {
             // Start network monitoring before sync so the SyncManager can
             // react to connectivity changes from the very beginning.
             networkMonitor.start()
+
+            // Wire the auth failure callback so SyncManager can notify us
+            // when a rebuild fails due to an expired refresh token (e.g.
+            // after an extended sleep). We report the error so the user
+            // sees an explanation, then log out cleanly so they return to
+            // the login screen.
+            syncManager.onAuthenticationFailure = { [weak self] in
+                guard let self else { return }
+                self._activityLog.log(
+                    category: .auth, severity: .error, source: "MatrixService",
+                    summary: "Session invalidated — logging out"
+                )
+                self.errorReporter.report(.sessionExpired)
+                await self.logout()
+            }
 
             // Wire the restart callback so SyncManager can notify us when
             // the sync service is rebuilt after a connectivity restoration.
@@ -238,9 +324,35 @@ public final class MatrixService: MatrixServiceProtocol {
             syncManager.onSyncServiceRestarted = { [weak self] syncService in
                 guard let self else { return }
                 try await self.roomListManager.restart(syncService: syncService)
+
+                // Cycle active timelines through suspend/resume so they
+                // rebuild their SDK Timeline objects under the new sync
+                // service. Without this, timelines created before the
+                // reconnect hold stale references and never receive new
+                // events.
+                var activeRoomIds: [String] = []
+                for (roomId, vm) in self.timelineViewModels where !vm.isSuspended {
+                    vm.suspend()
+                    await vm.resume()
+                    activeRoomIds.append(roomId)
+                }
+
+                // Re-subscribe active rooms to the new RoomListService so
+                // the sliding sync proxy delivers full timeline events for
+                // them. The previous subscriptions were tied to the old
+                // sync service and are no longer valid.
+                if !activeRoomIds.isEmpty {
+                    for roomId in activeRoomIds {
+                        self.subscribeToRoom(roomId)
+                    }
+                }
             }
 
             try await syncManager.startSync(client: client)
+            _activityLog.log(
+                category: .sync, severity: .info, source: "MatrixService",
+                summary: "Sync manager started, starting client observation"
+            )
             try await client.startObserving()
             if let sdkController = try? await client.getSessionVerificationController() {
                 verificationController = SessionVerificationControllerProxy(controller: sdkController)
@@ -249,16 +361,27 @@ public final class MatrixService: MatrixServiceProtocol {
             observeVerificationState(client: client)
             if let syncService = syncManager.syncService {
                 try await roomListManager.start(syncService: syncService)
+                _activityLog.log(
+                    category: .sync, severity: .info, source: "MatrixService",
+                    summary: "Room list manager started"
+                )
             }
             observeSpaceDescendants()
             await spaceListManager.start(client: client)
+            _activityLog.log(
+                category: .sync, severity: .info, source: "MatrixService",
+                summary: "Space list manager started — sync pipeline complete"
+            )
             cachedNotificationKeywords = (try? await getNotificationKeywords()) ?? []
             roomListManager.notificationKeywords = cachedNotificationKeywords
             roomListManager.currentUserId = client.userID
         } catch is CancellationError {
             // Logout cancelled the sync — don't overwrite state
         } catch {
-            logger.error("Sync failed: \(error)")
+            _activityLog.log(
+                category: .sync, severity: .error, source: "MatrixService",
+                summary: "Sync failed", detail: error.localizedDescription
+            )
         }
     }
 
@@ -290,7 +413,10 @@ public final class MatrixService: MatrixServiceProtocol {
                 }
                 guard !Task.isCancelled else { return }
                 if case .receivedRequest(let details) = flowState, !isVerificationFlowActive {
-                    logger.info("Incoming verification request from device \(details.deviceId)")
+                    _activityLog.log(
+                        category: .auth, severity: .info, source: "MatrixService",
+                        summary: "Incoming verification request from device \(details.deviceId)"
+                    )
                     pendingVerificationRequest = IncomingVerificationRequest(
                         deviceId: String(details.deviceId),
                         senderId: details.senderProfile.userId,
@@ -336,33 +462,68 @@ public final class MatrixService: MatrixServiceProtocol {
         }
         roomListManager.onRoomsRebuilt = { [weak self] in
             self?.applySpaceDescendantsToRooms()
+            self?.scheduleRoomCacheWrite()
         }
     }
 
     /// Updates each room and space summary's `parentSpaceIds` from the current space descendants map.
     private func applySpaceDescendantsToRooms() {
         let descendants = spaceListManager.spaceDescendants
+        updateParentSpaceIds(for: roomListManager.rooms, from: descendants)
+        updateParentSpaceIds(for: spaceListManager.spaces, from: descendants)
+    }
 
-        // Apply to rooms
-        for room in roomListManager.rooms {
+    /// Sets `parentSpaceIds` on each summary by scanning the descendants map.
+    private func updateParentSpaceIds(
+        for summaries: [RelayInterface.RoomSummary],
+        from descendants: [String: Set<String>]
+    ) {
+        for summary in summaries {
             var newParents = Set<String>()
-            for (spaceId, childIds) in descendants where childIds.contains(room.id) {
+            for (spaceId, childIds) in descendants where childIds.contains(summary.id) {
                 newParents.insert(spaceId)
             }
-            if room.parentSpaceIds != newParents {
-                room.parentSpaceIds = newParents
+            if summary.parentSpaceIds != newParents {
+                summary.parentSpaceIds = newParents
             }
         }
+    }
 
-        // Apply to spaces (so sub-spaces know their parent)
-        for space in spaceListManager.spaces {
-            var newParents = Set<String>()
-            for (spaceId, childIds) in descendants where childIds.contains(space.id) {
-                newParents.insert(spaceId)
+    // MARK: - Room Cache for Share Extension
+
+    @ObservationIgnored private var roomCacheWriteTask: Task<Void, Never>?
+
+    /// Writes the room list to the app group container after a short debounce.
+    ///
+    /// Called after each room list rebuild so the share extension always has a
+    /// recent snapshot of available rooms. Avatar data is read from the
+    /// on-disk media cache (no network requests are made).
+    private func scheduleRoomCacheWrite() {
+        roomCacheWriteTask?.cancel()
+        roomCacheWriteTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !Task.isCancelled else { return }
+
+            let joinedRooms = self.rooms.filter { !$0.isSpace && $0.membership == .joined }
+            var shareableRooms: [RelayInterface.ShareableRoom] = []
+            shareableRooms.reserveCapacity(joinedRooms.count)
+
+            for room in joinedRooms {
+                guard !Task.isCancelled else { return }
+                var avatarData: Data?
+                if let mxcURL = room.avatarURL {
+                    avatarData = await self.media.cachedAvatarData(mxcURL: mxcURL, size: 48)
+                }
+                shareableRooms.append(RelayInterface.ShareableRoom(
+                    id: room.id,
+                    name: room.name,
+                    isDirect: room.isDirect,
+                    avatarData: avatarData,
+                    lastActivityTimestamp: room.lastMessageTimestamp
+                ))
             }
-            if space.parentSpaceIds != newParents {
-                space.parentSpaceIds = newParents
-            }
+
+            PendingShareStore.writeRoomCache(shareableRooms)
         }
     }
 
@@ -376,51 +537,68 @@ public final class MatrixService: MatrixServiceProtocol {
         roomListManager.sdkRoom(id: id) ?? client?.rooms().first { $0.id() == id }
     }
 
+    /// Returns the client proxy, throwing ``RelayError/notLoggedIn`` if nil.
+    ///
+    /// Use in methods whose API contract already throws.
+    private func requireClient() throws -> ClientProxy {
+        guard let client else { throw RelayError.notLoggedIn }
+        return client
+    }
+
+    /// Returns the client proxy, or `nil` with a logged warning if not available.
+    ///
+    /// Use in non-throwing methods where a nil client indicates an unexpected state.
+    private var currentClient: ClientProxy? {
+        guard let client else {
+            _activityLog.log(
+                category: .auth, severity: .warning, source: "MatrixService",
+                summary: "Operation attempted without an active client"
+            )
+            return nil
+        }
+        return client
+    }
+
     public func userId() -> String? {
         client?.userID
     }
 
     public func userDisplayName() async -> String? {
-        guard let client else { return nil }
+        guard let client = currentClient else { return nil }
         return client.displayName
     }
 
     public func setDisplayName(_ name: String) async throws {
-        guard let client else { return }
+        guard let client = currentClient else { return }
         try await client.setDisplayName(name)
     }
 
     public func userAvatarURL() async -> String? {
-        guard let client else { return nil }
+        guard let client = currentClient else { return nil }
         return client.avatarURL?.absoluteString
     }
 
     public func makeTimelineViewModel(roomId: String) -> (any TimelineViewModelProtocol)? {
         if let cached = timelineViewModels[roomId] {
             touchTimelineAccessOrder(roomId)
+            subscribeToRoom(roomId)
             return cached
         }
         guard let room = room(id: roomId) else { return nil }
-        let unreadCount = rooms.first(where: { $0.id == roomId })?.unreadMessages ?? 0
+        let unreadCount = rooms.first(where: { $0.id == roomId })?.notificationCount ?? 0
         // swiftlint:disable:next identifier_name
         let vm = TimelineViewModel(
             room: room, currentUserId: userId(),
             unreadCount: Int(unreadCount),
             notificationKeywords: cachedNotificationKeywords,
-            errorReporter: errorReporter
+            errorReporter: errorReporter,
+            activityLog: _activityLog
         )
         timelineViewModels[roomId] = vm
         touchTimelineAccessOrder(roomId)
         evictStaleTimelines()
 
-        // Subscribe to this room at a higher detail level in the sliding sync.
-        // This requests additional state events (including m.room.pinned_events)
-        // that aren't included in the default room list sync.
-        if let rls = roomListManager.roomListService {
-            Task {
-                try? await rls.subscribeToRooms(roomIds: [roomId])
-            }
-        }
+        subscribeToRoom(roomId)
 
         return vm
     }
@@ -430,7 +608,8 @@ public final class MatrixService: MatrixServiceProtocol {
         return TimelineViewModel(
             room: room,
             currentUserId: userId(),
-            errorReporter: errorReporter
+            errorReporter: errorReporter,
+            activityLog: _activityLog
         )
     }
 
@@ -446,7 +625,10 @@ public final class MatrixService: MatrixServiceProtocol {
         // Rust runtime to drop its internal resources.  There is no explicit
         // unsubscribe API on RoomListService -- the server-side sliding sync
         // window is managed automatically by the SDK.
-        logger.info("Suspended timeline VM for room \(roomId)")
+        _activityLog.log(
+            category: .timeline, severity: .info, source: "MatrixService",
+            summary: "Suspended timeline VM", roomId: roomId
+        )
     }
 
     /// Resumes a previously suspended timeline view model, re-establishing live
@@ -456,10 +638,19 @@ public final class MatrixService: MatrixServiceProtocol {
     /// prioritises updates for it again.
     public func resumeTimeline(roomId: String) async {
         await timelineViewModels[roomId]?.resume()
+        subscribeToRoom(roomId)
+    }
 
-        // Re-subscribe so the sliding sync proxy knows this room is active
-        // again and should receive higher-detail updates.
-        if let rls = roomListManager.roomListService {
+    /// Subscribes to a room at a higher detail level in the sliding sync.
+    ///
+    /// This tells the sliding sync proxy to prioritise this room for
+    /// full timeline event delivery (including `m.room.pinned_events`
+    /// and other state events). Must be called every time a room becomes
+    /// active — the subscription is tied to the current ``RoomListService``
+    /// and is lost when the sync service is rebuilt.
+    private func subscribeToRoom(_ roomId: String) {
+        guard let rls = roomListManager.roomListService else { return }
+        Task {
             try? await rls.subscribeToRooms(roomIds: [roomId])
         }
     }
@@ -481,14 +672,17 @@ public final class MatrixService: MatrixServiceProtocol {
                 vm.suspend()
             }
             timelineViewModels.removeValue(forKey: candidateId)
-            logger.info("Evicted timeline VM for room \(candidateId)")
+            _activityLog.log(
+                category: .timeline, severity: .info, source: "MatrixService",
+                summary: "Evicted timeline VM", roomId: candidateId
+            )
         }
     }
 
     // MARK: - Room Management
 
     public func joinRoom(idOrAlias: String) async throws {
-        guard let client else { return }
+        guard let client = currentClient else { return }
         _ = try await client.joinRoomByIdOrAlias(roomIdOrAlias: idOrAlias, serverNames: [])
     }
 
@@ -502,21 +696,26 @@ public final class MatrixService: MatrixServiceProtocol {
         try await sdkRoom.leave()
     }
 
-    public func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String {
-        guard let client else { throw RelayError.notLoggedIn }
-        let params = CreateRoomParameters(
-            name: name,
-            topic: topic,
-            isEncrypted: !isPublic,
-            isDirect: false,
-            visibility: isPublic ? .public : .private,
-            preset: isPublic ? .publicChat : .privateChat
-        )
-        return try await client.createRoom(parameters: params)
-    }
+    /// Power level overrides that allow any room member to send MatrixRTC call
+    /// membership and encryption key state events (matching Element Call's setup).
+    private static let callPowerLevels = PowerLevels(
+        usersDefault: nil,
+        eventsDefault: nil,
+        stateDefault: nil,
+        ban: nil,
+        kick: nil,
+        redact: nil,
+        invite: nil,
+        notifications: nil,
+        users: [:],
+        events: [
+            "org.matrix.msc3401.call.member": 0,
+            "io.element.call.encryption_keys": 0
+        ]
+    )
 
     public func createRoom(options: CreateRoomOptions) async throws -> String {
-        guard let client else { throw RelayError.notLoggedIn }
+        let client = try requireClient()
         let params = CreateRoomParameters(
             name: options.name,
             topic: options.topic,
@@ -524,6 +723,7 @@ public final class MatrixService: MatrixServiceProtocol {
             isDirect: false,
             visibility: options.isPublic ? .public : .private,
             preset: options.isPublic ? .publicChat : .privateChat,
+            powerLevelContentOverride: Self.callPowerLevels,
             canonicalAlias: options.address,
             isSpace: options.isSpace
         )
@@ -531,7 +731,7 @@ public final class MatrixService: MatrixServiceProtocol {
     }
 
     public func createDirectMessage(userId: String) async throws -> String {
-        guard let client else { throw RelayError.notLoggedIn }
+        let client = try requireClient()
 
         // Check if a DM room already exists with this user
         if let existingRoom = try? client.getDmRoom(userId: userId) {
@@ -545,23 +745,29 @@ public final class MatrixService: MatrixServiceProtocol {
             isDirect: true,
             visibility: .private,
             preset: .trustedPrivateChat,
-            invite: [userId]
+            invite: [userId],
+            powerLevelContentOverride: Self.callPowerLevels
         )
         return try await client.createRoom(parameters: params)
     }
 
     public func makeRoomDirectoryViewModel() -> (any RoomDirectoryViewModelProtocol)? {
-        guard let client else { return nil }
+        guard let client = currentClient else { return nil }
         return RoomDirectoryViewModel(client: client, errorReporter: errorReporter)
     }
 
+    public func makeMessageSearchService() -> (any MessageSearchServiceProtocol)? {
+        guard let client = currentClient else { return nil }
+        return MessageSearchService(client: client)
+    }
+
     public func makeRoomPreviewViewModel(roomId: String) -> (any RoomPreviewViewModelProtocol)? {
-        guard let client else { return nil }
+        guard let client = currentClient else { return nil }
         return RoomPreviewViewModel(roomId: roomId, client: client, errorReporter: errorReporter)
     }
 
     public func makeSpaceHierarchyViewModel(spaceId: String) -> (any SpaceHierarchyViewModelProtocol)? {
-        guard let client else { return nil }
+        guard let client = currentClient else { return nil }
         let spaceName = spaceListManager.spaces.first(where: { $0.id == spaceId })?.name ?? ""
         return SpaceHierarchyViewModel(
             spaceId: spaceId,
@@ -579,7 +785,7 @@ public final class MatrixService: MatrixServiceProtocol {
     }
 
     public func leaveSpace(spaceId: String) async throws -> [LeaveSpaceChild] {
-        guard let client else { return [] }
+        guard let client = currentClient else { return [] }
         let service = await client.spaceService()
         let handle = try await service.leaveSpace(spaceId: spaceId)
         return handle.rooms().map { room in
@@ -595,7 +801,7 @@ public final class MatrixService: MatrixServiceProtocol {
     }
 
     public func confirmLeaveSpace(spaceId: String, roomIds: [String]) async throws {
-        guard let client else { return }
+        guard let client = currentClient else { return }
         let service = await client.spaceService()
         let handle = try await service.leaveSpace(spaceId: spaceId)
         var allIds = roomIds
@@ -635,7 +841,7 @@ public final class MatrixService: MatrixServiceProtocol {
     }
 
     public func editableSpaces() async -> [EditableSpace] {
-        guard let client else { return [] }
+        guard let client = currentClient else { return [] }
         let service = await client.spaceService()
         let sdkSpaces = await service.editableSpaces()
         return sdkSpaces.map { spaceRoom in
@@ -648,13 +854,13 @@ public final class MatrixService: MatrixServiceProtocol {
     }
 
     public func addChildToSpace(childId: String, spaceId: String) async throws {
-        guard let client else { throw RelayError.notLoggedIn }
+        let client = try requireClient()
         let service = await client.spaceService()
         try await service.addChildToSpace(childId: childId, spaceId: spaceId)
     }
 
     public func removeChildFromSpace(childId: String, spaceId: String) async throws {
-        guard let client else { throw RelayError.notLoggedIn }
+        let client = try requireClient()
         let service = await client.spaceService()
         try await service.removeChildFromSpace(childId: childId, spaceId: spaceId)
     }
@@ -672,12 +878,12 @@ public final class MatrixService: MatrixServiceProtocol {
         // Optimistically clear unread indicators so the room list updates immediately
         // rather than waiting for the server round-trip through the sync loop.
         // The isOptimisticallyCleared flag prevents the room info listener from
-        // overwriting these zeros with stale SDK values before the server processes
+        // overwriting these zeros with stale server values before the server processes
         // the read receipt.
         if let summary = rooms.first(where: { $0.id == roomId }) {
-            summary.unreadMessages = 0
-            summary.unreadMentions = 0
-            summary.hasKeywordHighlight = false
+            summary.optimisticClearedBaseline = summary.notificationCount
+            summary.notificationCount = 0
+            summary.highlightCount = 0
             summary.isOptimisticallyCleared = true
         }
 
@@ -686,8 +892,8 @@ public final class MatrixService: MatrixServiceProtocol {
     }
 
     public func fullyReadEventId(roomId: String) async -> String? {
-        guard let client else { return nil }
-        // Use a nonisolated(unsafe) var to hold the handle alive until the callback fires.
+        guard let client = currentClient else { return nil }
+        // Use a nonisolated(unsafe) var so the handle stays alive until the callback fires.
         nonisolated(unsafe) var handle: TaskHandle?
         let result: String? = await withCheckedContinuation { continuation in
             let listener = RoomAccountDataListenerAdapter { event, _ in
@@ -708,13 +914,18 @@ public final class MatrixService: MatrixServiceProtocol {
                 continuation.resume(returning: nil)
             }
         }
-        _ = handle // Keep handle alive until continuation resolves
+        handle?.cancel()
         return result
     }
 
     public func sendTypingNotice(roomId: String, isTyping: Bool) async {
         guard let room = room(id: roomId) else { return }
         try? await room.typingNotice(isTyping: isTyping)
+    }
+
+    public func donateOutgoingInteraction(roomId: String) {
+        guard let roomSummary = rooms.first(where: { $0.id == roomId }) else { return }
+        intentDonation.donateOutgoingMessage(roomSummary: roomSummary)
     }
 
     // MARK: - Room Details
@@ -737,27 +948,7 @@ public final class MatrixService: MatrixServiceProtocol {
         if let membersIterator = try? await room.members() {
             let chunk = membersIterator.nextChunk(chunkSize: 200)
             if let chunk {
-                memberDetails = chunk.compactMap { member -> RoomMemberDetails? in
-                    guard member.membership == .join else { return nil }
-                    let isCreator = member.suggestedRoleForPowerLevel == .creator
-                    let role: RoomMemberDetails.Role = switch member.suggestedRoleForPowerLevel {
-                    case .creator, .administrator: .administrator
-                    case .moderator: .moderator
-                    default: .user
-                    }
-                    let pl: Int64 = switch member.powerLevel {
-                    case .value(let value): value
-                    case .infinite: 100
-                    }
-                    return RoomMemberDetails(
-                        userId: member.userId,
-                        displayName: member.displayName,
-                        avatarURL: member.avatarUrl,
-                        role: role,
-                        powerLevel: pl,
-                        isCreator: isCreator
-                    )
-                }
+                memberDetails = chunk.compactMap(Self.mapMember)
             }
         }
 
@@ -781,6 +972,39 @@ public final class MatrixService: MatrixServiceProtocol {
         default: nil
         }
 
+        // Build permissions and power level settings from the SDK's power levels.
+        var permissions: RoomPermissions?
+        var powerLevelSettings: RoomPowerLevelSettings?
+        if let pl = info?.powerLevels {
+            permissions = RoomPermissions(
+                canEditName: pl.canOwnUserSendState(stateEvent: .roomName),
+                canEditTopic: pl.canOwnUserSendState(stateEvent: .roomTopic),
+                canEditAvatar: pl.canOwnUserSendState(stateEvent: .roomAvatar),
+                canInvite: pl.canOwnUserInvite(),
+                canKick: pl.canOwnUserKick(),
+                canBan: pl.canOwnUserBan(),
+                canRedactOther: pl.canOwnUserRedactOther(),
+                canChangePermissions: pl.canOwnUserSendState(stateEvent: .roomPowerLevels),
+                canPin: pl.canOwnUserSendState(stateEvent: .roomPinnedEvents),
+                canEditJoinRules: pl.canOwnUserSendState(stateEvent: .roomJoinRules),
+                canEditHistoryVisibility: pl.canOwnUserSendState(stateEvent: .roomHistoryVisibility),
+                canSendMessages: pl.canOwnUserSendMessage(message: .roomMessage)
+            )
+            let values = pl.values()
+            powerLevelSettings = RoomPowerLevelSettings(
+                ban: values.ban,
+                kick: values.kick,
+                invite: values.invite,
+                redact: values.redact,
+                eventsDefault: values.eventsDefault,
+                stateDefault: values.stateDefault,
+                usersDefault: values.usersDefault,
+                roomName: values.roomName,
+                roomTopic: values.roomTopic,
+                roomAvatar: values.roomAvatar
+            )
+        }
+
         return RoomDetails(
             id: room.id(),
             name: name,
@@ -794,11 +1018,35 @@ public final class MatrixService: MatrixServiceProtocol {
             members: memberDetails,
             pinnedEventIds: pinnedEventIds,
             joinRule: joinRuleString,
-            historyVisibility: histVisString
+            historyVisibility: histVisString,
+            permissions: permissions,
+            powerLevelSettings: powerLevelSettings
         )
     }
 
     // MARK: - Room Members
+
+    /// Converts an SDK ``RoomMember`` into a ``RoomMemberDetails``, filtering out non-joined members.
+    private static func mapMember(_ member: RoomMember) -> RoomMemberDetails? {
+        guard member.membership == .join else { return nil }
+        let role: RoomMemberDetails.Role = switch member.suggestedRoleForPowerLevel {
+        case .creator, .administrator: .administrator
+        case .moderator: .moderator
+        default: .user
+        }
+        let powerLevel: Int64 = switch member.powerLevel {
+        case .value(let value): value
+        case .infinite: 100
+        }
+        return RoomMemberDetails(
+            userId: member.userId,
+            displayName: member.displayName,
+            avatarURL: member.avatarUrl,
+            role: role,
+            powerLevel: powerLevel,
+            isCreator: member.suggestedRoleForPowerLevel == .creator
+        )
+    }
 
     public func roomMembers(roomId: String) async -> [RoomMemberDetails] {
         guard let room = room(id: roomId) else { return [] }
@@ -807,28 +1055,7 @@ public final class MatrixService: MatrixServiceProtocol {
         guard let membersIterator = try? await room.members() else { return [] }
 
         while let chunk = membersIterator.nextChunk(chunkSize: 500) {
-            for member in chunk where member.membership == .join {
-                let isCreator = member.suggestedRoleForPowerLevel == .creator
-                let role: RoomMemberDetails.Role = switch member.suggestedRoleForPowerLevel {
-                case .creator, .administrator: .administrator
-                case .moderator: .moderator
-                default: .user
-                }
-                let pl: Int64 = switch member.powerLevel {
-                case .value(let value): value
-                case .infinite: 100
-                }
-                memberDetails.append(
-                    RoomMemberDetails(
-                        userId: member.userId,
-                        displayName: member.displayName,
-                        avatarURL: member.avatarUrl,
-                        role: role,
-                        powerLevel: pl,
-                        isCreator: isCreator
-                    )
-                )
-            }
+            memberDetails.append(contentsOf: chunk.compactMap(Self.mapMember))
         }
 
         return memberDetails
@@ -839,7 +1066,10 @@ public final class MatrixService: MatrixServiceProtocol {
     // swiftlint:disable:next cyclomatic_complexity
     public func pinnedMessages(roomId: String) async -> [TimelineMessage] {
         guard let room = room(id: roomId) else {
-            logger.warning("pinnedMessages: room not found for \(roomId)")
+            _activityLog.log(
+                category: .timeline, severity: .warning, source: "MatrixService",
+                summary: "Pinned messages: room not found", roomId: roomId
+            )
             return []
         }
 
@@ -897,91 +1127,51 @@ public final class MatrixService: MatrixServiceProtocol {
                     kind: kind
                 ))
             } catch {
-                logger.warning("pinnedMessages: failed to fetch event \(eventId): \(error)")
+                _activityLog.log(
+                    category: .timeline, severity: .warning, source: "MatrixService",
+                    summary: "Pinned messages: failed to fetch event \(eventId)",
+                    detail: error.localizedDescription, roomId: roomId
+                )
             }
         }
 
         return messages
     }
 
-    // MARK: - Directory Search
-
-    public func searchDirectory(query: String) async throws -> [DirectoryRoom] {
-        guard let client else { return [] }
-        return try await directorySearch.search(query: query, client: client)
-    }
-
     // MARK: - Media
 
     public func avatarThumbnail(mxcURL: String, size: CGFloat) async -> NSImage? {
-        guard let client else { return nil }
+        guard let client = currentClient else { return nil }
         return await media.avatarThumbnail(mxcURL: mxcURL, size: size, client: client)
     }
 
     public func mediaContent(mxcURL: String, mediaSourceJSON: String?) async -> Data? {
-        guard let client else { return nil }
+        guard let client = currentClient else { return nil }
         return await media.mediaContent(mxcURL: mxcURL, mediaSourceJSON: mediaSourceJSON, client: client)
     }
 
     public func mediaThumbnail(mxcURL: String, mediaSourceJSON: String?, width: UInt64, height: UInt64) async -> Data? {
-        guard let client else { return nil }
+        guard let client = currentClient else { return nil }
         return await media.mediaThumbnail(mxcURL: mxcURL, mediaSourceJSON: mediaSourceJSON, width: width, height: height, client: client)
     }
 
     // MARK: - Notification Settings
 
     private func notificationSettings() async throws -> NotificationSettings {
-        guard let client else { throw RelayError.notLoggedIn }
+        let client = try requireClient()
         return await client.getNotificationSettings()
-    }
-
-    private func sdkMode(from mode: DefaultNotificationMode) -> MatrixRustSDK.RoomNotificationMode {
-        switch mode {
-        case .allMessages: .allMessages
-        case .mentionsAndKeywordsOnly: .mentionsAndKeywordsOnly
-        case .mute: .mute
-        }
-    }
-
-    private func appMode(from mode: MatrixRustSDK.RoomNotificationMode) -> DefaultNotificationMode {
-        switch mode {
-        case .allMessages: .allMessages
-        case .mentionsAndKeywordsOnly: .mentionsAndKeywordsOnly
-        case .mute: .mute
-        }
-    }
-
-    private func sdkRoomMode(
-        from mode: RelayInterface.RoomNotificationMode
-    ) -> MatrixRustSDK.RoomNotificationMode {
-        switch mode {
-        case .allMessages: .allMessages
-        case .mentionsAndKeywordsOnly: .mentionsAndKeywordsOnly
-        case .mute: .mute
-        }
-    }
-
-    private func appRoomMode(
-        from mode: MatrixRustSDK.RoomNotificationMode
-    ) -> RelayInterface.RoomNotificationMode {
-        switch mode {
-        case .allMessages: .allMessages
-        case .mentionsAndKeywordsOnly: .mentionsAndKeywordsOnly
-        case .mute: .mute
-        }
     }
 
     public func getDefaultNotificationMode(isOneToOne: Bool) async throws -> DefaultNotificationMode {
         let settings = try await notificationSettings()
         let mode = await settings.getDefaultRoomNotificationMode(isEncrypted: true, isOneToOne: isOneToOne)
-        return appMode(from: mode)
+        return DefaultNotificationMode(sdkMode: mode)
     }
 
     public func setDefaultNotificationMode(isOneToOne: Bool, mode: DefaultNotificationMode) async throws {
         let settings = try await notificationSettings()
-        let sdkMode = sdkMode(from: mode)
-        try await settings.setDefaultRoomNotificationMode(isEncrypted: true, isOneToOne: isOneToOne, mode: sdkMode)
-        try await settings.setDefaultRoomNotificationMode(isEncrypted: false, isOneToOne: isOneToOne, mode: sdkMode)
+        try await settings.setDefaultRoomNotificationMode(isEncrypted: true, isOneToOne: isOneToOne, mode: mode.sdkMode)
+        try await settings.setDefaultRoomNotificationMode(isEncrypted: false, isOneToOne: isOneToOne, mode: mode.sdkMode)
     }
 
     public func hasConsistentNotificationSettings() async throws -> Bool {
@@ -1047,7 +1237,7 @@ public final class MatrixService: MatrixServiceProtocol {
     // MARK: - Keyword Notification Settings
 
     public func getNotificationKeywords() async throws -> [String] {
-        guard let client else { throw RelayError.notLoggedIn }
+        let client = try requireClient()
         let session = try client.session()
 
         var request = URLRequest(
@@ -1101,7 +1291,7 @@ public final class MatrixService: MatrixServiceProtocol {
     }
 
     public func addNotificationKeyword(_ keyword: String) async throws {
-        guard let client else { throw RelayError.notLoggedIn }
+        let client = try requireClient()
         let session = try client.session()
 
         let encodedKeyword = keyword.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? keyword
@@ -1132,7 +1322,7 @@ public final class MatrixService: MatrixServiceProtocol {
     }
 
     public func removeNotificationKeyword(_ keyword: String) async throws {
-        guard let client else { throw RelayError.notLoggedIn }
+        let client = try requireClient()
         let session = try client.session()
 
         let encodedKeyword = keyword.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? keyword
@@ -1167,7 +1357,7 @@ public final class MatrixService: MatrixServiceProtocol {
             isOneToOne: isOneToOne
         )
         guard !roomSettings.isDefault else { return nil }
-        return appRoomMode(from: roomSettings.mode)
+        return RelayInterface.RoomNotificationMode(sdkMode: roomSettings.mode)
     }
 
     public func setRoomNotificationMode(
@@ -1175,7 +1365,7 @@ public final class MatrixService: MatrixServiceProtocol {
         mode: RelayInterface.RoomNotificationMode
     ) async throws {
         let settings = try await notificationSettings()
-        try await settings.setRoomNotificationMode(roomId: roomId, mode: sdkRoomMode(from: mode))
+        try await settings.setRoomNotificationMode(roomId: roomId, mode: mode.sdkMode)
     }
 
     public func restoreDefaultRoomNotificationMode(roomId: String) async throws {
@@ -1189,6 +1379,23 @@ public final class MatrixService: MatrixServiceProtocol {
         guard let sdkRoom = room(id: roomId) else { return }
         let update = UserPowerLevelUpdate(userId: userId, powerLevel: powerLevel)
         try await sdkRoom.updatePowerLevelsForUsers(updates: [update])
+    }
+
+    public func updatePowerLevelSettings(roomId: String, settings: RoomPowerLevelSettings) async throws {
+        guard let sdkRoom = room(id: roomId) else { return }
+        let changes = RoomPowerLevelChanges(
+            ban: settings.ban,
+            invite: settings.invite,
+            kick: settings.kick,
+            redact: settings.redact,
+            eventsDefault: settings.eventsDefault,
+            stateDefault: settings.stateDefault,
+            usersDefault: settings.usersDefault,
+            roomName: settings.roomName,
+            roomAvatar: settings.roomAvatar,
+            roomTopic: settings.roomTopic
+        )
+        try await sdkRoom.applyPowerLevelChanges(changes: changes)
     }
 
     // MARK: - Room Access Settings
@@ -1242,27 +1449,34 @@ public final class MatrixService: MatrixServiceProtocol {
     // MARK: - Ignore List
 
     public func isUserIgnored(userId: String) async throws -> Bool {
-        guard let client else { return false }
+        guard let client = currentClient else { return false }
         let ignored = try await client.ignoredUsers()
         return ignored.contains(userId)
     }
 
     public func ignoreUser(userId: String) async throws {
-        guard let client else { throw RelayError.notLoggedIn }
+        let client = try requireClient()
         try await client.ignoreUser(userId: userId)
     }
 
     public func unignoreUser(userId: String) async throws {
-        guard let client else { throw RelayError.notLoggedIn }
+        let client = try requireClient()
         try await client.unignoreUser(userId: userId)
     }
 
     // MARK: - Session Verification
 
-    public func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)? {
+    public func makeSessionVerificationViewModel(acceptingIncomingRequest: Bool = false) async throws -> (any SessionVerificationViewModelProtocol)? {
         guard let controller = verificationController else { return nil }
+        if !acceptingIncomingRequest {
+            controller.resetFlowState()
+        }
         isVerificationFlowActive = true
-        let viewModel = SessionVerificationViewModel(controller: controller, errorReporter: errorReporter)
+        let viewModel = SessionVerificationViewModel(
+            controller: controller, service: self,
+            errorReporter: errorReporter, activityLog: _activityLog,
+            acceptingIncomingRequest: acceptingIncomingRequest
+        )
         // Reset the flag when the view model is deallocated (sheet dismissed).
         Task { [weak self, weak viewModel] in
             // Wait until the view model is released.
@@ -1274,23 +1488,96 @@ public final class MatrixService: MatrixServiceProtocol {
         return viewModel
     }
 
+    public func makeCallViewModel(roomId: String) async -> (any CallViewModelProtocol)? {
+        guard let client = currentClient else { return nil }
+        do {
+            let session = try client.session()
+            let sdkRoom = room(id: roomId)
+            // Check if the Matrix room has encryption enabled to decide whether
+            // to use LiveKit-level E2EE for the call.
+            let isEncrypted: Bool
+            if let sdkRoom, let info = try? await sdkRoom.roomInfo() {
+                isEncrypted = info.encryptionState != .notEncrypted
+            } else {
+                isEncrypted = false
+            }
+            let context = CallViewModel.EncryptionContext(
+                homeserver: client.homeserver,
+                accessToken: session.accessToken,
+                userID: client.userID,
+                deviceID: client.deviceID,
+                roomID: roomId,
+                isRoomEncrypted: isEncrypted,
+                matrixRoom: sdkRoom
+            )
+            let viewModel = CallViewModel(encryptionContext: context)
+            viewModel.activityLog = _activityLog
+            _activityLog.log(
+                category: .call, severity: .info, source: "MatrixService",
+                summary: "Created call view model",
+                detail: "E2EE: \(isEncrypted ? "enabled" : "disabled")",
+                roomId: roomId
+            )
+            return viewModel
+        } catch {
+            _activityLog.log(
+                category: .call, severity: .warning, source: "MatrixService",
+                summary: "Falling back to unencrypted call",
+                detail: error.localizedDescription, roomId: roomId
+            )
+            let viewModel = CallViewModel()
+            viewModel.activityLog = _activityLog
+            return viewModel
+        }
+    }
+
+    public func callCredentials(for roomId: String) async throws -> (livekitURL: String, token: String, sfuServiceURL: String) {
+        guard let client else {
+            throw LiveKitCredentialError.serverError
+        }
+        let session = try client.session()
+        // Extract the server name from the user ID (e.g. "@user:fedora.im" → "fedora.im").
+        // .well-known must be queried on the server name domain, not the delegated homeserver.
+        let serverName = client.userID.split(separator: ":").dropFirst().joined(separator: ":")
+        let service = LiveKitCredentialService(
+            homeserver: client.homeserver,
+            accessToken: session.accessToken,
+            userID: client.userID,
+            deviceID: client.deviceID,
+            serverName: serverName,
+            activityLog: _activityLog
+        )
+        let result = try await service.credentials(for: roomId)
+        return (livekitURL: result.url, token: result.token, sfuServiceURL: result.sfuServiceURL)
+    }
+
     public func declinePendingVerificationRequest() async {
         pendingVerificationRequest = nil
         try? await verificationController?.cancelVerification()
     }
 
     public func isCurrentSessionVerified() async -> Bool {
-        guard let client else { return false }
+        guard let client = currentClient else { return false }
         return client.encryption().verificationState() == .verified
     }
 
     public func encryptionState() async -> EncryptionStatus {
-        guard let client else { return EncryptionStatus() }
+        guard let client = currentClient else { return EncryptionStatus() }
         let encryption = client.encryption()
         return EncryptionStatus(
             backupEnabled: encryption.backupState() == .enabled,
             recoveryEnabled: encryption.recoveryState() == .enabled
         )
+    }
+
+    public func hasDevicesToVerifyAgainst() async throws -> Bool {
+        let client = try requireClient()
+        return try await client.encryption().hasDevicesToVerifyAgainst()
+    }
+
+    public func recoverWithKey(_ recoveryKey: String) async throws {
+        let client = try requireClient()
+        try await client.encryption().recover(recoveryKey: recoveryKey)
     }
 
     // MARK: - Devices
@@ -1315,7 +1602,7 @@ public final class MatrixService: MatrixServiceProtocol {
     // swiftlint:enable nesting
 
     public func getDevices() async throws -> [DeviceInfo] {
-        guard let client else { throw RelayError.notLoggedIn }
+        let client = try requireClient()
 
         let currentDeviceId = client.deviceID
         let session = try client.session()

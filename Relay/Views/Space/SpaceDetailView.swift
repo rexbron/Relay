@@ -165,9 +165,11 @@ struct SpaceDetailView: View {
             )
         }
         .sheet(isPresented: $showCreateSubSpaceSheet) {
-            CreateSubSpaceSheet(
-                parentSpaceId: currentSpaceId,
-                parentSpaceName: viewModel?.spaceName ?? currentDisplayName
+            CreateEntitySheet(
+                kind: .subSpace(
+                    parentId: currentSpaceId,
+                    parentName: viewModel?.spaceName ?? currentDisplayName
+                )
             )
         }
         .confirmationDialog(

@@ -184,13 +184,15 @@ private struct MatrixHTMLParser { // swiftlint:disable:this type_body_length
         "b", "strong", "i", "em", "u", "s", "del", "code", "a", "span",
         "sub", "sup", "br", "font",
         "p", "div", "blockquote", "pre", "h1", "h2", "h3", "h4", "h5", "h6",
-        "hr", "ul", "ol", "li"
+        "hr", "ul", "ol", "li",
+        "table", "thead", "tbody", "tr", "th", "td", "caption"
     ]
 
     /// Tags that introduce block-level breaks.
     private static let blockTags: Set<String> = [
         "p", "div", "blockquote", "pre", "h1", "h2", "h3", "h4", "h5", "h6",
-        "hr", "ul", "ol", "li"
+        "hr", "ul", "ol", "li",
+        "table", "caption", "tr"
     ]
 
     /// Void (self-closing) tags that have no closing counterpart.
@@ -246,6 +248,8 @@ private struct MatrixHTMLParser { // swiftlint:disable:this type_body_length
         var suppressNextBlockBreak = false
         /// Nesting depth inside tags whose content should be suppressed (e.g. `<script>`).
         var opaqueDepth = 0
+        /// Whether the first `<td>`/`<th>` in the current `<tr>` has been emitted.
+        var isFirstCellInRow = true
 
         // Deferred block-element post-processing (headings, blockquotes, pre, list items).
         struct DeferredBlock {
@@ -350,6 +354,9 @@ private struct MatrixHTMLParser { // swiftlint:disable:this type_body_length
                         style.backgroundColor = NSColor(matrixHex: bgHex)
                     }
 
+                case "p", "div":
+                    deferredStack.append(DeferredBlock(tag: tag, startIndex: result.length))
+
                 case "blockquote":
                     blockquoteDepth += 1
                     let baseFont = NSFont.systemFont(ofSize: NSFont.systemFontSize)
@@ -425,6 +432,30 @@ private struct MatrixHTMLParser { // swiftlint:disable:this type_body_length
                         result.append(NSAttributedString(string: marker, attributes: markerAttrs))
                         deferredStack.append(DeferredBlock(tag: tag, startIndex: result.length))
                     }
+
+                // MARK: Table elements (tab-delimited fallback rendering)
+                case "table", "thead", "tbody":
+                    if tag == "table" {
+                        isFirstCellInRow = true
+                    }
+                case "tr":
+                    isFirstCellInRow = true
+                case "caption":
+                    style.bold = true
+                case "th":
+                    style.bold = true
+                    if !isFirstCellInRow {
+                        let attrs = buildAttributes(from: styleStack.last!)
+                        result.append(NSAttributedString(string: "\t", attributes: attrs))
+                    }
+                    isFirstCellInRow = false
+                case "td":
+                    if !isFirstCellInRow {
+                        let attrs = buildAttributes(from: styleStack.last!)
+                        result.append(NSAttributedString(string: "\t", attributes: attrs))
+                    }
+                    isFirstCellInRow = false
+
                 default:
                     break
                 }
@@ -450,6 +481,22 @@ private struct MatrixHTMLParser { // swiftlint:disable:this type_body_length
 
                 switch tag {
                 case "p", "div":
+                    if let deferred = deferredStack.last, deferred.tag == tag {
+                        deferredStack.removeLast()
+                        let contentRange = NSRange(
+                            location: deferred.startIndex,
+                            length: result.length - deferred.startIndex
+                        )
+                        // Apply paragraph spacing only to top-level paragraphs.
+                        // Inside blockquotes, the blockquote's own style handles spacing.
+                        if contentRange.length > 0 && blockquoteDepth == 0 {
+                            let style = NSMutableParagraphStyle()
+                            style.paragraphSpacingBefore = 6
+                            result.addAttribute(
+                                .paragraphStyle, value: style, range: contentRange
+                            )
+                        }
+                    }
                     ensureBlockBreak(in: result)
 
                 case "blockquote":
@@ -482,6 +529,7 @@ private struct MatrixHTMLParser { // swiftlint:disable:this type_body_length
                             style.firstLineHeadIndent = 0
                             style.headIndent = barWidth
                             style.tailIndent = -barWidth
+                            style.paragraphSpacingBefore = 6
                             result.addAttribute(
                                 .paragraphStyle, value: style, range: contentRange
                             )
@@ -504,8 +552,8 @@ private struct MatrixHTMLParser { // swiftlint:disable:this type_body_length
                                 range: range
                             )
                             let style = NSMutableParagraphStyle()
-                            style.paragraphSpacingBefore = 4
-                            style.paragraphSpacing = 4
+                            style.paragraphSpacingBefore = 6
+                            style.paragraphSpacing = 6
                             result.addAttribute(.paragraphStyle, value: style, range: range)
                         }
                     }
@@ -526,7 +574,7 @@ private struct MatrixHTMLParser { // swiftlint:disable:this type_body_length
                             let headingFont = NSFont.boldSystemFont(ofSize: headingSize)
                             result.addAttribute(.font, value: headingFont, range: range)
                             let style = NSMutableParagraphStyle()
-                            style.paragraphSpacingBefore = 4
+                            style.paragraphSpacingBefore = 6
                             style.paragraphSpacing = 2
                             result.addAttribute(.paragraphStyle, value: style, range: range)
                         }
@@ -567,6 +615,13 @@ private struct MatrixHTMLParser { // swiftlint:disable:this type_body_length
                             }
                         }
                     }
+
+                case "table":
+                    ensureBlockBreak(in: result)
+                case "caption", "tr":
+                    ensureBlockBreak(in: result)
+                case "thead", "tbody", "th", "td":
+                    break
 
                 default:
                     break

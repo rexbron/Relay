@@ -15,11 +15,14 @@
 import RelayInterface
 import SwiftUI
 
-/// A circular avatar that displays a user's or room's profile image, falling back to colored initials.
+/// An avatar that displays a user's or room's profile image, falling back to colored initials.
 ///
 /// When an `mxcURL` is provided, the view asynchronously loads a thumbnail from the Matrix
-/// homeserver. If no URL is available or the download fails, a deterministic colored circle
+/// homeserver. If no URL is available or the download fails, a deterministic colored shape
 /// with the entity's initials is shown instead.
+///
+/// By default the avatar clips to a circle. Pass a custom `shape` to use a different
+/// clip shape (e.g. a rounded rectangle for space avatars).
 struct AvatarView: View {
     @Environment(\.matrixService) private var matrixService
 
@@ -29,8 +32,11 @@ struct AvatarView: View {
     /// The `mxc://` URL for the avatar image, or `nil` to always show initials.
     let mxcURL: String?
 
-    /// The diameter of the avatar circle in points.
+    /// The diameter of the avatar in points.
     let size: CGFloat
+
+    /// The clip shape applied to the avatar. Defaults to a circle.
+    var shape: AnyShape = AnyShape(Circle())
 
     @State private var image: NSImage?
 
@@ -45,7 +51,7 @@ struct AvatarView: View {
             }
         }
         .frame(width: size, height: size)
-        .clipShape(Circle())
+        .clipShape(shape)
         .task(id: mxcURL) {
             // Clear any stale image immediately when the URL changes (e.g. switching
             // rooms in the toolbar capsule). Doing this here instead of a separate
@@ -60,7 +66,7 @@ struct AvatarView: View {
 
     private var initialsView: some View {
         ZStack {
-            Circle()
+            shape
                 .fill(color(for: name))
 
             Text(initials(for: name))

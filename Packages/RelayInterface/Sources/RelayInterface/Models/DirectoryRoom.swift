@@ -16,9 +16,9 @@ import Foundation
 
 /// A room discovered through the public room directory search.
 ///
-/// ``DirectoryRoom`` represents a room listing returned by
-/// ``MatrixServiceProtocol/searchDirectory(query:)``. It contains only the metadata
-/// visible in directory search results, not the full room state.
+/// ``DirectoryRoom`` represents a room listing returned by the
+/// room directory search. It contains only the metadata visible in
+/// directory search results, not the full room state.
 public struct DirectoryRoom: Identifiable, Hashable, Sendable {
     /// The stable identifier for this room, derived from ``roomId``.
     public var id: String { roomId }

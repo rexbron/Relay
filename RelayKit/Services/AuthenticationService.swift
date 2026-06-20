@@ -14,9 +14,6 @@
 
 import Foundation
 import RelayInterface
-import os
-
-private let logger = Logger(subsystem: "RelayKit", category: "Authentication")
 
 /// The persisted representation of a Matrix session, stored in the keychain.
 ///
@@ -31,7 +28,29 @@ nonisolated struct StoredSession: Codable, Sendable {
     var userId: String
     var deviceId: String
     var homeserverUrl: String
-    var oidcData: String?
+    var oauthData: String?
+}
+
+/// Outcome of an attempt to restore a previously saved session.
+///
+/// Distinguishes "no keychain session at all" (→ login screen) from
+/// "session exists but we couldn't reach the homeserver" (→ restore
+/// the user into a cache-only experience and retry once connectivity
+/// returns).
+enum RestoreOutcome {
+    /// No saved session in the keychain. Caller should show login.
+    case noSavedSession
+    /// Session restored successfully and is ready for sync.
+    case restored(ClientProxy, userId: String)
+    /// A session is saved but the homeserver couldn't be reached
+    /// (no network, well-known discovery failed, connection timed out).
+    /// Caller should treat the user as logged-in but with sync stuck
+    /// offline, and retry the full restore when connectivity returns.
+    case offlineWithSavedSession(userId: String, homeserverUrl: String)
+    /// A session is saved but restore failed for a non-network reason
+    /// (auth invalidated, schema mismatch, etc.). Caller should show
+    /// an error.
+    case failed(Error)
 }
 
 /// Handles Matrix authentication: password login, OAuth/OIDC, session restore, and logout.
@@ -47,6 +66,13 @@ nonisolated struct StoredSession: Codable, Sendable {
 /// the service to AppKit or AuthenticationServices.
 @MainActor
 final class AuthenticationService {
+
+    private let networkMonitor: NetworkMonitor
+    var activityLog: ActivityLog?
+
+    init(networkMonitor: NetworkMonitor) {
+        self.networkMonitor = networkMonitor
+    }
 
     // MARK: - Data Paths
 
@@ -85,6 +111,12 @@ final class AuthenticationService {
         try? fm.removeItem(at: cacheDirectory)
     }
 
+    /// Deletes only the rebuildable cache directory (sync state, timeline events),
+    /// preserving the data directory (crypto store, device identity).
+    static func resetCacheData() {
+        try? FileManager.default.removeItem(at: cacheDirectory)
+    }
+
     /// The active session delegate, scoped to the current client lifecycle.
     ///
     /// A new delegate is created for each login/restore so that stale
@@ -100,6 +132,7 @@ final class AuthenticationService {
         // from an old client are silently dropped.
         sessionDelegate.invalidate()
         sessionDelegate = KeychainSessionDelegate()
+        sessionDelegate.activityLog = activityLog
 
         return ClientBuilderProxy()
             .sessionPaths(
@@ -117,19 +150,42 @@ final class AuthenticationService {
 
     /// Attempts to restore a previously saved session from the keychain.
     ///
-    /// - Returns: A tuple of the authenticated ``ClientProxy`` and user ID, or `nil` if no
-    ///   valid session was found.
-    func restoreSession() async -> (ClientProxy, String)? {
+    /// Distinguishes "no saved session" from "homeserver couldn't be
+    /// reached" so the caller (``MatrixService``) can choose between
+    /// going to the login screen and entering an offline-restored
+    /// cache-only state. See ``RestoreOutcome``.
+    func restoreSession() async -> RestoreOutcome {
         guard let data = KeychainService.load(),
               let stored = try? JSONDecoder().decode(StoredSession.self, from: data)
         else {
-            return nil
+            activityLog?.log(
+                category: .auth, severity: .info, source: "AuthenticationService",
+                summary: "No saved session in keychain"
+            )
+            return .noSavedSession
+        }
+
+        // If the radio is off, don't even try `buildClient()` — well-known
+        // discovery would just fail. Skip straight to offline-restore so
+        // the user sees their cached data instead of the login screen.
+        guard networkMonitor.isConnected else {
+            activityLog?.log(
+                category: .auth, severity: .info, source: "AuthenticationService",
+                summary: "Restoring session offline",
+                metadata: ["userId": stored.userId]
+            )
+            return .offlineWithSavedSession(
+                userId: stored.userId,
+                homeserverUrl: stored.homeserverUrl
+            )
         }
 
         do {
-            let tokenPrefix = String(stored.accessToken.prefix(8))
-            // swiftlint:disable:next line_length
-            logger.debug("Restoring session: userId=\(stored.userId), tokenPrefix=\(tokenPrefix)..., hasRefreshToken=\(stored.refreshToken != nil), hasOidcData=\(stored.oidcData != nil)")
+            activityLog?.log(
+                category: .auth, severity: .debug, source: "AuthenticationService",
+                summary: "Restoring session",
+                metadata: ["userId": stored.userId]
+            )
 
             let client = try await makeBuilder()
                 .serverNameOrHomeserverUrl(stored.homeserverUrl)
@@ -141,17 +197,36 @@ final class AuthenticationService {
                 userId: stored.userId,
                 deviceId: stored.deviceId,
                 homeserverUrl: stored.homeserverUrl,
-                oidcData: stored.oidcData,
+                oauthData: stored.oauthData,
                 slidingSyncVersion: .native
             )
             try await client.restoreSession(session: session)
 
-            logger.debug("Session restored successfully for \(stored.userId)")
             let clientProxy = try ClientProxy(client: client)
-            return (clientProxy, stored.userId)
+            activityLog?.log(
+                category: .auth, severity: .info, source: "AuthenticationService",
+                summary: "Session restored from keychain",
+                metadata: ["userId": stored.userId]
+            )
+            return .restored(clientProxy, userId: stored.userId)
         } catch {
-            logger.error("Session restore failed: \(error)")
-            return nil
+            if NetworkErrorClassifier.isOfflineShaped(error) {
+                activityLog?.log(
+                    category: .auth, severity: .warning, source: "AuthenticationService",
+                    summary: "Session restore deferred — homeserver unreachable",
+                    detail: error.localizedDescription
+                )
+                return .offlineWithSavedSession(
+                    userId: stored.userId,
+                    homeserverUrl: stored.homeserverUrl
+                )
+            }
+            activityLog?.log(
+                category: .auth, severity: .error, source: "AuthenticationService",
+                summary: "Session restore failed",
+                detail: error.localizedDescription
+            )
+            return .failed(error)
         }
     }
 
@@ -182,6 +257,11 @@ final class AuthenticationService {
         saveSession(session)
 
         let clientProxy = try ClientProxy(client: client)
+        activityLog?.log(
+            category: .auth, severity: .info, source: "AuthenticationService",
+            summary: "Password login succeeded",
+            metadata: ["userId": session.userId]
+        )
         return (clientProxy, session.userId)
     }
 
@@ -214,11 +294,16 @@ final class AuthenticationService {
             .buildClient()
 
         let loginDetails = await client.homeserverLoginDetails()
-        guard loginDetails.supportsOidcLogin() else {
+        guard loginDetails.supportsOauthLogin() else {
+            activityLog?.log(
+                category: .auth, severity: .warning, source: "AuthenticationService",
+                summary: "Homeserver does not support OIDC",
+                metadata: ["homeserver": homeserver]
+            )
             throw RelayError.oauthNotSupported
         }
 
-        let oidcConfig = OidcConfiguration(
+        let oauthConfig = OAuthConfiguration(
             clientName: "Relay",
             redirectUri: Self.oauthRedirectURI,
             clientUri: "https://subpop.github.io/Relay",
@@ -228,8 +313,8 @@ final class AuthenticationService {
             staticRegistrations: [:]
         )
 
-        let authData = try await client.urlForOidc(
-            oidcConfiguration: oidcConfig,
+        let authData = try await client.urlForOauth(
+            oauthConfiguration: oauthConfig,
             prompt: nil,
             loginHint: nil,
             deviceId: nil,
@@ -241,14 +326,24 @@ final class AuthenticationService {
             throw RelayError.oauthInvalidURL
         }
 
+        activityLog?.log(
+            category: .auth, severity: .info, source: "AuthenticationService",
+            summary: "OAuth login flow started"
+        )
+
         let callbackURL = try await openURL(url)
 
-        try await client.loginWithOidcCallback(callbackUrl: callbackURL.absoluteString)
+        try await client.loginWithOauthCallback(callbackUrl: callbackURL.absoluteString)
 
         let session = try client.session()
         saveSession(session)
 
         let clientProxy = try ClientProxy(client: client)
+        activityLog?.log(
+            category: .auth, severity: .info, source: "AuthenticationService",
+            summary: "OAuth login succeeded",
+            metadata: ["userId": session.userId]
+        )
         return (clientProxy, session.userId)
     }
 
@@ -260,23 +355,34 @@ final class AuthenticationService {
         sessionDelegate.invalidate()
         KeychainService.delete()
         Self.resetLocalSessionData()
+        activityLog?.log(
+            category: .auth, severity: .info, source: "AuthenticationService",
+            summary: "Session cleared"
+        )
     }
 
     // MARK: - Private
 
     private func saveSession(_ session: Session) {
-        // swiftlint:disable:next line_length
-        logger.debug("Saving session: userId=\(session.userId), hasRefreshToken=\(session.refreshToken != nil), hasOidcData=\(session.oidcData != nil)")
         let stored = StoredSession(
             accessToken: session.accessToken,
             refreshToken: session.refreshToken,
             userId: session.userId,
             deviceId: session.deviceId,
             homeserverUrl: session.homeserverUrl,
-            oidcData: session.oidcData
+            oauthData: session.oauthData
         )
         if let encoded = try? JSONEncoder().encode(stored) {
             KeychainService.save(encoded)
+            activityLog?.log(
+                category: .auth, severity: .debug, source: "AuthenticationService",
+                summary: "Session saved to keychain"
+            )
+        } else {
+            activityLog?.log(
+                category: .auth, severity: .warning, source: "AuthenticationService",
+                summary: "Failed to encode session for keychain"
+            )
         }
     }
 }
@@ -284,8 +390,6 @@ final class AuthenticationService {
 // MARK: - OIDC Session Delegate
 
 final class KeychainSessionDelegate: ClientSessionDelegate, @unchecked Sendable {
-    private static let logger = Logger(subsystem: "RelayKit", category: "KeychainSessionDelegate")
-
     /// Guards against stale callbacks from a previous SDK client.
     ///
     /// When `AuthenticationService` creates a new client (e.g. on re-login),
@@ -294,6 +398,13 @@ final class KeychainSessionDelegate: ClientSessionDelegate, @unchecked Sendable 
     /// overwriting the new session's tokens in the keychain.
     private var isValid = true
 
+    /// Activity log reference for reporting keychain operations.
+    ///
+    /// Set by ``AuthenticationService/makeBuilder()`` when creating a new delegate.
+    /// Because this class is `nonisolated`, all activity log calls dispatch
+    /// to `@MainActor`.
+    weak var activityLog: ActivityLog?
+
     /// Marks this delegate as invalid so all future callbacks are ignored.
     func invalidate() {
         isValid = false
@@ -301,56 +412,86 @@ final class KeychainSessionDelegate: ClientSessionDelegate, @unchecked Sendable 
 
     func retrieveSessionFromKeychain(userId: String) throws -> Session {
         guard isValid else {
-            Self.logger.warning("retrieveSessionFromKeychain: delegate invalidated, ignoring")
+            Task { @MainActor [activityLog] in
+                activityLog?.log(
+                    category: .auth, severity: .debug, source: "KeychainSessionDelegate",
+                    summary: "Stale session retrieve callback ignored"
+                )
+            }
             throw KeychainSessionError.sessionNotFound
         }
-        Self.logger.debug("retrieveSessionFromKeychain called for user: \(userId)")
         guard let data = KeychainService.load() else {
-            Self.logger.error("No session data found in keychain")
+            Task { @MainActor [activityLog] in
+                activityLog?.log(
+                    category: .auth, severity: .warning, source: "KeychainSessionDelegate",
+                    summary: "Keychain load returned no data"
+                )
+            }
             throw KeychainSessionError.sessionNotFound
         }
         guard let stored = try? JSONDecoder().decode(StoredSession.self, from: data) else {
-            Self.logger.error("Failed to decode stored session data")
+            Task { @MainActor [activityLog] in
+                activityLog?.log(
+                    category: .auth, severity: .error, source: "KeychainSessionDelegate",
+                    summary: "Failed to decode session from keychain"
+                )
+            }
             throw KeychainSessionError.sessionNotFound
         }
         guard stored.userId == userId else {
-            Self.logger.error("Stored userId \(stored.userId) does not match requested \(userId)")
+            Task { @MainActor [activityLog] in
+                activityLog?.log(
+                    category: .auth, severity: .error, source: "KeychainSessionDelegate",
+                    summary: "Keychain userId mismatch",
+                    metadata: ["expected": userId, "actual": stored.userId]
+                )
+            }
             throw KeychainSessionError.sessionNotFound
         }
-        // swiftlint:disable:next line_length
-        Self.logger.debug("Session retrieved: hasRefreshToken=\(stored.refreshToken != nil), hasOidcData=\(stored.oidcData != nil)")
         return Session(
             accessToken: stored.accessToken,
             refreshToken: stored.refreshToken,
             userId: stored.userId,
             deviceId: stored.deviceId,
             homeserverUrl: stored.homeserverUrl,
-            oidcData: stored.oidcData,
+            oauthData: stored.oauthData,
             slidingSyncVersion: .native
         )
     }
 
     func saveSessionInKeychain(session: Session) {
         guard isValid else {
-            Self.logger.warning("saveSessionInKeychain: delegate invalidated, ignoring")
+            Task { @MainActor [activityLog] in
+                activityLog?.log(
+                    category: .auth, severity: .debug, source: "KeychainSessionDelegate",
+                    summary: "Stale session save callback ignored"
+                )
+            }
             return
         }
-        let tokenPrefix = String(session.accessToken.prefix(8))
-        // swiftlint:disable:next line_length
-        Self.logger.debug("saveSessionInKeychain called for user: \(session.userId), tokenPrefix=\(tokenPrefix)..., hasRefreshToken=\(session.refreshToken != nil), hasOidcData=\(session.oidcData != nil)")
         let stored = StoredSession(
             accessToken: session.accessToken,
             refreshToken: session.refreshToken,
             userId: session.userId,
             deviceId: session.deviceId,
             homeserverUrl: session.homeserverUrl,
-            oidcData: session.oidcData
+            oauthData: session.oauthData
         )
         if let data = try? JSONEncoder().encode(stored) {
             KeychainService.save(data)
-            Self.logger.debug("Session saved to keychain")
+            Task { @MainActor [activityLog] in
+                activityLog?.log(
+                    category: .auth, severity: .debug, source: "KeychainSessionDelegate",
+                    summary: "Token refresh saved to keychain"
+                )
+            }
         } else {
-            Self.logger.error("Failed to encode session for keychain storage")
+            Task { @MainActor [activityLog] in
+                activityLog?.log(
+                    category: .auth, severity: .error, source: "KeychainSessionDelegate",
+                    summary: "Failed to encode refreshed session"
+                )
+            }
         }
     }
 }

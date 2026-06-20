@@ -16,8 +16,6 @@ import Foundation
 import RelayInterface
 import os
 
-private let logger = Logger(subsystem: "RelayKit", category: "RoomList")
-
 /// Information about a new notification-worthy event in a room.
 public struct RoomNotificationEvent: Sendable {
     /// The room ID that has new unread activity.
@@ -67,6 +65,9 @@ final class RoomListManager {
     /// Debounce task for re-sorting after room info updates.
     private var resortTask: Task<Void, Never>?
 
+    /// The diagnostic activity log for capturing service-level events.
+    var activityLog: ActivityLog?
+
     /// Callback invoked when a room has new notification-worthy activity.
     ///
     /// The app layer uses this to post system notifications.
@@ -77,10 +78,9 @@ final class RoomListManager {
 
     /// The user's notification keywords, used for client-side keyword matching.
     ///
-    /// The Matrix Rust SDK's `highlightCount` and `numUnreadMentions` may not
-    /// reliably include keyword push-rule matches. Room entries check the latest
-    /// message body against these keywords to determine whether a new message
-    /// should be treated as a mention for notification and unread indicator purposes.
+    /// Used by room entries to detect keyword matches in new messages for
+    /// system notification banners. The server-side `highlightCount` is the
+    /// authoritative source for badge display.
     var notificationKeywords: [String] = []
 
     /// Callback invoked after the room summaries list is rebuilt.
@@ -119,7 +119,7 @@ final class RoomListManager {
         }
         let allRooms = try await rls.allRooms()
         let handle = allRooms.entriesWithDynamicAdapters(pageSize: 100, listener: entriesListener)
-        _ = handle.controller().setFilter(kind: .all(filters: [.nonLeft, .nonSpace, .deduplicateVersions]))
+        _ = handle.controller().setFilter(kind: .all(filters: [.nonLeft, .nonSpace]))
         entriesHandle = handle
 
         hasLoadedRooms = true
@@ -173,7 +173,7 @@ final class RoomListManager {
         }
         let allRooms = try await rls.allRooms()
         let handle = allRooms.entriesWithDynamicAdapters(pageSize: 100, listener: entriesListener)
-        _ = handle.controller().setFilter(kind: .all(filters: [.nonLeft, .nonSpace, .deduplicateVersions]))
+        _ = handle.controller().setFilter(kind: .all(filters: [.nonLeft, .nonSpace]))
         entriesHandle = handle
 
         entriesTask = Task { [weak self] in
@@ -183,7 +183,11 @@ final class RoomListManager {
             }
         }
 
-        logger.info("Room list manager restarted with new sync service")
+        activityLog?.log(
+            category: .roomList, severity: .info, source: "RoomListManager",
+            summary: "Room list restarted with new sync service",
+            detail: "Preserving \(roomEntries.count) existing room entries"
+        )
     }
 
     /// Stops listening and clears state.
@@ -228,6 +232,7 @@ final class RoomListManager {
     private func makeEntry(room: Room) -> RoomEntry {
         RoomEntry(
             room: room,
+            activityLog: activityLog,
             onInfoUpdated: { [weak self] in self?.scheduleResort() },
             onNotificationEvent: { [weak self] event in self?.onNotificationEvent?(event) },
             highlightContextProvider: { [weak self] in
@@ -243,26 +248,41 @@ final class RoomListManager {
             PerformanceSignposts.RoomListName.applyEntryUpdates,
             "\(updates.count) updates, \(entryCountBefore) entries"
         )
+
+        // Track whether any operation structurally changed the room list
+        // (entries added, removed, or replaced with a different room).
+        // Pure in-place updates (.set with the same room ID) don't need
+        // an immediate rebuild — the debounced scheduleResort() path
+        // handles those once the room info and latest event are updated.
+        var structurallyChanged = false
+
         for update in updates {
             switch update {
             case .append(let values):
                 let entries = values.map { makeEntry(room: $0) }
                 roomEntries.append(contentsOf: entries)
+                structurallyChanged = true
             case .clear:
                 roomEntries.removeAll()
+                structurallyChanged = true
             case .pushFront(let value):
                 roomEntries.insert(makeEntry(room: value), at: 0)
+                structurallyChanged = true
             case .pushBack(let value):
                 roomEntries.append(makeEntry(room: value))
+                structurallyChanged = true
             case .popFront:
                 if !roomEntries.isEmpty { roomEntries.removeFirst() }
+                structurallyChanged = true
             case .popBack:
                 if !roomEntries.isEmpty { roomEntries.removeLast() }
+                structurallyChanged = true
             case .insert(let index, let value):
                 // swiftlint:disable:next identifier_name
                 let i = Int(index)
                 if i <= roomEntries.count {
                     roomEntries.insert(makeEntry(room: value), at: i)
+                    structurallyChanged = true
                 }
             case .set(let index, let value):
                 // swiftlint:disable:next identifier_name
@@ -270,9 +290,12 @@ final class RoomListManager {
                 if i < roomEntries.count {
                     let existing = roomEntries[i]
                     if existing.id == value.id() {
+                        // Same room — update in place. The room info
+                        // subscription will trigger scheduleResort().
                         existing.updateRoom(value)
                     } else {
                         roomEntries[i] = makeEntry(room: value)
+                        structurallyChanged = true
                     }
                 }
             case .remove(let index):
@@ -280,32 +303,64 @@ final class RoomListManager {
                 let i = Int(index)
                 if i < roomEntries.count {
                     roomEntries.remove(at: i)
+                    structurallyChanged = true
                 }
             case .truncate(let length):
                 let len = Int(length)
                 if len < roomEntries.count {
                     roomEntries.removeSubrange(len..<roomEntries.count)
+                    structurallyChanged = true
                 }
             case .reset(let values):
                 let existingById = Dictionary(roomEntries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                var hasNewRooms = false
                 roomEntries = values.map { room in
                     if let existing = existingById[room.id()] {
                         existing.updateRoom(room)
                         return existing
                     }
+                    hasNewRooms = true
                     return makeEntry(room: room)
+                }
+                // A reset is structural if the count changed or new rooms appeared.
+                if hasNewRooms || roomEntries.count != entryCountBefore {
+                    structurallyChanged = true
                 }
             }
         }
 
-        // Rebuild the sorted room summaries from room entries
         let entryCountAfter = roomEntries.count
         PerformanceSignposts.roomList.endInterval(
             PerformanceSignposts.RoomListName.applyEntryUpdates,
             state,
             "\(entryCountAfter) entries after"
         )
-        rebuildRoomSummaries()
+
+        // Log the diff batch to the activity log.
+        let diffSummary = updates.map { update -> String in
+            switch update {
+            case .append(let v): "append(\(v.count))"
+            case .clear: "clear"
+            case .pushFront: "pushFront"
+            case .pushBack: "pushBack"
+            case .popFront: "popFront"
+            case .popBack: "popBack"
+            case .insert(let idx, _): "insert(@\(idx))"
+            case .set(let idx, _): "set(@\(idx))"
+            case .remove(let idx): "remove(@\(idx))"
+            case .truncate(let len): "truncate(\(len))"
+            case .reset(let v): "reset(\(v.count))"
+            }
+        }.joined(separator: ", ")
+        activityLog?.log(
+            category: .roomList, severity: .debug, source: "RoomListManager",
+            summary: "\(updates.count) entry update(s): \(entryCountBefore) → \(entryCountAfter) entries",
+            detail: diffSummary
+        )
+
+        if structurallyChanged {
+            rebuildRoomSummaries()
+        }
     }
 
     private func rebuildRoomSummaries() {
@@ -314,24 +369,21 @@ final class RoomListManager {
             PerformanceSignposts.RoomListName.rebuildSummaries,
             "\(entryCount) entries"
         )
-        rooms = roomEntries.map(\.summary).sorted { lhs, rhs in
-            switch (lhs.lastMessageTimestamp, rhs.lastMessageTimestamp) {
-            // swiftlint:disable:next identifier_name
-            case (.some(let l), .some(let r)):
-                return l > r
-            case (.some, .none):
-                return true
-            case (.none, .some):
-                return false
-            case (.none, .none):
-                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-            }
-        }
+        // Preserve the SDK's entry order — sliding sync delivers rooms
+        // sorted by recency.  The view layer applies its own sort using
+        // lastMessageTimestamp when available, but this baseline order
+        // ensures rooms without cached event data still appear in a
+        // sensible position rather than being pushed to the bottom.
+        rooms = roomEntries.map(\.summary)
         let roomCount = rooms.count
         PerformanceSignposts.roomList.endInterval(
             PerformanceSignposts.RoomListName.rebuildSummaries,
             state,
-            "\(roomCount) rooms sorted"
+            "\(roomCount) rooms"
+        )
+        activityLog?.log(
+            category: .roomList, severity: .debug, source: "RoomListManager",
+            summary: "Room list rebuilt: \(roomCount) rooms sorted"
         )
         onRoomsRebuilt?()
     }
@@ -353,6 +405,7 @@ private final class RoomEntry: Identifiable {
     @ObservationIgnored private var roomInfoHandle: TaskHandle?
     @ObservationIgnored private var listenerTask: Task<Void, Never>?
     @ObservationIgnored private var onInfoUpdated: (() -> Void)?
+    @ObservationIgnored private weak var activityLog: ActivityLog?
 
     @ObservationIgnored private var onNotificationEvent: ((RoomNotificationEvent) -> Void)?
     @ObservationIgnored private var highlightContextProvider: (() -> (userId: String?, keywords: [String]))?
@@ -367,12 +420,14 @@ private final class RoomEntry: Identifiable {
 
     init(
         room: Room,
+        activityLog: ActivityLog? = nil,
         onInfoUpdated: (() -> Void)? = nil,
         onNotificationEvent: ((RoomNotificationEvent) -> Void)? = nil,
         highlightContextProvider: (() -> (userId: String?, keywords: [String]))? = nil
     ) {
         self.id = room.id()
         self.room = room
+        self.activityLog = activityLog
         self.onInfoUpdated = onInfoUpdated
         self.onNotificationEvent = onNotificationEvent
         self.highlightContextProvider = highlightContextProvider
@@ -406,7 +461,12 @@ private final class RoomEntry: Identifiable {
 
     private func fetchAndApplyRoomInfo() async {
         guard let info = try? await room.roomInfo() else { return }
-        applyRoomInfo(info)
+        applyRoomInfo(info, isInitialFetch: true)
+        // Await the latest event inline so the timestamp and preview are
+        // populated before we trigger the first resort.  This avoids the
+        // race where the initial rebuildRoomSummaries() runs while all
+        // rooms still have nil timestamps, causing incorrect sort order.
+        await fetchAndApplyLatestEvent(checkNotification: false)
     }
 
     private func listenToRoomInfo() {
@@ -424,7 +484,8 @@ private final class RoomEntry: Identifiable {
         }
     }
 
-    private func applyRoomInfo(_ info: RoomInfo) {
+    private func applyRoomInfo(_ info: RoomInfo, isInitialFetch: Bool = false) {
+        let previousNotifications = summary.notificationCount
         summary.name = info.displayName ?? room.displayName() ?? id
         summary.topic = info.topic
         // For DM rooms without an explicit room avatar, fall back to the
@@ -437,37 +498,40 @@ private final class RoomEntry: Identifiable {
             summary.avatarURL = nil
         }
 
+        // Use the SDK's client-side unread counts. The server-side
+        // notificationCount/highlightCount from /sync are not reliably
+        // populated under sliding sync, so we use numUnreadMessages (which
+        // counts "interesting" messages independently of push rules) and
+        // numUnreadMentions (which counts mention/highlight events).
+        //
         // When the room was optimistically marked as read, the SDK may still
-        // report stale non-zero unread counts until the server processes the
-        // read receipt. Skip overwriting the cleared values in that case.
-        // Once the SDK itself reports zero, clear the optimistic flag.
-        let sdkUnread = UInt(info.numUnreadMessages)
-        let sdkMentions = UInt(info.numUnreadMentions)
+        // report stale non-zero counts until it processes the read receipt.
+        // Skip overwriting the cleared values in that case.
+        let sdkNotifications = UInt(info.numUnreadMessages)
+        let sdkHighlights = UInt(info.numUnreadMentions)
         if summary.isOptimisticallyCleared {
-            if sdkUnread == 0 && sdkMentions == 0 {
+            if sdkNotifications == 0 && sdkHighlights == 0 {
                 // Server confirmed — safe to clear the guard.
                 summary.isOptimisticallyCleared = false
-                summary.unreadMentions = 0
-                summary.hasKeywordHighlight = false
+                summary.highlightCount = 0
+            } else if sdkNotifications > summary.optimisticClearedBaseline {
+                // New messages arrived after the read receipt was sent.
+                // Accept the SDK's values and clear the optimistic flag.
+                summary.isOptimisticallyCleared = false
+                summary.notificationCount = sdkNotifications
+                summary.highlightCount = sdkHighlights
             }
-            // Otherwise keep the optimistically-cleared zeros.
+            // Otherwise keep the optimistically-cleared zeros — the SDK
+            // is still echoing stale counts from before the read receipt.
         } else {
-            summary.unreadMessages = sdkUnread
-            // Use the SDK's mention count as a floor; our client-side detection
-            // may have already incremented unreadMentions higher than what the
-            // SDK reports (e.g. for keyword matches). When the SDK value drops
-            // to zero (room marked as read), reset our count too.
-            if sdkMentions == 0 && sdkUnread == 0 {
-                summary.unreadMentions = 0
-                summary.hasKeywordHighlight = false
-            } else if sdkMentions > summary.unreadMentions {
-                summary.unreadMentions = sdkMentions
-            }
+            summary.notificationCount = sdkNotifications
+            summary.highlightCount = sdkHighlights
         }
         summary.isDirect = info.isDirect
         summary.canonicalAlias = info.canonicalAlias
         summary.pinnedEventIds = info.pinnedEventIds
         summary.isFavourite = info.isFavourite
+        summary.successorRoomId = info.successorRoom?.roomId
 
         // Map SDK membership to RelayInterface type
         switch info.membership {
@@ -500,88 +564,128 @@ private final class RoomEntry: Identifiable {
             summary.notificationMode = nil
         }
 
+        // Log significant room info changes (notification count transitions).
+        if summary.notificationCount != previousNotifications {
+            var meta = ["roomName": summary.name]
+            if let alias = summary.canonicalAlias {
+                meta["roomAlias"] = alias
+            }
+            activityLog?.log(
+                category: .roomList, severity: .debug, source: "RoomEntry",
+                summary: "Room info updated: \(summary.canonicalAlias ?? summary.name)",
+                detail: "Notifications: \(previousNotifications) → \(summary.notificationCount), highlights: \(summary.highlightCount)",
+                roomId: id,
+                metadata: meta
+            )
+        }
+
         let shouldCheckNotification = hasReceivedInitialInfo
         hasReceivedInitialInfo = true
 
+        // During the initial fetch, fetchAndApplyRoomInfo() awaits the
+        // latest event inline so the timestamp is ready before the first
+        // resort.  Skip the detached Task here to avoid a duplicate fetch.
+        guard !isInitialFetch else { return }
+
         // Fetch the latest event, update the message preview, and check
         // for new notification-worthy events in a single task.
-        // The notification check compares the latest event's timestamp
-        // against the last one we processed — this works reliably because
-        // latestEvent() is fetched asynchronously, giving the SDK time to
-        // deliver the new event before we read it.
+        //
+        // The room info update fires before the SDK's event cache is
+        // guaranteed to have the new event available via latestEvent().
+        // When the fetched event has the same timestamp as the last one
+        // we processed, we yield briefly (up to 2 retries at 50ms) to
+        // give the SDK time to flush the event into its cache.
         Task { [weak self] in
             guard let self else { return }
-
-            // Fetch the latest event exactly once — both the message
-            // preview and notification detection use the same snapshot
-            // so there is no race between two separate latestEvent() calls.
-            let latest = await self.room.latestEvent()
-            let eventInfo = Self.extractEventInfo(from: latest)
-            let preview = Self.extractPreview(from: latest)
-
-            // Update message preview for the room list.
-            self.summary.lastAuthor = eventInfo?.author
-            self.summary.lastMessage = preview.text
-            self.summary.lastMessageTimestamp = preview.date
-            self.onInfoUpdated?()
-
-            guard let eventInfo else { return }
-
-            // On the first info fetch, just record the baseline.
-            guard shouldCheckNotification else {
-                self.lastNotifiedEventTimestamp = eventInfo.timestamp
-                return
-            }
-
-            // Only process events we haven't seen before.
-            guard eventInfo.timestamp > self.lastNotifiedEventTimestamp else { return }
-            self.lastNotifiedEventTimestamp = eventInfo.timestamp
-
-            // Only notify for actual messages, not state events
-            // (joins, name changes, topic changes, etc.).
-            guard eventInfo.body != nil else { return }
-
-            let roomName = self.summary.name
-            let roomId = self.id
-            let isDirect = self.summary.isDirect
-            let mode = self.summary.notificationMode
-            let highlightContext = self.highlightContextProvider?()
-
-            // Don't notify for our own messages.
-            if let userId = highlightContext?.userId,
-               eventInfo.senderId == userId {
-                return
-            }
-
-            // Determine whether this message is a mention or keyword match.
-            var isMention = false
-            if let mentions = eventInfo.mentions,
-               let userId = highlightContext?.userId {
-                isMention = mentions.userIds.contains(userId) || mentions.room
-            }
-            if !isMention {
-                isMention = HighlightMatcher.bodyMatchesHighlightRules(
-                    eventInfo.body ?? "",
-                    currentUserId: highlightContext?.userId,
-                    keywords: highlightContext?.keywords ?? []
-                )
-            }
-
-            if isMention {
-                self.summary.unreadMentions += 1
-                self.summary.hasKeywordHighlight = true
-            }
-
-            self.onNotificationEvent?(RoomNotificationEvent(
-                roomId: roomId,
-                roomName: roomName,
-                messageAuthor: eventInfo.author,
-                messageBody: eventInfo.body,
-                isMention: isMention,
-                isDirect: isDirect,
-                notificationMode: mode
-            ))
+            await self.fetchAndApplyLatestEvent(checkNotification: shouldCheckNotification)
         }
+    }
+
+    /// Fetches the room's latest event, updates the message preview, and
+    /// optionally checks for notification-worthy activity.
+    ///
+    /// Called inline during the initial room info fetch (so the timestamp
+    /// is available before the first sort) and from a detached Task during
+    /// live room info updates.
+    private func fetchAndApplyLatestEvent(checkNotification: Bool) async {
+        var latest = await room.latestEvent()
+        var eventInfo = Self.extractEventInfo(from: latest)
+
+        // Retry if the event looks stale (same timestamp as what we
+        // already processed).  Two short retries cover the common
+        // case where the event cache lags by a few milliseconds.
+        if checkNotification,
+           let ts = eventInfo?.timestamp,
+           ts <= lastNotifiedEventTimestamp {
+            for _ in 0 ..< 2 {
+                try? await Task.sleep(for: .milliseconds(50))
+                guard !Task.isCancelled else { return }
+                latest = await room.latestEvent()
+                eventInfo = Self.extractEventInfo(from: latest)
+                if let newTs = eventInfo?.timestamp, newTs > lastNotifiedEventTimestamp {
+                    break
+                }
+            }
+        }
+        let preview = Self.extractPreview(from: latest)
+
+        // Update message preview for the room list.
+        summary.lastAuthor = eventInfo?.author
+        summary.lastMessage = preview.text
+        summary.lastMessageTimestamp = preview.date
+        onInfoUpdated?()
+
+        guard let eventInfo else { return }
+
+        // On the first info fetch, just record the baseline.
+        guard checkNotification else {
+            lastNotifiedEventTimestamp = eventInfo.timestamp
+            return
+        }
+
+        // Only process events we haven't seen before.
+        guard eventInfo.timestamp > lastNotifiedEventTimestamp else { return }
+        lastNotifiedEventTimestamp = eventInfo.timestamp
+
+        // Only notify for actual messages, not state events
+        // (joins, name changes, topic changes, etc.).
+        guard eventInfo.body != nil else { return }
+
+        let roomName = summary.name
+        let roomId = id
+        let isDirect = summary.isDirect
+        let mode = summary.notificationMode
+        let highlightContext = highlightContextProvider?()
+
+        // Don't notify for our own messages.
+        if let userId = highlightContext?.userId,
+           eventInfo.senderId == userId {
+            return
+        }
+
+        // Determine whether this message is a mention or keyword match.
+        var isMention = false
+        if let mentions = eventInfo.mentions,
+           let userId = highlightContext?.userId {
+            isMention = mentions.userIds.contains(userId) || mentions.room
+        }
+        if !isMention {
+            isMention = HighlightMatcher.bodyMatchesHighlightRules(
+                eventInfo.body ?? "",
+                currentUserId: highlightContext?.userId,
+                keywords: highlightContext?.keywords ?? []
+            )
+        }
+
+        onNotificationEvent?(RoomNotificationEvent(
+            roomId: roomId,
+            roomName: roomName,
+            messageAuthor: eventInfo.author,
+            messageBody: eventInfo.body,
+            isMention: isMention,
+            isDirect: isDirect,
+            notificationMode: mode
+        ))
     }
 
     /// Information extracted from the latest event for notification purposes.
@@ -710,16 +814,23 @@ private final class RoomEntry: Identifiable {
             }
         case .roomMembership(let userId, let userDisplayName, let change, _):
             let name = userDisplayName ?? userId
-            return AttributedString(TimelineMessageMapper.membershipDescription(name: name, change: change))
+            return TimelineMessageMapper.membershipDescription(name: name, change: change)
         case .profileChange(let displayName, let prevDisplayName, let avatarUrl, let prevAvatarUrl):
-            return AttributedString(TimelineMessageMapper.profileChangeDescription(
+            return TimelineMessageMapper.profileChangeDescription(
                 displayName: displayName,
                 prevDisplayName: prevDisplayName,
                 avatarUrl: avatarUrl,
                 prevAvatarUrl: prevAvatarUrl
-            ))
-        case .state(_, let content):
-            return AttributedString(TimelineMessageMapper.stateEventDescription(content))
+            )
+        case .state(let stateKey, let content):
+            let (body, _) = TimelineMessageMapper.describeStateEvent(
+                content,
+                stateKey: stateKey,
+                senderDisplayName: nil,
+                senderId: ""
+            )
+            guard let body else { return nil }
+            return AttributedString(body)
         default: return nil
         }
         // swiftlint:enable identifier_name

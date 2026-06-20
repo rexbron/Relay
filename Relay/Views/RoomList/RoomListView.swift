@@ -24,18 +24,17 @@ struct RoomListView: View {
     @Environment(\.errorReporter) private var errorReporter
     @Environment(AppActions.self) private var appActions
     @Binding var selectedRoomId: String?
-    @Binding var searchText: String
     @Binding var selectedSpaceId: String?
     @AppStorage("roomSortOrder") private var sortOrder: RoomSortOrder = .lastMessage
     @AppStorage("roomSortDirection") private var sortDirection: RoomSortDirection = .descending
     @AppStorage("roomTypeFilter") private var typeFilter: RoomTypeFilter = .all
+    @AppStorage("showArchivedRooms") private var showArchivedRooms = false
     @State private var roomToLeave: RoomSummary?
     @State private var showLeaveConfirmation = false
     @State private var verificationItem: VerificationItem?
     @Binding var previewingInvite: RoomSummary?
     @State private var inviteToDecline: RoomSummary?
     @State private var showDeclineConfirmation = false
-    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         // Compute filtered results once per body evaluation to avoid
@@ -70,7 +69,20 @@ struct RoomListView: View {
             if !pinned.isEmpty {
                 Section {
                     ForEach(pinned) { room in
-                        roomRow(room)
+                        RoomListRow(room: room)
+                            .tag(room.id)
+                            .swipeActions(edge: .trailing) {
+                                Button("Leave", systemImage: "door.right.hand.open", role: .destructive, action: { confirmLeave(room) })
+                            }
+                            .contextMenu {
+                                Button(
+                                    room.isFavourite ? "Unpin" : "Pin",
+                                    systemImage: room.isFavourite ? "pin.slash" : "pin",
+                                    action: { toggleFavourite(room) }
+                                )
+                                Divider()
+                                Button("Leave", systemImage: "door.right.hand.open", role: .destructive, action: { confirmLeave(room) })
+                            }
                     }
                 } header: {
                     Text("Pinned")
@@ -79,7 +91,20 @@ struct RoomListView: View {
 
             Section {
                 ForEach(unpinned) { room in
-                    roomRow(room)
+                    RoomListRow(room: room)
+                        .tag(room.id)
+                        .swipeActions(edge: .trailing) {
+                            Button("Leave", systemImage: "door.right.hand.open", role: .destructive, action: { confirmLeave(room) })
+                        }
+                        .contextMenu {
+                            Button(
+                                room.isFavourite ? "Unpin" : "Pin",
+                                systemImage: room.isFavourite ? "pin.slash" : "pin",
+                                action: { toggleFavourite(room) }
+                            )
+                            Divider()
+                            Button("Leave", systemImage: "door.right.hand.open", role: .destructive, action: { confirmLeave(room) })
+                        }
                 }
             } header: {
                 if !invites.isEmpty || !pinned.isEmpty {
@@ -91,14 +116,6 @@ struct RoomListView: View {
         .animation(.default, value: unpinned.map(\.id))
         .animation(.default, value: invites.map(\.id))
         .focusSection()
-        .searchable(text: $searchText, placement: .sidebar, prompt: "Find Rooms…")
-        .searchFocused($isSearchFocused)
-        .onChange(of: appActions.focusSearch) { _, shouldFocus in
-            if shouldFocus {
-                appActions.focusSearch = false
-                isSearchFocused = true
-            }
-        }
         .toolbar {
             ToolbarItemGroup(placement: .automatic) {
                 sortMenu
@@ -138,25 +155,6 @@ struct RoomListView: View {
         } message: { invite in
             Text("Decline the invitation to \"\(invite.name)\"? You'll need to be re-invited to join later.")
         }
-    }
-
-    // MARK: - Room Row
-
-    private func roomRow(_ room: RoomSummary) -> some View {
-        RoomListRow(room: room)
-            .tag(room.id)
-            .swipeActions(edge: .trailing) {
-                Button("Leave", systemImage: "door.right.hand.open", role: .destructive, action: { confirmLeave(room) })
-            }
-            .contextMenu {
-                Button(
-                    room.isFavourite ? "Unpin" : "Pin",
-                    systemImage: room.isFavourite ? "pin.slash" : "pin",
-                    action: { toggleFavourite(room) }
-                )
-                Divider()
-                Button("Leave", systemImage: "door.right.hand.open", role: .destructive, action: { confirmLeave(room) })
-            }
     }
 
     // MARK: - Sort Menu
@@ -206,6 +204,12 @@ struct RoomListView: View {
                     )) {
                         Label(filter.label, systemImage: filter.icon)
                     }
+                }
+            }
+
+            Section {
+                Toggle(isOn: $showArchivedRooms.animation()) {
+                    Label("Archived Rooms", systemImage: "archivebox")
                 }
             }
         } label: {
@@ -282,13 +286,7 @@ extension RoomListView {
 extension RoomListView {
     /// Rooms with a pending invitation, shown at the top of the sidebar.
     fileprivate var pendingInvites: [RoomSummary] {
-        var invites = matrixService.rooms.filter { $0.isInvited }
-        if !searchText.isEmpty {
-            invites = invites.filter {
-                $0.name.localizedStandardContains(searchText)
-            }
-        }
-        return invites
+        matrixService.rooms.filter { $0.isInvited }
     }
 
     private static let perfSignposter = OSSignposter(
@@ -319,11 +317,10 @@ extension RoomListView {
             rooms = rooms.filter { $0.isDirect }
         }
 
-        // Apply search filter.
-        if !searchText.isEmpty {
-            rooms = rooms.filter {
-                $0.name.localizedStandardContains(searchText)
-            }
+        // Exclude tombstoned (upgraded) rooms unless the user has opted
+        // to see archived rooms.
+        if !showArchivedRooms {
+            rooms = rooms.filter { $0.successorRoomId == nil }
         }
 
         // Apply sort.
@@ -358,12 +355,12 @@ extension RoomListView {
                     // swiftlint:disable:next identifier_name
                     case (.some(let l), .some(let r)):
                         result = l < r ? .orderedAscending : (l > r ? .orderedDescending : .orderedSame)
-                    case (.some, .none):
-                        result = .orderedDescending
-                    case (.none, .some):
-                        result = .orderedAscending
-                    case (.none, .none):
-                        result = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+                    default:
+                        // When one or both rooms lack a cached timestamp,
+                        // preserve the SDK's sliding-sync order (which is
+                        // recency-based). Swift's sort is stable, so
+                        // returning .orderedSame keeps the original position.
+                        result = .orderedSame
                     }
                 }
             case .name:
@@ -381,25 +378,24 @@ extension RoomListView {
 
 #Preview("Room Rows") {
     @Previewable @State var sel: String?
-    @Previewable @State var search = ""
     @Previewable @State var space: String?
     @Previewable @State var invite: RoomSummary?
     RoomListView(
         selectedRoomId: $sel,
-        searchText: $search,
         selectedSpaceId: $space,
         previewingInvite: $invite
     )
     .environment(\.matrixService, PreviewMatrixService())
+    .environment(AppActions())
     .frame(width: 300, height: 400)
 }
 
 #Preview("Empty State") {
     RoomListView(
         selectedRoomId: .constant(nil),
-        searchText: .constant(""),
         selectedSpaceId: .constant(nil),
         previewingInvite: .constant(nil)
     )
+    .environment(AppActions())
     .frame(width: 300, height: 400)
 }

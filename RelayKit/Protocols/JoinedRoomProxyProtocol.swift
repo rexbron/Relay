@@ -146,8 +146,8 @@ public protocol JoinedRoomProxyProtocol: AnyObject, Sendable {
     /// An async stream of pending knock requests.
     var knockRequests: AsyncStream<[KnockRequest]> { get }
 
-    /// An async stream of active live location shares.
-    var liveLocationShares: AsyncStream<[LiveLocationShare]> { get }
+    /// An async stream of live location share updates.
+    var liveLocationUpdates: AsyncStream<[LiveLocationShareUpdate]> { get }
 
     // MARK: - Timeline
 
@@ -278,8 +278,10 @@ public protocol JoinedRoomProxyProtocol: AnyObject, Sendable {
     /// Starts sharing live location for the given duration.
     ///
     /// - Parameter durationMillis: The sharing duration in milliseconds.
+    /// - Returns: The beacon event ID.
     /// - Throws: If starting fails.
-    func startLiveLocationShare(durationMillis: UInt64) async throws
+    @discardableResult
+    func startLiveLocationShare(durationMillis: UInt64) async throws -> String
 
     /// Stops sharing live location.
     ///

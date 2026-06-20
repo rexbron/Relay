@@ -14,17 +14,18 @@
 
 import Network
 import Observation
-import os
-
-private let logger = Logger(subsystem: "RelayKit", category: "Network")
+import RelayInterface
 
 /// Monitors network connectivity using `NWPathMonitor` and exposes reactive
 /// state for use by ``SyncManager``.
 ///
 /// ``NetworkMonitor`` uses the `Network` framework's path monitor to detect
-/// connectivity changes. When the network becomes unavailable, ``isConnected``
-/// transitions to `false`, signaling sync services to stop. When connectivity
-/// is restored, it transitions back to `true`, triggering sync restart.
+/// connectivity changes. A **1.5-second debounce** absorbs transient path
+/// flaps (e.g. adapter re-enumeration after wake, dock hot-plug, WiFi
+/// roaming) so that ``isConnected`` only transitions after the path status
+/// has been stable for the full settling interval. This prevents downstream
+/// consumers from triggering expensive sync teardown/rebuild cycles on
+/// every momentary blip.
 ///
 /// ```swift
 /// let monitor = NetworkMonitor()
@@ -35,7 +36,19 @@ private let logger = Logger(subsystem: "RelayKit", category: "Network")
 @MainActor
 final class NetworkMonitor {
     /// Whether the device currently has a viable network path.
+    ///
+    /// This value is debounced: it only updates after the raw
+    /// `NWPathMonitor` path status has been stable for
+    /// ``settlingInterval``.
     private(set) var isConnected: Bool = true
+
+    /// The diagnostic activity log for capturing network state changes.
+    weak var activityLog: ActivityLog?
+
+    /// How long the raw path status must remain stable before
+    /// ``isConnected`` is updated. Symmetric for both directions
+    /// (going offline and coming online).
+    private static let settlingInterval: Duration = .milliseconds(1500)
 
     @ObservationIgnored private var monitor: NWPathMonitor?
     @ObservationIgnored private let monitorQueue = DispatchQueue(
@@ -43,10 +56,19 @@ final class NetworkMonitor {
         qos: .utility
     )
 
+    /// The most recently reported raw path status from `NWPathMonitor`,
+    /// before debounce settling. `nil` when no change is pending.
+    @ObservationIgnored private var pendingStatus: Bool?
+
+    /// The active debounce timer. Cancelled and restarted on every raw
+    /// path update; only fires if the status remains stable for the
+    /// full ``settlingInterval``.
+    @ObservationIgnored private var debounceTask: Task<Void, Never>?
+
     /// Starts monitoring network connectivity.
     ///
     /// Creates an `NWPathMonitor` and begins observing path updates.
-    /// Connectivity changes are forwarded to the main actor.
+    /// Raw path changes are debounced before updating ``isConnected``.
     func start() {
         guard monitor == nil else { return }
 
@@ -57,28 +79,70 @@ final class NetworkMonitor {
             let satisfied = path.status == .satisfied
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                let previous = self.isConnected
-                self.isConnected = satisfied
-
-                if previous != satisfied {
-                    if satisfied {
-                        logger.info("Network connectivity restored")
-                    } else {
-                        logger.info("Network connectivity lost")
-                    }
-                }
+                self.settlePathStatus(satisfied)
             }
         }
 
         pathMonitor.start(queue: monitorQueue)
-        logger.debug("Network monitoring started")
+        activityLog?.log(
+            category: .network, severity: .debug, source: "NetworkMonitor",
+            summary: "Network monitoring started"
+        )
     }
 
     /// Stops monitoring network connectivity and releases resources.
     func stop() {
+        debounceTask?.cancel()
+        debounceTask = nil
+        pendingStatus = nil
         monitor?.cancel()
         monitor = nil
         isConnected = true
-        logger.debug("Network monitoring stopped")
+        activityLog?.log(
+            category: .network, severity: .debug, source: "NetworkMonitor",
+            summary: "Network monitoring stopped"
+        )
+    }
+
+    // MARK: - Private
+
+    /// Debounces a raw path status change. Restarts the settling timer
+    /// on every call; the published ``isConnected`` only updates if the
+    /// status remains stable for the full ``settlingInterval``.
+    private func settlePathStatus(_ satisfied: Bool) {
+        pendingStatus = satisfied
+        debounceTask?.cancel()
+
+        debounceTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.settlingInterval)
+            guard let self, !Task.isCancelled else { return }
+
+            self.pendingStatus = nil
+            guard self.isConnected != satisfied else { return }
+            self.isConnected = satisfied
+
+            if satisfied {
+                self.activityLog?.log(
+                    category: .network, severity: .info, source: "NetworkMonitor",
+                    summary: "Network connectivity restored"
+                )
+            } else {
+                self.activityLog?.log(
+                    category: .network, severity: .warning, source: "NetworkMonitor",
+                    summary: "Network connectivity lost"
+                )
+            }
+        }
+
+        // Log transient flaps for diagnostics when the pending status
+        // differs from the last settled value but may not survive the
+        // debounce window.
+        if satisfied != isConnected {
+            activityLog?.log(
+                category: .network, severity: .debug, source: "NetworkMonitor",
+                summary: "Path status change pending",
+                detail: "Raw: \(satisfied ? "satisfied" : "unsatisfied"), settling for \(Self.settlingInterval)"
+            )
+        }
     }
 }

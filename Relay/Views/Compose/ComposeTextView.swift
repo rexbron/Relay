@@ -52,7 +52,7 @@ struct ComposeTextView: NSViewRepresentable {
         textView.textContainer?.lineFragmentPadding = 4
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.containerSize = NSSize(width: 200, height: CGFloat.greatestFiniteMagnitude)
-        textView.isRichText = false
+        textView.isRichText = true
         textView.allowsUndo = true
         textView.isEditable = true
         textView.isSelectable = true
@@ -80,14 +80,15 @@ struct ComposeTextView: NSViewRepresentable {
         context.coordinator.textView = textView
 
         // Expose the mention insertion closure to the parent view.
-        // Deferred to next main actor turn to avoid modifying state during view update.
+        // Safe to assign synchronously because `insertMentionHandler` is
+        // @ObservationIgnored, so this write cannot invalidate the view graph.
         let coordinator = context.coordinator
+        self.insertMentionHandler = { [weak coordinator] userId, displayName in
+            coordinator?.insertMention(userId: userId, displayName: displayName)
+        }
         let heightCallback = onHeightChange
         let initialHeight = textView.cachedHeight
         Task { @MainActor in
-            self.insertMentionHandler = { [weak coordinator] userId, displayName in
-                coordinator?.insertMention(userId: userId, displayName: displayName)
-            }
             heightCallback?(initialHeight)
         }
 
@@ -105,6 +106,22 @@ struct ComposeTextView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: ComposeScrollView, context: Context) {
         context.coordinator.parent = self
+
+        // Always re-establish the mention insertion handler so it
+        // points at the current coordinator. The handler can become
+        // stale in two ways:
+        //  1. The backing ComposeViewModel was replaced by the draft
+        //     store (nil handler on the new instance).
+        //  2. The user switched away and back; the draft store keeps
+        //     the old ComposeViewModel whose handler holds a dead weak
+        //     reference to the previous (deallocated) coordinator.
+        // Safe to assign synchronously because `insertMentionHandler`
+        // is @ObservationIgnored, so this write cannot invalidate the
+        // view graph.
+        let coordinator = context.coordinator
+        self.insertMentionHandler = { [weak coordinator] userId, displayName in
+            coordinator?.insertMention(userId: userId, displayName: displayName)
+        }
 
         guard let textView = scrollView.linkedTextView else { return }
         guard !context.coordinator.didPushTextChange else {
@@ -226,28 +243,42 @@ struct ComposeTextView: NSViewRepresentable {
             shouldChangeTextIn affectedCharRange: NSRange,
             replacementString: String?
         ) -> Bool {
+            // During IME composition the system must have full control over
+            // text replacements; skip the pill-protection logic entirely.
+            if textView.hasMarkedText() { return true }
+
             guard let storage = textView.textStorage else { return true }
 
-            // Check if the edit touches a pill attachment — if so, delete the whole pill.
-            var pillRange: NSRange?
+            // Collect every pill attachment that intersects the edit range.
+            var partialPillRange: NSRange?
             storage.enumerateAttribute(
                 .attachment,
                 in: NSRange(location: 0, length: storage.length)
             ) { value, range, stop in
                 guard value is PillTextAttachment else { return }
                 let intersection = NSIntersectionRange(affectedCharRange, range)
-                if intersection.length > 0 {
-                    pillRange = range
-                    stop.pointee = true
-                }
+                guard intersection.length > 0 else { return }
+
+                // If the edit fully contains this pill, no special handling
+                // is needed — the pill will be removed as part of the
+                // standard text replacement (e.g. Cmd+A then Delete).
+                let editContainsPill =
+                    affectedCharRange.location <= range.location
+                    && NSMaxRange(affectedCharRange) >= NSMaxRange(range)
+                if editContainsPill { return }
+
+                // The edit only partially touches a pill — we need to
+                // expand the deletion to the whole pill.
+                partialPillRange = range
+                stop.pointee = true
             }
 
-            if let pillRange, affectedCharRange != pillRange {
-                // The user is trying to partially edit a pill — delete the whole pill instead.
+            if let partialPillRange {
+                // Delete the entire pill instead of partially editing it.
                 storage.beginEditing()
-                storage.replaceCharacters(in: pillRange, with: "")
+                storage.replaceCharacters(in: partialPillRange, with: "")
                 storage.endEditing()
-                textView.setSelectedRange(NSRange(location: pillRange.location, length: 0))
+                textView.setSelectedRange(NSRange(location: partialPillRange.location, length: 0))
                 textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
                 return false
             }
@@ -561,6 +592,15 @@ final class ComposeInputTextView: NSTextView {
         if window != nil {
             window?.makeFirstResponder(self)
         }
+    }
+
+    // MARK: - Paste as plain text
+
+    /// Restrict paste to plain text so styled content from other apps is
+    /// stripped. The text view must remain `isRichText = true` for pill
+    /// attachments, but user-pasted content should always be unstyled.
+    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        [.string]
     }
 
     // Persist spell check preferences since the app isn't NSDocument-based.

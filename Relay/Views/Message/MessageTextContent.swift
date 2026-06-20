@@ -41,8 +41,11 @@ final class MessageTextContent: NSTextView {
     /// Delivers the same actions as the SwiftUI row context menu.
     var onMessageContextAction: ((TimelineRowContextAction) -> Void)?
 
-    /// Opens the emoji reaction picker (popover host lives in ``MessageView``).
+    /// Opens the emoji reaction picker (popover host lives in ``MessageView``/``MessageBubbleContent``).
     var onPresentReactionPicker: (() -> Void)?
+
+    /// The current user's room-level permissions for gating context menu actions.
+    var permissions: RoomPermissions?
 
     // MARK: - Link Click Interception
 
@@ -139,7 +142,7 @@ final class MessageTextContent: NSTextView {
             return baseMenu
         }
 
-        let entries = TimelineMessageContextMenu.entries(for: message)
+        let entries = TimelineMessageContextMenu.entries(for: message, permissions: permissions)
         var insertIndex = 0
         for entry in entries {
             switch entry {

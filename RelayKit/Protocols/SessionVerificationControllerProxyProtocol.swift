@@ -158,4 +158,11 @@ public protocol SessionVerificationControllerProxyProtocol: AnyObject, Sendable 
     ///
     /// - Throws: If cancellation fails.
     func cancelVerification() async throws
+
+    /// Resets the flow state to ``SessionVerificationFlowState/idle``.
+    ///
+    /// Call this before starting a new verification flow to clear any stale
+    /// terminal state (`.cancelled`, `.failed`, `.finished`) left over from a
+    /// previous attempt.
+    func resetFlowState()
 }

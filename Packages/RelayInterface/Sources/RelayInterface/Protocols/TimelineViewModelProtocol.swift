@@ -58,8 +58,8 @@ public protocol TimelineViewModelProtocol: AnyObject, Observable {
     /// Cleared after the room is marked as read.
     var firstUnreadMessageId: String? { get set }
 
-    /// Display names of users who are currently typing in this room.
-    var typingUserDisplayNames: [String] { get }
+    /// Users who are currently typing in this room.
+    var typingUsers: [TypingUser] { get }
 
     /// Whether the timeline is showing live messages or focused on a specific event.
     var timelineFocus: TimelineFocusState { get }

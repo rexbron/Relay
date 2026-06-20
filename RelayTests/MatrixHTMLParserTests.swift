@@ -645,4 +645,93 @@ struct MatrixHTMLParserTests {
         let firstCharAttrs = attrs(result, at: 0)
         #expect(firstCharAttrs[.link] == nil)
     }
+
+    // MARK: - Tables
+
+    @Test func simpleTable() {
+        let html = """
+            <table><tr><td>A</td><td>B</td></tr>\
+            <tr><td>C</td><td>D</td></tr></table>
+            """
+        let result = NSAttributedString(matrixHTML: html)!
+        // Cells within a row are separated by tabs, rows by newlines.
+        #expect(result.string.contains("A\tB"))
+        #expect(result.string.contains("C\tD"))
+        #expect(result.string.contains("A\tB\nC\tD"))
+    }
+
+    @Test func tableWithHeaders() {
+        let html = """
+            <table><thead><tr><th>Name</th><th>Value</th></tr></thead>\
+            <tbody><tr><td>a</td><td>1</td></tr></tbody></table>
+            """
+        let result = NSAttributedString(matrixHTML: html)!
+        #expect(result.string.contains("Name\tValue"))
+        #expect(result.string.contains("a\t1"))
+        // Header cells should be bold.
+        let nameIndex = (result.string as NSString).range(of: "Name").location
+        #expect(traits(result, at: nameIndex).contains(.bold))
+        // Data cells should not be bold.
+        let dataRange = (result.string as NSString).range(of: "a\t1")
+        #expect(!traits(result, at: dataRange.location).contains(.bold))
+    }
+
+    @Test func tableWithCaption() {
+        let html = "<table><caption>Title</caption><tr><td>data</td></tr></table>"
+        let result = NSAttributedString(matrixHTML: html)!
+        #expect(result.string.contains("Title"))
+        #expect(result.string.contains("data"))
+        // Caption should be bold.
+        let captionIndex = (result.string as NSString).range(of: "Title").location
+        #expect(traits(result, at: captionIndex).contains(.bold))
+    }
+
+    @Test func singleCellTableNoTab() {
+        let html = "<table><tr><td>only</td></tr></table>"
+        let result = NSAttributedString(matrixHTML: html)!
+        #expect(result.string.contains("only"))
+        // No tab character when there is only one cell.
+        #expect(!result.string.contains("\t"))
+    }
+
+    // MARK: - Paragraph Spacing
+
+    @Test func paragraphsHaveSpacing() {
+        let result = NSAttributedString(matrixHTML: "<p>hello</p><p>world</p>")!
+        // String content unchanged.
+        #expect(result.string == "hello\nworld")
+        // The second paragraph ("world") should have paragraphSpacingBefore.
+        let worldIndex = (result.string as NSString).range(of: "world").location
+        let style = attrs(result, at: worldIndex)[.paragraphStyle] as? NSParagraphStyle
+        #expect(style != nil)
+        #expect(style!.paragraphSpacingBefore == 6)
+    }
+
+    @Test func firstParagraphHasSpacing() {
+        // Even the first <p> gets the spacing attribute (it has no visual
+        // effect at the top of the text view, but should be set consistently).
+        let result = NSAttributedString(matrixHTML: "<p>only</p>")!
+        let style = attrs(result, at: 0)[.paragraphStyle] as? NSParagraphStyle
+        #expect(style != nil)
+        #expect(style!.paragraphSpacingBefore == 6)
+    }
+
+    @Test func blockquoteHasSpacing() {
+        let result = NSAttributedString(matrixHTML:
+            "<p>before</p><blockquote><p>quoted</p></blockquote>"
+        )!
+        let quotedIndex = (result.string as NSString).range(of: "quoted").location
+        let style = attrs(result, at: quotedIndex)[.paragraphStyle] as? NSParagraphStyle
+        #expect(style != nil)
+        #expect(style!.paragraphSpacingBefore == 6)
+    }
+
+    @Test func divElementsHaveSpacing() {
+        let result = NSAttributedString(matrixHTML: "<div>a</div><div>b</div>")!
+        #expect(result.string == "a\nb")
+        let bIndex = (result.string as NSString).range(of: "b").location
+        let style = attrs(result, at: bIndex)[.paragraphStyle] as? NSParagraphStyle
+        #expect(style != nil)
+        #expect(style!.paragraphSpacingBefore == 6)
+    }
 }

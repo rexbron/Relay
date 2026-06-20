@@ -105,10 +105,10 @@ struct SettingsSessionsTab: View {
                                 }
                             }
                         } label: {
-                            Label("Verify with Another Device", systemImage: "checkmark.shield")
+                            Label("Verify Session", systemImage: "checkmark.shield")
                         }
                     } footer: {
-                        Text("Compare emoji on both devices to confirm your identity.")
+                        Text("Verify using another device or your security key.")
                     }
                 }
 
@@ -137,13 +137,6 @@ struct SettingsSessionsTab: View {
 private struct DeviceRow: View {
     let device: DeviceInfo
     var isVerified: Bool?
-
-    private static let relativeDateFormatter: RelativeDateTimeFormatter = {
-        // swiftlint:disable:next identifier_name
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .full
-        return f
-    }()
 
     private var iconName: String {
         if device.isCurrentDevice {
@@ -186,11 +179,10 @@ private struct DeviceRow: View {
                         .foregroundStyle(.tertiary)
                         .textSelection(.enabled)
 
-                    // swiftlint:disable:next identifier_name
                     if let ts = device.lastSeenTimestamp {
                         Text("·")
                             .foregroundStyle(.tertiary)
-                        Text(Self.relativeDateFormatter.localizedString(for: ts, relativeTo: .now))
+                        Text(ts, format: .relative(presentation: .named))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

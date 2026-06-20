@@ -236,7 +236,8 @@ public final class ClientProxy: ClientProxyProtocol, @unchecked Sendable {
         appDisplayName: String,
         deviceDisplayName: String,
         profileTag: String?,
-        lang: String
+        lang: String,
+        append: Bool = false
     ) async throws {
         try await client.setPusher(
             identifiers: identifiers,
@@ -244,7 +245,8 @@ public final class ClientProxy: ClientProxyProtocol, @unchecked Sendable {
             appDisplayName: appDisplayName,
             deviceDisplayName: deviceDisplayName,
             profileTag: profileTag,
-            lang: lang
+            lang: lang,
+            append: append
         )
     }
 
@@ -302,15 +304,15 @@ public final class ClientProxy: ClientProxyProtocol, @unchecked Sendable {
         await client.homeserverLoginDetails()
     }
 
-    public func urlForOidc(
-        oidcConfiguration: OidcConfiguration,
-        prompt: OidcPrompt?,
+    public func urlForOauth(
+        oauthConfiguration: OAuthConfiguration,
+        prompt: OAuthPrompt?,
         loginHint: String?,
         deviceId: String?,
         additionalScopes: [String]?
     ) async throws -> OAuthAuthorizationData {
-        try await client.urlForOidc(
-            oidcConfiguration: oidcConfiguration,
+        try await client.urlForOauth(
+            oauthConfiguration: oauthConfiguration,
             prompt: prompt,
             loginHint: loginHint,
             deviceId: deviceId,
@@ -318,8 +320,8 @@ public final class ClientProxy: ClientProxyProtocol, @unchecked Sendable {
         )
     }
 
-    public func loginWithOidcCallback(callbackUrl: String) async throws {
-        try await client.loginWithOidcCallback(callbackUrl: callbackUrl)
+    public func loginWithOauthCallback(callbackUrl: String) async throws {
+        try await client.loginWithOauthCallback(callbackUrl: callbackUrl)
     }
 
     public func session() throws -> Session {
@@ -376,7 +378,7 @@ public final class ClientProxy: ClientProxyProtocol, @unchecked Sendable {
         client.newGrantLoginWithQrCodeHandler()
     }
 
-    public func newLoginWithQrCodeHandler(oidcConfiguration: OidcConfiguration) -> LoginWithQrCodeHandler {
-        client.newLoginWithQrCodeHandler(oidcConfiguration: oidcConfiguration)
+    public func newLoginWithQrCodeHandler(oauthConfiguration: OAuthConfiguration) -> LoginWithQrCodeHandler {
+        client.newLoginWithQrCodeHandler(oauthConfiguration: oauthConfiguration)
     }
 }

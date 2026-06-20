@@ -39,6 +39,12 @@ public final class SessionVerificationControllerProxy: SessionVerificationContro
         controller.setDelegate(delegate: self)
     }
 
+    // MARK: - State Management
+
+    public func resetFlowState() {
+        flowState = .idle
+    }
+
     // MARK: - Actions
 
     public func requestDeviceVerification() async throws {

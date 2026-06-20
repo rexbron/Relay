@@ -27,25 +27,26 @@ struct AudioMessageView: View {
     @State private var quickLookURL: URL?
     @State private var isLoadingMedia = false
     @State private var isHovering = false
+    @AppStorage("appearance.coloredBubbles") private var coloredBubbles = false
 
     private var mediaInfo: TimelineMessage.MediaInfo {
         message.mediaInfo!
     }
 
-    private var bubbleColor: Color {
-        message.isOutgoing ? .accentColor : Color(.systemGray).opacity(0.2)
+    private var style: BubbleStyle {
+        .message(for: message, coloredBubbles: coloredBubbles)
     }
 
     var body: some View {
         HStack(spacing: 10) {
             ZStack {
                 Circle()
-                    .fill(message.isOutgoing ? Color.white.opacity(0.2) : Color.accentColor.opacity(0.15))
+                    .fill(style.usesWhiteText ? Color.white.opacity(0.2) : Color.accentColor.opacity(0.15))
                     .frame(width: 40, height: 40)
                 Image(systemName: "waveform")
                     .font(.body)
                     .fontWeight(.medium)
-                    .foregroundStyle(message.isOutgoing ? .white : .accentColor)
+                    .foregroundStyle(style.usesWhiteText ? .white : .accentColor)
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -57,7 +58,7 @@ struct AudioMessageView: View {
 
                 HStack(spacing: 6) {
                     if let duration = mediaInfo.duration, duration > 0 {
-                        Text(formatDuration(duration))
+                        Text(duration.formattedDuration)
                             .font(.caption)
                     }
                     if let size = mediaInfo.size, size > 0 {
@@ -69,7 +70,7 @@ struct AudioMessageView: View {
                             .font(.caption)
                     }
                 }
-                .foregroundStyle(message.isOutgoing ? .white.opacity(0.7) : .secondary)
+                .foregroundStyle(style.usesWhiteText ? .white.opacity(0.7) : .secondary)
             }
 
             Spacer(minLength: 0)
@@ -81,14 +82,14 @@ struct AudioMessageView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(minWidth: 200, maxWidth: 300)
-        .background(bubbleColor)
-        .foregroundStyle(message.isOutgoing ? .white : .primary)
+        .background(style.backgroundColor)
+        .foregroundStyle(style.usesWhiteText ? .white : .primary)
         .onTapGesture(count: 2) {
             Task { await openQuickLook() }
         }
         .overlay {
             if isLoadingMedia {
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                BubbleStyle.shape
                     .fill(.ultraThinMaterial)
                     .overlay { ProgressView() }
             }
@@ -106,8 +107,8 @@ struct AudioMessageView: View {
                 .font(.title2)
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(
-                    message.isOutgoing ? .white : .primary,
-                    message.isOutgoing ? .white.opacity(0.25) : Color(.systemGray).opacity(0.2)
+                    style.usesWhiteText ? .white : .primary,
+                    style.usesWhiteText ? .white.opacity(0.25) : Color(.systemGray).opacity(0.2)
                 )
         }
         .buttonStyle(.plain)
@@ -118,50 +119,28 @@ struct AudioMessageView: View {
         isLoadingMedia = true
         defer { isLoadingMedia = false }
 
-        guard let data = await matrixService.mediaContent(
-            mxcURL: mediaInfo.mxcURL,
-            mediaSourceJSON: mediaInfo.mediaSourceJSON
-        ) else { return }
+        // Resign first responder so QLPreviewPanel can find the
+        // SwiftUI .quickLookPreview handler in the responder chain.
+        NSApp.keyWindow?.makeFirstResponder(nil)
 
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(mediaInfo.filename)
         do {
-            try data.write(to: url)
-            quickLookURL = url
+            quickLookURL = try await MediaFileHelper.downloadToTemporaryFile(
+                mediaInfo: mediaInfo, matrixService: matrixService
+            )
         } catch {
             errorReporter.report(.mediaPreviewFailed(filename: mediaInfo.filename, reason: error.localizedDescription))
         }
     }
 
     private func saveMedia() async {
-        guard let data = await matrixService.mediaContent(
-            mxcURL: mediaInfo.mxcURL,
-            mediaSourceJSON: mediaInfo.mediaSourceJSON
-        ) else { return }
-
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = mediaInfo.filename
-        panel.allowedContentTypes = [.audio, .mp3, .mpeg4Audio, .wav, .aiff]
-        panel.canCreateDirectories = true
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
         do {
-            try data.write(to: url)
+            try await MediaFileHelper.saveToFile(
+                mediaInfo: mediaInfo, matrixService: matrixService,
+                contentTypes: [.audio, .mp3, .mpeg4Audio, .wav, .aiff]
+            )
         } catch {
             errorReporter.report(.mediaSaveFailed(filename: mediaInfo.filename, reason: error.localizedDescription))
         }
-    }
-
-    private func formatDuration(_ seconds: TimeInterval) -> String {
-        let totalSeconds = Int(seconds)
-        let mins = totalSeconds / 60
-        let secs = totalSeconds % 60
-        if mins >= 60 {
-            let hours = mins / 60
-            let remainingMins = mins % 60
-            return String(format: "%d:%02d:%02d", hours, remainingMins, secs)
-        }
-        return String(format: "%d:%02d", mins, secs)
     }
 
     private func formatFileSize(_ bytes: UInt64) -> String {

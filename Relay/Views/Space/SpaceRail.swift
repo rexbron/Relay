@@ -131,7 +131,11 @@ struct SpaceRail: View {
             onSpaceTapped?()
             selectedSpaceId = space.id
         } label: {
-            SpaceRailIcon(name: space.name, mxcURL: space.avatarURL, size: 36)
+            AvatarView(name: space.name, mxcURL: space.avatarURL, size: 36, shape: AnyShape(.rect(cornerRadius: 36 * 0.22)))
+        }
+        .overlay(alignment: .topTrailing) {
+            spaceUnreadBadge(for: space)
+                .offset(x: -2, y: 2)
         }
         .contextMenu {
             Button("Leave Space", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
@@ -148,7 +152,11 @@ struct SpaceRail: View {
             onSpaceTapped?()
             selectedSpaceId = space.id
         } label: {
-            SpaceRailIcon(name: space.name, mxcURL: space.avatarURL, size: 26)
+            AvatarView(name: space.name, mxcURL: space.avatarURL, size: 26, shape: AnyShape(.rect(cornerRadius: 26 * 0.22)))
+        }
+        .overlay(alignment: .topTrailing) {
+            spaceUnreadBadge(for: space)
+                .offset(x: -2, y: 2)
         }
         .contextMenu {
             Button("Leave Space", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
@@ -162,9 +170,42 @@ struct SpaceRail: View {
     private func spaceHasUnread(_ space: RoomSummary) -> Bool {
         matrixService.rooms.contains { room in
             room.parentSpaceIds.contains(space.id)
-                && room.unreadMessages > 0
+                && room.notificationCount > 0
                 && !room.isMuted
         }
+    }
+
+    /// A colored dot badge for the space icon, or nothing when there are no unreads.
+    @ViewBuilder
+    private func spaceUnreadBadge(for space: RoomSummary) -> some View {
+        if let color = spaceUnreadColor(space) {
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+        }
+    }
+
+    /// The badge color for unread activity in a space, or `nil` when there are no unreads.
+    ///
+    /// Returns red when any child room has unread mentions, keyword highlights, or is a
+    /// DM with unread messages. Returns accent color for plain unread messages in group rooms.
+    private func spaceUnreadColor(_ space: RoomSummary) -> Color? {
+        var hasUnread = false
+        var hasHighPriority = false
+
+        for room in matrixService.rooms where room.parentSpaceIds.contains(space.id) && !room.isMuted {
+            if room.highlightCount > 0 || (room.isDirect && room.notificationCount > 0) {
+                hasHighPriority = true
+                break
+            }
+            if room.notificationCount > 0 {
+                hasUnread = true
+            }
+        }
+
+        if hasHighPriority { return .red }
+        if hasUnread { return .accentColor }
+        return nil
     }
 }
 
@@ -178,72 +219,16 @@ struct SpaceRailButton<Label: View>: View {
     var body: some View {
         Button(action: action) {
             label
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(.tint, lineWidth: isSelected ? 2 : 0)
-                        .animation(.easeInOut(duration: 0.15), value: isSelected)
+                .scaleEffect(isSelected ? 1.08 : 1.0)
+                .padding(4)
+                .background {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(isSelected ? AnyShapeStyle(.tint.opacity(0.5)) : AnyShapeStyle(.clear))
                 }
-                .scaleEffect(isSelected ? 1.0 : 0.92)
                 .animation(.easeInOut(duration: 0.15), value: isSelected)
         }
         .buttonStyle(.plain)
-        .overlay(alignment: .leading) {
-            Capsule()
-                .fill(.primary)
-                .frame(width: 3, height: isSelected ? 20 : (hasUnread ? 8 : 0))
-                .offset(x: -4)
-                .animation(.easeInOut(duration: 0.15), value: isSelected)
-                .animation(.easeInOut(duration: 0.15), value: hasUnread)
-        }
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-}
-
-/// A rounded-rectangle avatar for a space in the rail.
-///
-/// Unlike ``AvatarView`` which clips to a circle, this view uses a rounded
-/// rectangle to visually distinguish spaces from user/room avatars.
-struct SpaceRailIcon: View {
-    @Environment(\.matrixService) private var matrixService
-    let name: String
-    let mxcURL: String?
-    var size: CGFloat = 36
-
-    @State private var image: NSImage?
-
-    private var cornerRadius: CGFloat { size * 0.22 }
-
-    var body: some View {
-        Group {
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Text(initials)
-                    .font(.system(size: size * 0.4, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(StableNameColor.color(for: name))
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(.rect(cornerRadius: cornerRadius))
-        .task(id: mxcURL) {
-            guard let mxcURL else {
-                image = nil
-                return
-            }
-            image = await matrixService.avatarThumbnail(mxcURL: mxcURL, size: size)
-        }
-    }
-
-    private var initials: String {
-        let words = name.split(separator: " ")
-        if words.count >= 2 {
-            return String(words[0].prefix(1) + words[1].prefix(1)).uppercased()
-        }
-        return String(name.prefix(2)).uppercased()
     }
 }
 

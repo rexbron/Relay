@@ -28,7 +28,7 @@ final class PreviewTimelineViewModel: TimelineViewModelProtocol {
     var hasReachedStart: Bool
     var hasReachedEnd: Bool = true
     var firstUnreadMessageId: String?
-    var typingUserDisplayNames: [String]
+    var typingUsers: [TypingUser]
     var timelineFocus: TimelineFocusState = .live
 
     init(
@@ -36,13 +36,13 @@ final class PreviewTimelineViewModel: TimelineViewModelProtocol {
         isLoading: Bool = false,
         hasReachedStart: Bool = false,
         firstUnreadMessageId: String? = nil,
-        typingUserDisplayNames: [String] = []
+        typingUsers: [TypingUser] = []
     ) {
         self.messages = messages ?? Self.sampleMessages
         self.isLoading = isLoading
         self.hasReachedStart = hasReachedStart
         self.firstUnreadMessageId = firstUnreadMessageId
-        self.typingUserDisplayNames = typingUserDisplayNames
+        self.typingUsers = typingUsers
     }
 
     func loadTimeline(focusedOnEventId fullyReadEventId: String? = nil) async {}

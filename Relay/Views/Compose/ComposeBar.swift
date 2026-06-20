@@ -203,25 +203,27 @@ private struct ComposeBarActions: View {
     var onGIFSelected: (GIFSearchResult) async -> Void
 
     var body: some View {
-        Button("Attach file", systemImage: "paperclip") {
+        Button {
             compose.isShowingFilePicker = true
+        } label: {
+            Image(systemName: "paperclip")
+                .font(.system(size: 15, weight: .regular))
+                .frame(width: 36, height: 36)
+                .contentShape(Circle())
         }
-        .labelStyle(.iconOnly)
-        .font(.system(size: 15, weight: .regular))
-        .frame(width: 32, height: 32)
-        .contentShape(Circle())
-        .glassEffect(in: .circle)
         .buttonStyle(.plain)
+        .glassEffect(in: .circle)
 
-        Button("GIF picker", systemImage: "number") {
+        Button {
             compose.isShowingGIFPicker = true
+        } label: {
+            Image(systemName: "number")
+                .font(.system(size: 15, weight: .regular))
+                .frame(width: 36, height: 36)
+                .contentShape(Circle())
         }
-        .labelStyle(.iconOnly)
-        .font(.system(size: 15, weight: .regular))
-        .frame(width: 32, height: 32)
-        .contentShape(Circle())
-        .glassEffect(in: .circle)
         .buttonStyle(.plain)
+        .glassEffect(in: .circle)
         .popover(isPresented: $compose.isShowingGIFPicker, arrowEdge: .top) {
             GIFPickerView { gif in
                 compose.isShowingGIFPicker = false

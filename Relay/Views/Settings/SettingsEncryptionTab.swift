@@ -26,7 +26,7 @@ struct SettingsEncryptionTab: View {
     var body: some View {
         Form {
             Section {
-                statusRow(
+                SecurityStatusRow(
                     icon: isSessionVerified ? "checkmark.shield.fill" : "xmark.shield.fill",
                     color: isSessionVerified ? .green : .red,
                     title: isSessionVerified ? "Session Verified" : "Session Not Verified",
@@ -41,7 +41,7 @@ struct SettingsEncryptionTab: View {
             }
 
             Section {
-                statusRow(
+                SecurityStatusRow(
                     // swiftlint:disable:next line_length
                     icon: isBackupEnabled ? "arrow.triangle.2.circlepath" : "exclamationmark.arrow.triangle.2.circlepath",
                     color: isBackupEnabled ? .green : .orange,
@@ -55,7 +55,7 @@ struct SettingsEncryptionTab: View {
             }
 
             Section {
-                statusRow(
+                SecurityStatusRow(
                     icon: isRecoveryEnabled ? "key.fill" : "key",
                     color: isRecoveryEnabled ? .green : .orange,
                     title: isRecoveryEnabled ? "Recovery Enabled" : "Recovery Not Set Up",
@@ -80,23 +80,6 @@ struct SettingsEncryptionTab: View {
         isRecoveryEnabled = encryption.recoveryEnabled
     }
 
-    private func statusRow(icon: String, color: Color, title: String, detail: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundStyle(color)
-                .frame(width: 32)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .fontWeight(.medium)
-                Text(detail)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 4)
-    }
 }
 
 #Preview {

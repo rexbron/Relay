@@ -27,19 +27,30 @@ enum TimelineMessageContextMenuEntry: Equatable {
 
 enum TimelineMessageContextMenu {
     /// Entries shown for a normal (non-system) timeline message row.
-    static func entries(for message: TimelineMessage) -> [TimelineMessageContextMenuEntry] {
-        var result: [TimelineMessageContextMenuEntry] = [
-            .reply,
-            .copyMessage,
-            .addReaction,
-        ]
-        if message.eventID.hasPrefix("$") {
+    ///
+    /// - Parameters:
+    ///   - message: The timeline message to build context menu entries for.
+    ///   - permissions: The current user's room-level permissions. When `nil`
+    ///     (e.g. in previews), actions default to standard user capabilities.
+    static func entries(
+        for message: TimelineMessage,
+        permissions: RoomPermissions? = nil
+    ) -> [TimelineMessageContextMenuEntry] {
+        let canSend = permissions?.canSendMessages ?? true
+
+        var result: [TimelineMessageContextMenuEntry] = [.copyMessage]
+        if canSend {
+            result.insert(.reply, at: 0)
+            result.append(.addReaction)
+        }
+        if (permissions?.canPin ?? false) && message.eventID.hasPrefix("$") {
             result.append(.togglePin)
         }
-        if message.isOutgoing && message.kind == .text {
+        if message.isOutgoing && message.kind == .text && canSend {
             result.append(.edit)
         }
-        if message.isOutgoing && message.kind != .redacted {
+        if (message.isOutgoing || (permissions?.canRedactOther ?? false))
+            && message.kind != .redacted {
             result.append(.separatorBeforeDelete)
             result.append(.delete)
         }

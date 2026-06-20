@@ -18,14 +18,18 @@ import SwiftUI
 /// The Security & Privacy tab of the timeline inspector, showing room access settings,
 /// encryption status, and history visibility.
 ///
-/// When the current user is an admin, the join rule, history visibility, and directory
-/// visibility become editable. Non-admins see read-only displays.
+/// When the current user has sufficient power level, the join rule, history visibility,
+/// and directory visibility become editable. Each section is gated by the corresponding
+/// fine-grained permission from ``RoomPermissions``.
 struct InspectorSecurityTab: View {
     let viewModel: TimelineInspectorViewModel
 
     @State private var isSaving = false
 
-    private var canEdit: Bool { viewModel.isCurrentUserAdmin }
+    /// Directory visibility is a server-side setting that requires admin privileges.
+    private var canEditVisibility: Bool { viewModel.isCurrentUserAdmin }
+    private var canEditJoinRules: Bool { viewModel.canEditJoinRules }
+    private var canEditHistoryVisibility: Bool { viewModel.canEditHistoryVisibility }
 
     var body: some View {
         ScrollView {
@@ -71,7 +75,7 @@ struct InspectorSecurityTab: View {
 
     private func visibilitySection(_ details: RoomDetails) -> some View {
         GroupBox {
-            if canEdit {
+            if canEditVisibility {
                 Toggle(isOn: Binding(
                     get: { details.isPublic },
                     set: { newValue in
@@ -113,7 +117,7 @@ struct InspectorSecurityTab: View {
 
     private func joinRuleSection(_ details: RoomDetails) -> some View {
         GroupBox {
-            if canEdit {
+            if canEditJoinRules {
                 VStack(alignment: .leading, spacing: 8) {
                     Picker("Join Rule", selection: Binding(
                         get: { details.joinRule ?? "invite" },
@@ -128,7 +132,7 @@ struct InspectorSecurityTab: View {
                     .labelsHidden()
                     .pickerStyle(.radioGroup)
 
-                    Text(joinRuleDescription(details.joinRule))
+                    Text(RoomAccessLabels.joinRuleDescription(details.joinRule))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -138,10 +142,10 @@ struct InspectorSecurityTab: View {
                 .padding(.vertical, 2)
             } else {
                 SecurityStatusRow(
-                    icon: joinRuleIcon(details.joinRule),
+                    icon: RoomAccessLabels.joinRuleIcon(details.joinRule),
                     color: .secondary,
-                    title: joinRuleLabel(details.joinRule),
-                    detail: joinRuleDescription(details.joinRule)
+                    title: RoomAccessLabels.joinRuleLabel(details.joinRule),
+                    detail: RoomAccessLabels.joinRuleDescription(details.joinRule)
                 )
                 .padding(.vertical, 2)
             }
@@ -157,7 +161,7 @@ struct InspectorSecurityTab: View {
 
     private func historySection(_ details: RoomDetails) -> some View {
         GroupBox {
-            if canEdit {
+            if canEditHistoryVisibility {
                 VStack(alignment: .leading, spacing: 8) {
                     Picker("History Visibility", selection: Binding(
                         get: { details.historyVisibility ?? "shared" },
@@ -173,7 +177,7 @@ struct InspectorSecurityTab: View {
                     .labelsHidden()
                     .pickerStyle(.radioGroup)
 
-                    Text(historyDescription(details.historyVisibility))
+                    Text(RoomAccessLabels.historyDescription(details.historyVisibility))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -183,10 +187,10 @@ struct InspectorSecurityTab: View {
                 .padding(.vertical, 2)
             } else {
                 SecurityStatusRow(
-                    icon: historyIcon(details.historyVisibility),
-                    color: historyColor(details.historyVisibility),
-                    title: historyLabel(details.historyVisibility),
-                    detail: historyDescription(details.historyVisibility)
+                    icon: RoomAccessLabels.historyIcon(details.historyVisibility),
+                    color: RoomAccessLabels.historyColor(details.historyVisibility),
+                    title: RoomAccessLabels.historyLabel(details.historyVisibility),
+                    detail: RoomAccessLabels.historyDescription(details.historyVisibility)
                 )
                 .padding(.vertical, 2)
             }
@@ -208,77 +212,6 @@ struct InspectorSecurityTab: View {
         }
     }
 
-    // MARK: - Label Helpers
-
-    private func joinRuleLabel(_ rule: String?) -> String {
-        switch rule {
-        case "public": "Anyone Can Join"
-        case "invite": "Invite Only"
-        case "knock": "Request to Join"
-        case "restricted": "Restricted"
-        case "knock_restricted": "Knock (Restricted)"
-        default: "Unknown"
-        }
-    }
-
-    private func joinRuleIcon(_ rule: String?) -> String {
-        switch rule {
-        case "public": "globe"
-        case "invite": "envelope"
-        case "knock": "hand.raised"
-        default: "questionmark.circle"
-        }
-    }
-
-    private func joinRuleDescription(_ rule: String?) -> String {
-        switch rule {
-        case "public": "Anyone can join this room without an invitation."
-        case "invite": "Users must receive an invitation to join this room."
-        case "knock": "Users can request to join. Admins must approve each request."
-        case "restricted": "Users can join if they meet specific conditions."
-        default: "The join rule for this room is not configured."
-        }
-    }
-
-    private func historyLabel(_ visibility: String?) -> String {
-        switch visibility {
-        case "world_readable": "Anyone (World Readable)"
-        case "shared": "Full History"
-        case "invited": "Since Invited"
-        case "joined": "Since Joined"
-        default: "Unknown"
-        }
-    }
-
-    private func historyIcon(_ visibility: String?) -> String {
-        switch visibility {
-        case "world_readable": "globe"
-        case "shared": "person.2"
-        case "invited": "envelope"
-        case "joined": "person.badge.key"
-        default: "questionmark.circle"
-        }
-    }
-
-    private func historyColor(_ visibility: String?) -> Color {
-        switch visibility {
-        case "world_readable": .blue
-        case "shared": .green
-        case "invited": .orange
-        case "joined": .secondary
-        default: .secondary
-        }
-    }
-
-    private func historyDescription(_ visibility: String?) -> String {
-        switch visibility {
-        case "world_readable": "Anyone can read the room history, even without joining."
-        case "shared": "Members can see the full room history from before they joined."
-        case "invited": "Members can see history from the point they were invited."
-        case "joined": "Members can only see history from the point they joined."
-        default: "History visibility is not configured."
-        }
-    }
 }
 
 // MARK: - Security Status Row

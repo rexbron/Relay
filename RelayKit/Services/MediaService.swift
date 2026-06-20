@@ -75,6 +75,21 @@ final class MediaService {
         try? data.write(to: path, options: .atomic)
     }
 
+    /// Returns cached avatar image data from the on-disk cache, if available.
+    ///
+    /// Does not trigger a network download. Used by the room cache writer to
+    /// include avatar data in the share extension's room list without blocking.
+    ///
+    /// - Parameters:
+    ///   - mxcURL: The `mxc://` URL of the avatar.
+    ///   - size: The display size in points (the cache key uses 2x scale).
+    /// - Returns: The cached image data, or `nil` if not cached.
+    func cachedAvatarData(mxcURL: String, size: CGFloat) async -> Data? {
+        let px = UInt64(size * 2.0)
+        let cacheKey = "\(mxcURL)_\(px)"
+        return await readDiskCache(key: cacheKey)
+    }
+
     // MARK: - Avatar Thumbnails
 
     /// Downloads and returns a thumbnail of a Matrix media URL as an `NSImage`.

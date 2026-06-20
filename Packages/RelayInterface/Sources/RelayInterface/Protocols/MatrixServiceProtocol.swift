@@ -130,6 +130,9 @@ public struct IncomingVerificationRequest: Sendable, Identifiable {
 /// that SwiftUI views can react to state changes.
 @MainActor
 public protocol MatrixServiceProtocol: AnyObject, Observable {
+    /// The diagnostic activity log, capturing service-level events for debugging.
+    var activityLog: any ActivityLogProtocol { get }
+
     /// The current authentication state of the client.
     var authState: AuthState { get }
 
@@ -155,6 +158,15 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     /// views to distinguish between "still loading for the first time" and
     /// "rooms loaded but the list is empty."
     var hasLoadedRooms: Bool { get }
+
+    /// Whether the device currently has any viable network path
+    /// (Wi-Fi, ethernet, or cellular). Reflects `NWPathMonitor` state.
+    ///
+    /// Used together with ``syncState`` to disambiguate the offline
+    /// banner: `.offline` + `isNetworkConnected == false` means the
+    /// radio is off; `.offline` + `isNetworkConnected == true` means
+    /// the homeserver itself is unreachable.
+    var isNetworkConnected: Bool { get }
 
     /// Attempts to restore a previously saved session from the keychain.
     func restoreSession() async
@@ -245,13 +257,6 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
 
     /// Creates a new room and returns its room ID.
     ///
-    /// - Parameters:
-    ///   - name: The display name for the room.
-    ///   - topic: An optional topic description.
-    ///   - isPublic: Whether the room should be publicly joinable. Public rooms are not encrypted.
-    /// - Returns: The Matrix room ID of the newly created room.
-    func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String
-
     /// Creates a new room with detailed options and returns its room ID.
     ///
     /// - Parameter options: The room creation parameters.
@@ -271,6 +276,14 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     ///
     /// - Returns: A ``RoomDirectoryViewModelProtocol`` instance, or `nil` if not available.
     func makeRoomDirectoryViewModel() -> (any RoomDirectoryViewModelProtocol)?
+
+    /// Creates a service for performing full-text message search.
+    ///
+    /// The returned service queries the homeserver's search endpoint directly.
+    /// Encrypted rooms are excluded from results by the server.
+    ///
+    /// - Returns: A ``MessageSearchServiceProtocol`` instance, or `nil` if not available.
+    func makeMessageSearchService() -> (any MessageSearchServiceProtocol)?
 
     /// Creates a view model for previewing a room before joining.
     ///
@@ -330,12 +343,6 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     ///   - isFavourite: `true` to pin the room, `false` to unpin it.
     func setFavourite(roomId: String, isFavourite: Bool) async throws
 
-    /// Searches the public room directory for rooms matching the query.
-    ///
-    /// - Parameter query: The search string to match against room names and aliases.
-    /// - Returns: A list of matching ``DirectoryRoom`` results.
-    func searchDirectory(query: String) async throws -> [DirectoryRoom]
-
     /// Sends a read receipt for the latest message in a room.
     ///
     /// - Parameters:
@@ -358,6 +365,14 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     ///   - roomId: The Matrix room identifier.
     ///   - isTyping: `true` to indicate the user is typing, `false` to stop.
     func sendTypingNotice(roomId: String, isTyping: Bool) async
+
+    /// Donates an outgoing interaction intent for a room so the system can
+    /// suggest the conversation in the share sheet.
+    ///
+    /// Call this after successfully sending a message or attachment.
+    ///
+    /// - Parameter roomId: The Matrix room identifier.
+    func donateOutgoingInteraction(roomId: String)
 
     /// Fetches the full details and member list for a room.
     ///
@@ -462,11 +477,47 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     /// Returns the current encryption, key backup, and recovery state.
     func encryptionState() async -> EncryptionStatus
 
+    /// Whether other verified devices exist that this device can verify against interactively.
+    ///
+    /// Returns `false` when this is the user's only device or no other devices have been
+    /// cross-signing verified, meaning recovery key verification is the only option.
+    func hasDevicesToVerifyAgainst() async throws -> Bool
+
+    /// Verifies this session by recovering cross-signing keys from secret storage
+    /// using the user's recovery key (also called "security key").
+    ///
+    /// On success the SDK imports the cross-signing private keys, which transitions
+    /// the session's verification state to `.verified`.
+    ///
+    /// - Parameter recoveryKey: The user's recovery key string.
+    func recoverWithKey(_ recoveryKey: String) async throws
+
     /// Creates a view model for performing interactive session verification (SAS emoji comparison).
     ///
+    /// - Parameter acceptingIncomingRequest: When `true`, the view model skips the idle choice
+    ///   view and immediately begins accepting the pending incoming verification request.
     /// - Returns: A ``SessionVerificationViewModelProtocol`` instance, or `nil` if the
     ///   verification controller is not available.
-    func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)?
+    func makeSessionVerificationViewModel(acceptingIncomingRequest: Bool) async throws -> (any SessionVerificationViewModelProtocol)?
+
+    /// Creates a view model for joining or managing a LiveKit audio/video call in a Matrix room.
+    ///
+    /// - Parameter roomId: The Matrix room identifier for the call.
+    /// - Returns: A ``CallViewModelProtocol`` instance ready to be connected with a LiveKit
+    ///   URL and token, or `nil` if calling is not supported.
+    func makeCallViewModel(roomId: String) async -> (any CallViewModelProtocol)?
+
+    /// Fetches LiveKit credentials for a Matrix room using the MatrixRTC flow (MSC4143).
+    ///
+    /// Discovers the SFU URL from the homeserver, obtains an OpenID token, and
+    /// exchanges it with the SFU's JWT service. The returned URL and token can be
+    /// passed directly to ``CallViewModelProtocol/connect(url:token:)``.
+    ///
+    /// - Parameter roomId: The Matrix room identifier.
+    /// - Returns: A tuple of `(livekitURL, token)` where `livekitURL` is the LiveKit
+    ///   WebSocket URL and `token` is the JWT access token.
+    /// - Throws: If the homeserver doesn't support MatrixRTC or credential exchange fails.
+    func callCredentials(for roomId: String) async throws -> (livekitURL: String, token: String, sfuServiceURL: String)
 
     // MARK: Notification Settings (synced via push rules)
 
@@ -576,6 +627,13 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     ///   - userId: The user ID whose power level to change.
     ///   - powerLevel: The new power level value.
     func setMemberPowerLevel(roomId: String, userId: String, powerLevel: Int64) async throws
+
+    /// Updates the power level thresholds for a room.
+    ///
+    /// - Parameters:
+    ///   - roomId: The Matrix room identifier.
+    ///   - settings: The new power level thresholds to apply.
+    func updatePowerLevelSettings(roomId: String, settings: RoomPowerLevelSettings) async throws
 
     // MARK: Room Access Settings
 
@@ -715,6 +773,13 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     func removeChildFromSpace(childId: String, spaceId: String) async throws
 }
 
+public extension MatrixServiceProtocol {
+    /// Convenience overload that defaults to a fresh verification flow (not accepting an incoming request).
+    func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)? {
+        try await makeSessionVerificationViewModel(acceptingIncomingRequest: false)
+    }
+}
+
 // MARK: - Environment Key
 
 private struct MatrixServiceKey: @preconcurrency EnvironmentKey {
@@ -730,14 +795,18 @@ public extension EnvironmentValues {
     }
 }
 
+private struct PlaceholderError: Error {}
+
 @Observable
 private final class PlaceholderMatrixService: MatrixServiceProtocol {
+    let activityLog: any ActivityLogProtocol = PlaceholderActivityLog()
     var authState: AuthState = .unknown
     var syncState: SyncState = .idle
     var rooms: [RoomSummary] = []
     var spaces: [RoomSummary] = []
     var isSyncing: Bool { false }
     var hasLoadedRooms: Bool = false
+    var isNetworkConnected: Bool = true
     var isSessionVerified: Bool = false
     var hasCheckedVerificationState: Bool = false
     var pendingVerificationRequest: IncomingVerificationRequest?
@@ -760,10 +829,10 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func suspendTimeline(roomId: String) {}
     func resumeTimeline(roomId: String) async {}
     func joinRoom(idOrAlias: String) async throws {}
-    func createRoom(name: String, topic: String?, isPublic: Bool) async throws -> String { "" }
     func createRoom(options: CreateRoomOptions) async throws -> String { "" }
     func createDirectMessage(userId: String) async throws -> String { "" }
     func makeRoomDirectoryViewModel() -> (any RoomDirectoryViewModelProtocol)? { nil }
+    func makeMessageSearchService() -> (any MessageSearchServiceProtocol)? { nil }
     func makeRoomPreviewViewModel(roomId: String) -> (any RoomPreviewViewModelProtocol)? { nil }
     func makeSpaceHierarchyViewModel(spaceId: String) -> (any SpaceHierarchyViewModelProtocol)? { nil }
     func acceptInvite(roomId: String) async throws {}
@@ -772,10 +841,10 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func leaveSpace(spaceId: String) async throws -> [LeaveSpaceChild] { [] }
     func confirmLeaveSpace(spaceId: String, roomIds: [String]) async throws {}
     func setFavourite(roomId: String, isFavourite: Bool) async throws {}
-    func searchDirectory(query: String) async throws -> [DirectoryRoom] { [] }
     func markAsRead(roomId: String, sendPublicReceipt: Bool) async {}
     func fullyReadEventId(roomId: String) async -> String? { nil }
     func sendTypingNotice(roomId: String, isTyping: Bool) async {}
+    func donateOutgoingInteraction(roomId: String) {}
     func roomDetails(roomId: String) async -> RoomDetails? { nil }
     func roomMembers(roomId: String) async -> [RoomMemberDetails] { [] }
     func pinnedMessages(roomId: String) async -> [TimelineMessage] { [] }
@@ -787,7 +856,13 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func getDevices() async throws -> [DeviceInfo] { [] }
     func isCurrentSessionVerified() async -> Bool { false }
     func encryptionState() async -> EncryptionStatus { EncryptionStatus() }
-    func makeSessionVerificationViewModel() async throws -> (any SessionVerificationViewModelProtocol)? { nil }
+    func hasDevicesToVerifyAgainst() async throws -> Bool { false }
+    func recoverWithKey(_ recoveryKey: String) async throws {}
+    func makeSessionVerificationViewModel(acceptingIncomingRequest: Bool) async throws -> (any SessionVerificationViewModelProtocol)? { nil }
+    func makeCallViewModel(roomId: String) async -> (any CallViewModelProtocol)? { nil }
+    func callCredentials(for roomId: String) async throws -> (livekitURL: String, token: String, sfuServiceURL: String) {
+        throw PlaceholderError()
+    }
     func getDefaultNotificationMode(
         isOneToOne: Bool
     ) async throws -> DefaultNotificationMode { .mentionsAndKeywordsOnly }
@@ -810,6 +885,7 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func setRoomNotificationMode(roomId: String, mode: RoomNotificationMode) async throws {}
     func restoreDefaultRoomNotificationMode(roomId: String) async throws {}
     func setMemberPowerLevel(roomId: String, userId: String, powerLevel: Int64) async throws {}
+    func updatePowerLevelSettings(roomId: String, settings: RoomPowerLevelSettings) async throws {}
     func updateJoinRule(roomId: String, rule: String) async throws {}
     func updateHistoryVisibility(roomId: String, visibility: String) async throws {}
     func updateRoomVisibility(roomId: String, isPublic: Bool) async throws {}

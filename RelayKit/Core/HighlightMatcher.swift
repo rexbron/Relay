@@ -32,7 +32,7 @@ enum HighlightMatcher {
     ///   - currentUserId: The signed-in user's Matrix ID (e.g. `"@alice:matrix.org"`).
     ///   - keywords: The user's notification keywords.
     /// - Returns: `true` if the body matches any highlight rule.
-    static func bodyMatchesHighlightRules(
+    nonisolated static func bodyMatchesHighlightRules(
         _ body: String,
         currentUserId: String?,
         keywords: [String]

@@ -23,10 +23,12 @@ import RelayInterface
 final class PreviewSessionVerificationViewModel: SessionVerificationViewModelProtocol {
     var state: VerificationState
     var emojis: [VerificationEmoji]
+    var hasOtherDevices: Bool
 
-    init(state: VerificationState = .idle, emojis: [VerificationEmoji] = []) {
+    init(state: VerificationState = .idle, emojis: [VerificationEmoji] = [], hasOtherDevices: Bool = true) {
         self.state = state
         self.emojis = emojis
+        self.hasOtherDevices = hasOtherDevices
     }
 
     func requestVerification() async {
@@ -50,6 +52,20 @@ final class PreviewSessionVerificationViewModel: SessionVerificationViewModelPro
 
     func cancelVerification() async {
         state = .cancelled
+    }
+
+    func resetToIdle() {
+        state = .idle
+    }
+
+    func startRecoveryKeyEntry() {
+        state = .enteringRecoveryKey
+    }
+
+    func submitRecoveryKey(_ key: String) async {
+        state = .recoveringWithKey
+        try? await Task.sleep(for: .seconds(2))
+        state = .verified
     }
 
     /// Sample emoji data for previewing the emoji comparison step.

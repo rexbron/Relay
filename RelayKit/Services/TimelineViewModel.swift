@@ -19,10 +19,8 @@ import Foundation
 import ImageIO
 import NaturalLanguage
 import RelayInterface
-import OSLog
 import UniformTypeIdentifiers
-
-private let logger = Logger(subsystem: "RelayKit", category: "Timeline")
+import os
 
 /// Concrete implementation of ``TimelineViewModelProtocol`` backed by the Matrix Rust SDK.
 ///
@@ -40,7 +38,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
     public private(set) var hasReachedStart = false
     public private(set) var hasReachedEnd = true
     public var firstUnreadMessageId: String?
-    public private(set) var typingUserDisplayNames: [String] = []
+    public private(set) var typingUsers: [TypingUser] = []
     public private(set) var timelineFocus: TimelineFocusState = .live
     public private(set) var translationsVersion: UInt = 0
     public private(set) var pendingTranslationQueueVersion: UInt = 0
@@ -53,8 +51,13 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
 
     private let room: Room
     private let roomId: String
+    /// A human-readable label for this room used in activity log entries.
+    /// Prefers the canonical alias (e.g. ``"#design:matrix.org"``) over the
+    /// display name, falling back to the room ID.
+    private let roomLabel: String
     private let currentUserId: String?
     private let unreadCount: Int
+    private weak var activityLog: ActivityLog?
     /// The SDK timeline, exposed for use by ``MatrixService/pinnedMessages(roomId:)``.
     private(set) var sdkTimeline: Timeline?
     private var timelineItems: [TimelineItem] = []
@@ -71,6 +74,10 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
     private var hasComputedUnreadMarker = false
     private var isSendingFullyReadReceipt = false
     private var fetchedReplyEventIds: Set<String> = []
+    /// Set to `true` when backward pagination hits a permanent error (e.g.
+    /// corrupted event cache). Prevents the auto-pagination loop from
+    /// retrying indefinitely.
+    private var paginationPermanentlyFailed = false
 
     /// Tracks which indices in ``timelineItems`` were modified by the latest
     /// batch of diffs. `nil` means a full remap is required (e.g. after a
@@ -120,10 +127,12 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         currentUserId: String?,
         unreadCount: Int = 0,
         notificationKeywords: [String] = [],
-        errorReporter: ErrorReporter
+        errorReporter: ErrorReporter,
+        activityLog: ActivityLog? = nil
     ) {
         self.room = room
         self.roomId = room.id()
+        self.roomLabel = room.canonicalAlias() ?? room.displayName() ?? room.id()
         self.currentUserId = currentUserId
         self.unreadCount = unreadCount
         self.messageMapper = TimelineMessageMapper(
@@ -131,6 +140,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             notificationKeywords: notificationKeywords
         )
         self.errorReporter = errorReporter
+        self.activityLog = activityLog
     }
 
     deinit {
@@ -167,7 +177,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             }
             observeTypingNotifications()
         } catch {
-            logger.error("Failed to load timeline: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to load timeline in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.messageLoadFailed(error.localizedDescription))
             isLoading = false
         }
@@ -196,7 +210,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             await rebuildMessages()
             isLoading = false
         } catch {
-            logger.error("Failed to load thread timeline: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to load thread timeline in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.messageLoadFailed(error.localizedDescription))
             isLoading = false
         }
@@ -207,7 +225,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         do {
             _ = try await sdkTimeline.paginateBackwards(numEvents: 100)
         } catch {
-            logger.error("Failed to load earlier messages: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to load earlier messages in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.messageLoadFailed(error.localizedDescription))
         }
     }
@@ -224,7 +246,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 }
             }
         } catch {
-            logger.error("Failed to load newer messages: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to load newer messages in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
         }
     }
 
@@ -243,7 +269,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         do {
             try await sdkTimeline.sendReadReceipt(receiptType: .fullyRead, eventId: eventId)
         } catch {
-            logger.error("Failed to send fully-read receipt: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to send fully-read receipt in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
         }
     }
 
@@ -260,14 +290,22 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             timelineFocus = .focusedOnEvent(eventId)
             hasReachedEnd = false
         } catch {
-            logger.error("Failed to focus on event \(eventId): \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to focus on event in \(roomLabel)",
+                detail: "\(eventId): \(error.localizedDescription)", roomId: roomId
+            )
             errorReporter.report(.messageLoadFailed(error.localizedDescription))
             // Attempt to recover by returning to live
             do {
                 try await setupTimeline(focus: .live(hideThreadedEvents: false))
                 timelineFocus = .live
             } catch {
-                logger.error("Failed to recover live timeline: \(error)")
+                activityLog?.log(
+                    category: .timeline, severity: .error, source: "TimelineViewModel",
+                    summary: "Failed to recover live timeline in \(roomLabel)",
+                    detail: error.localizedDescription, roomId: roomId
+                )
             }
         }
 
@@ -290,7 +328,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             try await setupTimeline(focus: .live(hideThreadedEvents: false))
             timelineFocus = .live
         } catch {
-            logger.error("Failed to return to live timeline: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to return to live timeline in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.messageLoadFailed(error.localizedDescription))
             isLoading = false
         }
@@ -310,55 +352,59 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 _ = try await sdkTimeline.send(msg: msg)
             }
         } catch {
-            logger.error("Failed to send message: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to send message in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.messageSendFailed(error.localizedDescription))
         }
     }
 
     public func edit(messageId: String, newText: String, mentionedUserIds: [String] = []) async {
         guard let sdkTimeline else { return }
-        let itemId: EventOrTransactionId = if messageId.hasPrefix("$") {
-            .eventId(eventId: messageId)
-        } else {
-            .transactionId(transactionId: messageId)
-        }
+        let itemId = eventOrTransactionId(from: messageId)
         let content = messageEventContentFromMarkdown(md: newText)
             .withMentions(mentions: Mentions(userIds: mentionedUserIds, room: false))
         let editedContent = EditedContent.roomMessage(content: content)
         do {
             try await sdkTimeline.edit(eventOrTransactionId: itemId, newContent: editedContent)
         } catch {
-            logger.error("Failed to edit message: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to edit message in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.editFailed(error.localizedDescription))
         }
     }
 
     public func toggleReaction(messageId: String, key: String) async {
         guard let sdkTimeline else { return }
-        let itemId: EventOrTransactionId = if messageId.hasPrefix("$") {
-            .eventId(eventId: messageId)
-        } else {
-            .transactionId(transactionId: messageId)
-        }
+        let itemId = eventOrTransactionId(from: messageId)
         do {
             _ = try await sdkTimeline.toggleReaction(itemId: itemId, key: key)
         } catch {
-            logger.error("Failed to toggle reaction: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to toggle reaction in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.reactionFailed(error.localizedDescription))
         }
     }
 
     public func redact(messageId: String, reason: String? = nil) async {
         guard let sdkTimeline else { return }
-        let itemId: EventOrTransactionId = if messageId.hasPrefix("$") {
-            .eventId(eventId: messageId)
-        } else {
-            .transactionId(transactionId: messageId)
-        }
+        let itemId = eventOrTransactionId(from: messageId)
         do {
             try await sdkTimeline.redactEvent(eventOrTransactionId: itemId, reason: reason)
         } catch {
-            logger.error("Failed to delete message: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to delete message in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.redactFailed(error.localizedDescription))
         }
     }
@@ -368,7 +414,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         do {
             _ = try await sdkTimeline.pinEvent(eventId: eventId)
         } catch {
-            logger.error("Failed to pin message: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to pin message in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.pinFailed(error.localizedDescription))
         }
     }
@@ -378,7 +428,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         do {
             _ = try await sdkTimeline.unpinEvent(eventId: eventId)
         } catch {
-            logger.error("Failed to unpin message: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to unpin message in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.pinFailed(error.localizedDescription))
         }
     }
@@ -404,7 +458,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 do {
                     data = try Data(contentsOf: url)
                 } catch {
-                    logger.error("Failed to read attachment \(filename): \(error)")
+                    activityLog?.log(
+                        category: .timeline, severity: .error, source: "TimelineViewModel",
+                        summary: "Failed to read attachment \(filename) in \(roomLabel)",
+                        detail: error.localizedDescription, roomId: roomId
+                    )
                     errorReporter.report(.fileCopyFailed(filename: filename, reason: error.localizedDescription))
                     return
                 }
@@ -498,7 +556,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 do {
                     data = try Data(contentsOf: url)
                 } catch {
-                    logger.error("Failed to read attachment \(filename): \(error)")
+                    activityLog?.log(
+                        category: .timeline, severity: .error, source: "TimelineViewModel",
+                        summary: "Failed to read attachment \(filename) in \(roomLabel)",
+                        detail: error.localizedDescription, roomId: roomId
+                    )
                     errorReporter.report(.fileCopyFailed(filename: filename, reason: error.localizedDescription))
                     return
                 }
@@ -521,7 +583,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
 
             try await handle.join()
         } catch {
-            logger.error("Failed to send attachment \(filename): \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to send attachment \(filename) in \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
             errorReporter.report(.attachmentSendFailed(filename: filename, reason: error.localizedDescription))
         }
 
@@ -545,7 +611,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
     /// live timeline observation.
     func suspend() {
         guard !isSuspended, sdkTimeline != nil else { return }
-        logger.info("Suspending timeline for room \(self.roomId)")
+        activityLog?.log(
+            category: .timeline, severity: .info, source: "TimelineViewModel",
+            summary: "Suspending timeline for \(roomLabel)",
+            roomId: roomId
+        )
         isSuspended = true
 
         observationTask?.cancel()
@@ -567,17 +637,22 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         initialDiffsContinuation?.finish()
         initialDiffsContinuation = nil
         initialDiffsStream = nil
-        typingUserDisplayNames = []
+        typingUsers = []
     }
 
     /// Resumes live timeline observation after a ``suspend()``.
     ///
     /// Re-creates the SDK timeline and re-subscribes to diffs, pagination status,
-    /// and typing notifications. The existing ``messages`` remain visible until
-    /// fresh data arrives.
+    /// and typing notifications. Unlike the initial ``loadTimeline()`` call, a
+    /// resume does not show a loading spinner — the existing ``messages`` remain
+    /// visible until fresh data arrives via the normal diff pipeline.
     func resume() async {
         guard isSuspended else { return }
-        logger.info("Resuming timeline for room \(self.roomId)")
+        activityLog?.log(
+            category: .timeline, severity: .info, source: "TimelineViewModel",
+            summary: "Resuming timeline for \(roomLabel)",
+            roomId: roomId
+        )
         isSuspended = false
 
         do {
@@ -586,7 +661,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             hasReachedEnd = true
             observeTypingNotifications()
         } catch {
-            logger.error("Failed to resume timeline: \(error)")
+            activityLog?.log(
+                category: .timeline, severity: .error, source: "TimelineViewModel",
+                summary: "Failed to resume timeline for \(roomLabel)",
+                detail: error.localizedDescription, roomId: roomId
+            )
         }
     }
 
@@ -605,6 +684,7 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         hasReachedStart = false
         hasReachedEnd = true
         isLoadingMore = false
+        paginationPermanentlyFailed = false
         fetchedReplyEventIds = []
         pendingChangedIndices = IndexSet()
         messageCache = [:]
@@ -644,7 +724,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             do {
                 try await observePaginationStatus(tl)
             } catch {
-                logger.error("Failed to subscribe to pagination status: \(error)")
+                activityLog?.log(
+                    category: .timeline, severity: .error, source: "TimelineViewModel",
+                    summary: "Failed to subscribe to pagination status in \(roomLabel)",
+                    detail: error.localizedDescription, roomId: roomId
+                )
             }
         default:
             break
@@ -699,18 +783,14 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 needsRebuild = true
 
                 // If no rebuild is in progress and no coalesce timer is
-                // pending, rebuild immediately.
+                // pending, rebuild immediately — unless the batch emptied
+                // the timeline (e.g. a clear diff). In that case, defer
+                // the rebuild to give the SDK time to deliver follow-up
+                // content diffs, preventing a momentary empty-state flash.
                 if !isRebuilding && coalesceTask == nil {
-                    isRebuilding = true
-                    needsRebuild = false
-                    await self.rebuildMessages()
-                    isRebuilding = false
-
-                    // After the rebuild, if more diffs arrived during the
-                    // background mapping pass, start a short coalesce timer
-                    // to batch any further rapid-fire diffs before the next
-                    // rebuild.
-                    if needsRebuild && coalesceTask == nil {
+                    if self.timelineItems.isEmpty && !self.messages.isEmpty {
+                        // Destructive diff with no replacement content yet.
+                        // Defer the rebuild so we don't flash an empty view.
                         coalesceTask = Task { [weak self] in
                             try? await Task.sleep(for: Self.diffCoalesceInterval)
                             guard !Task.isCancelled, let self else { return }
@@ -719,6 +799,27 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                                 await self.rebuildMessages()
                             }
                             coalesceTask = nil
+                        }
+                    } else {
+                        isRebuilding = true
+                        needsRebuild = false
+                        await self.rebuildMessages()
+                        isRebuilding = false
+
+                        // After the rebuild, if more diffs arrived during the
+                        // background mapping pass, start a short coalesce timer
+                        // to batch any further rapid-fire diffs before the next
+                        // rebuild.
+                        if needsRebuild && coalesceTask == nil {
+                            coalesceTask = Task { [weak self] in
+                                try? await Task.sleep(for: Self.diffCoalesceInterval)
+                                guard !Task.isCancelled, let self else { return }
+                                while needsRebuild {
+                                    needsRebuild = false
+                                    await self.rebuildMessages()
+                                }
+                                coalesceTask = nil
+                            }
                         }
                     }
                 }
@@ -731,6 +832,10 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             }
         }
     }
+
+    /// Maximum number of retry attempts for auto-pagination when the server
+    /// is unreachable. Each attempt uses exponential backoff (1s, 2s, 4s).
+    private static let maxPaginationRetries = 3
 
     // swiftlint:disable:next identifier_name
     private func observePaginationStatus(_ tl: Timeline) async throws {
@@ -748,6 +853,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 case .idle(let hitStart):
                     self.isLoadingMore = false
                     self.hasReachedStart = hitStart
+                    self.activityLog?.log(
+                        category: .timeline, severity: .debug, source: "TimelineViewModel",
+                        summary: "Pagination idle in \(self.roomLabel) (hitStart: \(hitStart))",
+                        roomId: self.roomId
+                    )
 
                     // Auto-paginate if we have few message-like events and
                     // haven't hit start, ensuring enough content to fill the
@@ -755,17 +865,19 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                     // state events, membership changes, date dividers, etc.)
                     // because a room with many members can easily have 20+
                     // non-message items but zero actual messages.
-                    let msgLikeCount = self.timelineItems.lazy
-                        .compactMap { $0.asEvent() }
-                        .filter {
-                            if case .msgLike = $0.content { return true }
-                            return false
+                    let msgLikeCount = self.countMsgLikeItems()
+                    if !hitStart && msgLikeCount < 20 && !self.paginationPermanentlyFailed {
+                        // Fetch only enough events to fill the viewport.
+                        // The threshold is 20 msgLike items, so request
+                        // slightly more to account for non-message events
+                        // (state changes, date dividers) that don't count.
+                        let needed = UInt16(max(20 - msgLikeCount, 5))
+                        let succeeded = await self.paginateBackwardsWithRetry(tl, numEvents: needed)
+                        if !succeeded {
+                            self.paginationPermanentlyFailed = true
                         }
-                        .count
-                    if !hitStart && msgLikeCount < 20 {
-                        try? await Task.sleep(for: .milliseconds(500))
-                        _ = try? await tl.paginateBackwards(numEvents: 100)
-                    } else if self.isLoading {
+                    }
+                    if self.isLoading && (hitStart || msgLikeCount >= 20 || self.paginationPermanentlyFailed) {
                         // The initial auto-pagination loop has settled — either
                         // we have enough items or hit the room start.  Wait for
                         // the diff observer to deliver at least one batch so
@@ -779,9 +891,72 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                     }
                 case .paginating:
                     self.isLoadingMore = true
+                    self.activityLog?.log(
+                        category: .timeline, severity: .debug, source: "TimelineViewModel",
+                        summary: "Paginating backwards in \(self.roomLabel)",
+                        roomId: self.roomId
+                    )
                 }
             }
         }
+    }
+
+    /// Counts the number of message-like (non-state) event items currently
+    /// in ``timelineItems``.
+    private func countMsgLikeItems() -> Int {
+        timelineItems.lazy
+            .compactMap { $0.asEvent() }
+            .filter {
+                if case .msgLike = $0.content { return true }
+                return false
+            }
+            .count
+    }
+
+    /// Attempts backward pagination with retry and exponential backoff.
+    ///
+    /// On transient errors (network unreachable, connection timeout), retries
+    /// up to ``maxPaginationRetries`` times with 1s / 2s / 4s delays. On
+    /// success or permanent failure, returns without throwing.
+    ///
+    /// - Returns: `true` if pagination succeeded, `false` if it failed
+    ///   permanently (non-transient error or retries exhausted).
+    @discardableResult
+    private func paginateBackwardsWithRetry(_ timeline: Timeline, numEvents: UInt16 = 100) async -> Bool {
+        for attempt in 0 ..< Self.maxPaginationRetries {
+            do {
+                if attempt > 0 {
+                    try await Task.sleep(for: .milliseconds(500))
+                    guard !Task.isCancelled else { return false }
+                }
+                _ = try await timeline.paginateBackwards(numEvents: numEvents)
+                return true
+            } catch is CancellationError {
+                return false
+            } catch {
+                let isTransient = NetworkErrorClassifier.isOfflineShaped(error)
+                    || "\(error)".contains("HostUnreachable")
+                if isTransient && attempt < Self.maxPaginationRetries - 1 {
+                    let delay = Duration.seconds(1 << attempt) // 1s, 2s, 4s
+                    activityLog?.log(
+                        category: .timeline, severity: .warning, source: "TimelineViewModel",
+                        summary: "Pagination attempt \(attempt + 1) failed (transient) in \(roomLabel), retrying in \(1 << attempt)s",
+                        detail: error.localizedDescription, roomId: roomId
+                    )
+                    try? await Task.sleep(for: delay)
+                    guard !Task.isCancelled else { return false }
+                } else {
+                    activityLog?.log(
+                        category: .timeline, severity: .error, source: "TimelineViewModel",
+                        summary: "Pagination failed in \(roomLabel)",
+                        detail: "\(error)",
+                        roomId: roomId
+                    )
+                    return false
+                }
+            }
+        }
+        return false
     }
 
     private func observeTypingNotifications() {
@@ -792,19 +967,45 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         typingHandle = room.subscribeToTypingNotifications(listener: listener)
 
         typingTask = Task { [weak self] in
+            // A child task that resolves display names and avatar URLs.
+            // Cancelled and replaced each time a new typing notification
+            // arrives, so stale resolutions never block clearing the
+            // indicator when the SDK sends an empty user list.
+            var resolveTask: Task<Void, Never>?
+
             for await userIds in stream {
                 guard let self else { break }
+                resolveTask?.cancel()
+
                 let filtered = userIds.filter { $0 != self.currentUserId }
-                var names: [String] = []
-                for userId in filtered {
-                    if let name = try? await self.room.memberDisplayName(userId: userId), !name.isEmpty {
-                        names.append(name)
-                    } else {
-                        names.append(userId)
-                    }
+
+                // Fast path: immediately clear the indicator when nobody
+                // is typing, without waiting for any prior resolution.
+                if filtered.isEmpty {
+                    self.typingUsers = []
+                    continue
                 }
-                self.typingUserDisplayNames = names
+
+                let room = self.room
+                resolveTask = Task {
+                    var users: [TypingUser] = []
+                    for userId in filtered {
+                        if Task.isCancelled { return }
+                        let name: String
+                        if let displayName = try? await room.memberDisplayName(userId: userId), !displayName.isEmpty {
+                            name = displayName
+                        } else {
+                            name = userId
+                        }
+                        let avatarURL = try? await room.memberAvatarUrl(userId: userId)
+                        if Task.isCancelled { return }
+                        users.append(TypingUser(id: userId, displayName: name, avatarURL: avatarURL))
+                    }
+                    self.typingUsers = users
+                }
             }
+
+            resolveTask?.cancel()
         }
     }
 
@@ -815,6 +1016,14 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
     /// Uses the SDK's `uniqueId()` which remains constant across the
     /// local echo → server confirmation transition, preventing structural
     /// updates in the table's diffable data source.
+    /// Converts a message ID string into the SDK's ``EventOrTransactionId`` enum.
+    ///
+    /// Event IDs start with `$`; anything else is treated as a transaction ID
+    /// (local echo that hasn't been confirmed by the server yet).
+    private func eventOrTransactionId(from messageId: String) -> EventOrTransactionId {
+        messageId.hasPrefix("$") ? .eventId(eventId: messageId) : .transactionId(transactionId: messageId)
+    }
+
     private static func extractItemID(_ item: TimelineItem) -> String? {
         guard item.asEvent() != nil else { return nil }
         return item.uniqueId().id
@@ -830,10 +1039,20 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         for diff in diffs {
             switch diff {
             case .reset(let values):
-                timelineItemIDs = values.map(Self.extractItemID)
+                let oldIDs = timelineItemIDs
+                let newIDs = values.map(Self.extractItemID)
+                timelineItemIDs = newIDs
                 timelineItems = values
-                // Full remap required — discard incremental tracking.
-                pendingChangedIndices = nil
+
+                if oldIDs.isEmpty {
+                    // First load — full remap required.
+                    pendingChangedIndices = nil
+                } else {
+                    // Diff old vs new IDs to avoid a full remap when most
+                    // items are unchanged (e.g. room resume with a few
+                    // new messages appended).
+                    markChangedIndicesForReset(oldIDs: oldIDs, newIDs: newIDs)
+                }
 
             case .append(let values):
                 let start = timelineItems.count
@@ -929,6 +1148,29 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             state,
             "\(itemCountAfter) items after"
         )
+
+        let diffSummary = diffs.map { diff -> String in
+            switch diff {
+            case .reset(let v): "reset(\(v.count))"
+            case .append(let v): "append(\(v.count))"
+            case .pushBack: "pushBack"
+            case .pushFront: "pushFront"
+            case .insert(let idx, _): "insert(@\(idx))"
+            case .set(let idx, _): "set(@\(idx))"
+            case .remove(let idx): "remove(@\(idx))"
+            case .clear: "clear"
+            case .popBack: "popBack"
+            case .popFront: "popFront"
+            case .truncate(let len): "truncate(\(len))"
+            }
+        }.joined(separator: ", ")
+        let changedDesc = pendingChangedIndices.map { "\($0.count) changed" } ?? "full remap"
+        activityLog?.log(
+            category: .timeline, severity: .debug, source: "TimelineViewModel",
+            summary: "\(diffs.count) diff(s) in \(roomLabel): \(itemCountBefore) → \(itemCountAfter) items",
+            detail: "Diffs: \(diffSummary)\nIndices: \(changedDesc)",
+            roomId: roomId
+        )
     }
 
     // MARK: - Index Tracking Helpers
@@ -960,6 +1202,40 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
             }
         }
         pendingChangedIndices = indices
+    }
+
+    /// Compares old and new item IDs after a `.reset` diff and marks only the
+    /// indices that actually changed, avoiding a full remap when most content
+    /// is unchanged (e.g. resuming a room with a few new messages).
+    ///
+    /// Falls back to a full remap (`pendingChangedIndices = nil`) when the
+    /// arrays have diverged too much to cheaply diff (shared prefix < 50%
+    /// of the smaller array).
+    private func markChangedIndicesForReset(
+        oldIDs: [String?],
+        newIDs: [String?]
+    ) {
+        // Find the longest shared prefix of identical IDs.
+        let minCount = min(oldIDs.count, newIDs.count)
+        var sharedPrefix = 0
+        while sharedPrefix < minCount && oldIDs[sharedPrefix] == newIDs[sharedPrefix] {
+            sharedPrefix += 1
+        }
+
+        // If less than half the items match, a full remap is cheaper than
+        // tracking a large changed set.
+        if sharedPrefix < minCount / 2 {
+            pendingChangedIndices = nil
+            return
+        }
+
+        // Mark every index beyond the shared prefix as changed.
+        if sharedPrefix < newIDs.count {
+            if pendingChangedIndices == nil {
+                pendingChangedIndices = IndexSet()
+            }
+            pendingChangedIndices?.insert(integersIn: sharedPrefix..<newIDs.count)
+        }
     }
 
     /// Performs an incremental rebuild of messages, mapping only changed items
@@ -1006,6 +1282,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
                 PerformanceSignposts.TimelineName.rebuildMessages,
                 rebuildState,
                 "discarded (stale generation)"
+            )
+            activityLog?.log(
+                category: .timeline, severity: .debug, source: "TimelineViewModel",
+                summary: "Rebuild discarded in \(roomLabel) (stale generation \(generation))",
+                roomId: roomId
             )
             return
         }
@@ -1055,6 +1336,11 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
         if changed {
             messages = mapping.messages
             messagesVersion &+= 1
+            activityLog?.log(
+                category: .timeline, severity: .debug, source: "TimelineViewModel",
+                summary: "Messages updated in \(roomLabel): \(mapping.messages.count) messages (v\(messagesVersion))",
+                roomId: roomId
+            )
         }
 
         computeUnreadMarkerIfNeeded(mapping.messages)

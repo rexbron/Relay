@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import Intents
 import os
 import RelayKit
 import RelayInterface
@@ -27,60 +28,36 @@ private let logger = Logger(subsystem: "Relay", category: "DeepLink")
 /// mentions, direct messages, and incoming verification requests.
 @main
 struct RelayApp: App {
+    /// `true` when Xcode is running the process solely to render SwiftUI
+    /// previews. Checked once at launch so that heavy services (Matrix SDK,
+    /// keychain, network monitor, etc.) are never created in preview mode.
+    private static let isPreview = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+
     @State private var matrixService = MatrixService()
     @State private var gifSearchService = GiphyService(apiKey: Secrets.giphyAPIKey ?? "")
+    @State private var callManager = CallManager()
     @State private var notificationDelegate = NotificationDelegate()
     @State private var appActions = AppActions()
+    @State private var composeDraftStore = ComposeDraftStore()
     @State private var showClearCacheConfirmation = false
 
     @Environment(\.openWindow) private var openWindow
 
     @AppStorage("selectedRoomId") private var selectedRoomId: String?
+    @AppStorage("appearance.mode") private var appearanceMode: AppAppearance = .system
 
     var body: some Scene {
         WindowGroup(id: "main") {
-            ContentView()
-                .environment(\.matrixService, matrixService)
-                .environment(\.gifSearchService, gifSearchService)
-                .environment(\.errorReporter, matrixService.errorReporter)
-                .environment(appActions)
-                .onChange(of: dockBadgeCount) { _, newCount in
-                    NSApp.dockTile.badgeLabel = newCount > 0 ? "\(newCount)" : nil
-                }
-                .onChange(of: matrixService.pendingVerificationRequest?.id) { _, newValue in
-                    if newValue != nil, let request = matrixService.pendingVerificationRequest {
-                        postVerificationNotification(request: request)
-                    }
-                }
-                .onOpenURL { url in
-                    if let uri = MatrixURI(url: url) {
-                        logger.info("Received deep link: \(url.absoluteString)")
-                        matrixService.pendingDeepLink = uri
-                    }
-                }
-                .task {
-                    await setupNotifications()
-                    matrixService.onNotificationEvent = { event in
-                        Task { @MainActor in
-                            self.handleNotificationEvent(event)
-                        }
-                    }
-                }
-                .alert("Clear Cache", isPresented: $showClearCacheConfirmation) {
-                    Button("Cancel", role: .cancel) {}
-                    Button("Clear Cache", role: .destructive) {
-                        Task { await matrixService.clearLocalData() }
-                    }
-                } message: {
-                    Text("This will delete all locally cached data and resync from the server. You will remain logged in.")
-                }
+            contentView
         }
         .defaultSize(width: 880, height: 560)
         .commands {
             FileMenuCommands(appActions: appActions)
             EditLastMessageCommand()
-            FindRoomCommand(appActions: appActions)
+            SearchCommand(appActions: appActions)
+            QuickSwitchCommand(appActions: appActions)
             SidebarCommands()
+            InspectorCommands()
             CommandGroup(before: .appTermination) {
                 Button("Clear Cache…") {
                     showClearCacheConfirmation = true
@@ -106,6 +83,86 @@ struct RelayApp: App {
                 .environment(\.matrixService, matrixService)
                 .environment(\.gifSearchService, gifSearchService)
                 .environment(\.errorReporter, matrixService.errorReporter)
+                .preferredColorScheme(appearanceMode.colorScheme)
+        }
+
+        Window("Activity Log", id: "activity-log") {
+            ActivityLogView()
+                .environment(\.matrixService, matrixService)
+                .environment(\.activityLog, matrixService.activityLog)
+                .preferredColorScheme(appearanceMode.colorScheme)
+        }
+        .defaultSize(width: 900, height: 600)
+        .keyboardShortcut("a", modifiers: [.option, .command])
+
+        Window("Call", id: "call") {
+            CallWindowView()
+                .environment(\.matrixService, matrixService)
+                .environment(\.callManager, callManager)
+                .preferredColorScheme(appearanceMode.colorScheme)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 360, height: 540)
+        .defaultPosition(.topTrailing)
+        .defaultLaunchBehavior(.suppressed)
+    }
+
+    /// The root content view, configured with real services at runtime or
+    /// bare (using environment-key defaults) during Xcode previews.
+    @ViewBuilder private var contentView: some View {
+        if Self.isPreview {
+            ContentView()
+                .preferredColorScheme(appearanceMode.colorScheme)
+        } else {
+            ContentView()
+                .environment(\.matrixService, matrixService)
+                .environment(\.gifSearchService, gifSearchService)
+                .environment(\.callManager, callManager)
+                .environment(\.errorReporter, matrixService.errorReporter)
+                .environment(\.composeDraftStore, composeDraftStore)
+                .environment(appActions)
+                .onChange(of: dockBadgeCount) { _, newCount in
+                    NSApp.dockTile.badgeLabel = newCount > 0 ? "\(newCount)" : nil
+                }
+                .onChange(of: matrixService.pendingVerificationRequest?.id) { _, newValue in
+                    if newValue != nil, let request = matrixService.pendingVerificationRequest {
+                        postVerificationNotification(request: request)
+                    }
+                }
+                .onOpenURL { url in
+                    if let uri = MatrixURI(url: url) {
+                        logger.info("Received deep link: \(url.absoluteString)")
+                        matrixService.pendingDeepLink = uri
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    checkForPendingShare()
+                }
+                .onContinueUserActivity(NSStringFromClass(INSendMessageIntent.self)) { activity in
+                    if let intent = activity.interaction?.intent as? INSendMessageIntent,
+                       let roomId = intent.conversationIdentifier {
+                        logger.info("Received share suggestion for room: \(roomId)")
+                        selectedRoomId = roomId
+                    }
+                }
+                .task {
+                    await setupNotifications()
+                    matrixService.onNotificationEvent = { event in
+                        Task { @MainActor in
+                            self.handleNotificationEvent(event)
+                        }
+                    }
+                }
+                .alert("Clear Cache", isPresented: $showClearCacheConfirmation) {
+                    Button("Cancel", role: .cancel) {}
+                    Button("Clear Cache", role: .destructive) {
+                        Task { await matrixService.clearLocalData() }
+                    }
+                } message: {
+                    Text("This will delete all locally cached data and resync from the server. You will remain logged in.")
+                }
+                .preferredColorScheme(appearanceMode.colorScheme)
         }
     }
 
@@ -150,12 +207,12 @@ struct RelayApp: App {
             case .mute:
                 return total
             case .mentionsAndKeywordsOnly:
-                return total + room.unreadMentions
+                return total + room.highlightCount
             case .allMessages:
-                return total + room.unreadMessages
+                return total + room.notificationCount
             case nil:
-                // Default: DMs count all messages, groups count mentions only
-                return room.isDirect ? total + room.unreadMessages : total + room.unreadMentions
+                // Default: DMs count all notifications, groups count highlights only
+                return room.isDirect ? total + room.notificationCount : total + room.highlightCount
             }
         }
     }
@@ -214,6 +271,54 @@ struct RelayApp: App {
         UNUserNotificationCenter.current().add(request)
     }
 
+    /// Checks the app group container for a pending share from the share extension.
+    ///
+    /// The extension writes the share ID to `latest-share-id.txt` and activates
+    /// the app. This method reads that file, loads the corresponding pending share
+    /// record, navigates to the target room, and stages the attachments in the
+    /// compose bar for user review.
+    private func checkForPendingShare() {
+        guard let container = AppGroup.containerURL else { return }
+
+        let signalURL = container.appending(path: "latest-share-id.txt")
+        guard let idString = try? String(contentsOf: signalURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+              let shareId = UUID(uuidString: idString) else {
+            return
+        }
+
+        // Remove the signal file immediately to avoid re-processing.
+        try? FileManager.default.removeItem(at: signalURL)
+
+        let pendingShares = PendingShareStore.loadAll()
+        guard let share = pendingShares.first(where: { $0.id == shareId }) else {
+            logger.warning("Pending share not found: \(idString)")
+            return
+        }
+
+        logger.info("Share handoff: \(share.filenames.count) file(s) for room \(share.roomId)")
+
+        // Navigate to the target room.
+        selectedRoomId = share.roomId
+
+        // Resolve file URLs from the app group container and stage them.
+        let fileURLs = share.filenames.compactMap { PendingShareStore.fileURL(for: $0) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+
+        guard !fileURLs.isEmpty else {
+            logger.warning("No valid files found for pending share \(idString)")
+            PendingShareStore.remove(id: shareId)
+            return
+        }
+
+        // Stage attachments in the compose bar for the target room.
+        let draft = composeDraftStore.draft(for: share.roomId)
+        draft.stageAttachments(fileURLs, errorReporter: matrixService.errorReporter)
+
+        // Remove the pending share record (files will be cleaned up after send
+        // by TimelineViewModel.sendAttachment, which deletes the temp URL).
+        PendingShareStore.remove(id: shareId)
+    }
+
     private func postVerificationNotification(request: IncomingVerificationRequest) {
         let content = UNMutableNotificationContent()
         content.title = "Verification Request"
@@ -245,6 +350,7 @@ final class AppActions {
     var showJoinRoom = false
     var showRoomDirectory = false
     var focusSearch = false
+    var showQuickSwitch = false
 }
 
 // MARK: - File Menu Commands
@@ -303,21 +409,40 @@ struct EditLastMessageCommand: Commands {
     }
 }
 
-// MARK: - Find Room Command
+// MARK: - Search Command
 
-/// Adds a "Find Room…" item (⌘K) to the Edit menu.
+/// Adds a "Search…" item (⌘G) to the Edit menu.
 ///
 /// When pressed, the command sets ``AppActions/focusSearch`` to `true`.
-/// ``RoomListView`` observes this flag and moves keyboard focus to the
-/// sidebar search field.
-struct FindRoomCommand: Commands {
+/// ``MainView`` observes this flag and moves keyboard focus to the
+/// toolbar search field.
+struct SearchCommand: Commands {
     let appActions: AppActions
 
     var body: some Commands {
         CommandGroup(after: .pasteboard) {
             Divider()
-            Button("Find Rooms…") {
+            Button("Search\u{2026}") {
                 appActions.focusSearch = true
+            }
+            .keyboardShortcut("g", modifiers: .command)
+        }
+    }
+}
+
+// MARK: - Quick Switch Command
+
+/// Adds a "Quick Switch…" item (⌘K) to the Edit menu.
+///
+/// When pressed, the command sets ``AppActions/showQuickSwitch`` to `true`.
+/// ``MainView`` observes this flag and presents the quick room switch overlay.
+struct QuickSwitchCommand: Commands {
+    let appActions: AppActions
+
+    var body: some Commands {
+        CommandGroup(after: .pasteboard) {
+            Button("Quick Switch\u{2026}") {
+                appActions.showQuickSwitch = true
             }
             .keyboardShortcut("k", modifiers: .command)
         }

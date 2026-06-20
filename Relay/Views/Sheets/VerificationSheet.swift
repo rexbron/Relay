@@ -17,14 +17,18 @@ import SwiftUI
 
 // MARK: - Verification Sheet
 
-/// A sheet that drives the interactive session verification flow (SAS emoji comparison).
+/// A sheet that drives the interactive session verification flow.
 ///
-/// Presents different UI states as the verification progresses: idle, waiting,
-/// emoji comparison, and result (verified/cancelled/failed). Used both from
-/// Settings and from the verification banner when responding to incoming requests.
+/// Supports two verification methods:
+/// - **SAS emoji comparison** — compare emoji across two devices.
+/// - **Recovery key** — enter the account's security key to verify directly.
+///
+/// When no other verified devices are available, recovery key entry is shown
+/// as the primary option. Otherwise both methods are offered side-by-side.
 struct VerificationSheet: View {
     var viewModel: any SessionVerificationViewModelProtocol
     @Environment(\.dismiss) private var dismiss
+    @State private var recoveryKeyInput = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,6 +41,10 @@ struct VerificationSheet: View {
                 approvingView
             case .showingEmojis:
                 emojiView
+            case .enteringRecoveryKey:
+                recoveryKeyView
+            case .recoveringWithKey:
+                recoveringView
             case .verified:
                 resultView(
                     icon: "checkmark.circle.fill",
@@ -74,20 +82,44 @@ struct VerificationSheet: View {
             Text("Verify Session")
                 .font(.title2)
                 .fontWeight(.semibold)
-            Text("Confirm your identity by comparing emoji on this device and another signed-in session.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
+
+            if viewModel.hasOtherDevices {
+                Text("Choose how to verify this session.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            } else {
+                Text("Enter your security key to verify this session.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
             Spacer()
             HStack {
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Start Verification") {
-                    Task { await viewModel.requestVerification() }
+
+                if viewModel.hasOtherDevices {
+                    Button("Use Security Key") {
+                        viewModel.startRecoveryKeyEntry()
+                    }
+                    Button("Another Device") {
+                        Task { await viewModel.requestVerification() }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                } else {
+                    Button("Another Device") {
+                        Task { await viewModel.requestVerification() }
+                    }
+                    Button("Use Security Key") {
+                        viewModel.startRecoveryKeyEntry()
+                    }
+                    .keyboardShortcut(.defaultAction)
                 }
-                .keyboardShortcut(.defaultAction)
             }
             .padding()
         }
@@ -130,6 +162,68 @@ struct VerificationSheet: View {
                 .font(.title3)
                 .fontWeight(.medium)
             Text("Waiting for the other device to confirm.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Spacer()
+        }
+    }
+
+    // MARK: - Recovery Key Entry
+
+    private var recoveryKeyView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "key.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(.tint)
+            Text("Enter Security Key")
+                .font(.title2)
+                .fontWeight(.semibold)
+            Text("Enter the security key you received when setting up account recovery.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+            SecureField("Security Key", text: $recoveryKeyInput)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.body, design: .monospaced))
+                .padding(.horizontal, 32)
+                .onSubmit {
+                    guard !recoveryKeyInput.isEmpty else { return }
+                    Task { await viewModel.submitRecoveryKey(recoveryKeyInput) }
+                }
+
+            Spacer()
+            HStack {
+                Button("Back") {
+                    recoveryKeyInput = ""
+                    viewModel.resetToIdle()
+                }
+                Spacer()
+                Button("Verify") {
+                    Task { await viewModel.submitRecoveryKey(recoveryKeyInput) }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(recoveryKeyInput.isEmpty)
+            }
+            .padding()
+        }
+    }
+
+    // MARK: - Recovering with Key
+
+    private var recoveringView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            ProgressView()
+                .controlSize(.large)
+            Text("Verifying with Security Key")
+                .font(.title3)
+                .fontWeight(.medium)
+            Text("Recovering encryption keys from the server.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

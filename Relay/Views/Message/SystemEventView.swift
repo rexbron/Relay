@@ -24,16 +24,25 @@ import SwiftUI
 struct SystemEventView: View {
     let message: TimelineMessage
 
+    @Environment(\.timelineActions) private var actions
+
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: iconName)
                 .imageScale(.small)
-            Text(message.body)
+            Text(message.attributedBody ?? AttributedString(message.body))
         }
         .font(.caption)
         .foregroundStyle(.tertiary)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 2)
+        .environment(\.openURL, OpenURLAction { url in
+            if let uri = MatrixURI(url: url), uri.isUser, case .user(let id) = uri {
+                actions.userTap(id)
+                return .handled
+            }
+            return .systemAction
+        })
     }
 
     private var iconName: String {
@@ -42,10 +51,46 @@ struct SystemEventView: View {
             "person.2"
         case .profileChange:
             "person.text.rectangle"
+        case .callEvent:
+            "phone.fill"
         case .stateEvent:
             "gearshape"
         default:
             "info.circle"
         }
     }
+}
+
+// MARK: - Previews
+
+private func previewAttributedBody(_ name: String, userId: String, suffix: String) -> AttributedString {
+    var linked = AttributedString(name)
+    linked.link = URL(string: "https://matrix.to/#/\(userId)")
+    return linked + AttributedString(suffix)
+}
+
+#Preview("Membership") {
+    SystemEventView(
+        message: .init(
+            id: "1", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
+            body: "Alice joined the room",
+            attributedBody: previewAttributedBody("Alice", userId: "@alice:matrix.org", suffix: " joined the room"),
+            timestamp: .now, isOutgoing: false, kind: .membership
+        )
+    )
+    .padding()
+    .frame(width: 450)
+}
+
+#Preview("Profile Change") {
+    SystemEventView(
+        message: .init(
+            id: "2", senderID: "@bob:matrix.org", senderDisplayName: "Bob",
+            body: "Bob updated their avatar",
+            attributedBody: previewAttributedBody("Bob", userId: "@bob:matrix.org", suffix: " updated their avatar"),
+            timestamp: .now, isOutgoing: false, kind: .profileChange
+        )
+    )
+    .padding()
+    .frame(width: 450)
 }

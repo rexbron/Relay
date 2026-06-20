@@ -46,6 +46,7 @@ public final class SpaceHierarchyViewModel: SpaceHierarchyViewModelProtocol {
     private var entriesHandle: TaskHandle?
     private var paginationHandle: TaskHandle?
     private var entriesTask: Task<Void, Never>?
+    private var paginationTask: Task<Void, Never>?
 
     /// Creates a space hierarchy view model.
     ///
@@ -69,6 +70,8 @@ public final class SpaceHierarchyViewModel: SpaceHierarchyViewModelProtocol {
     deinit {
         MainActor.assumeIsolated {
             entriesTask?.cancel()
+            paginationTask?.cancel()
+            paginationHandle?.cancel()
         }
     }
 
@@ -99,7 +102,7 @@ public final class SpaceHierarchyViewModel: SpaceHierarchyViewModelProtocol {
             let entriesListener = SpaceRoomListEntriesListenerProxy { updates in
                 entriesContinuation.yield(updates)
             }
-            entriesHandle = roomList.subscribeToRoomUpdate(listener: entriesListener)
+            entriesHandle = await roomList.subscribeToRoomUpdate(listener: entriesListener)
 
             // Subscribe to pagination state
             let (paginationStream, paginationContinuation) = AsyncStream<SpaceRoomListPaginationState>.makeStream()
@@ -116,8 +119,8 @@ public final class SpaceHierarchyViewModel: SpaceHierarchyViewModelProtocol {
                 }
             }
 
-            // Observe pagination state in a detached task
-            Task { [weak self] in
+            // Observe pagination state
+            paginationTask = Task { [weak self] in
                 for await state in paginationStream {
                     guard let self, !Task.isCancelled else { break }
                     switch state {
@@ -134,7 +137,7 @@ public final class SpaceHierarchyViewModel: SpaceHierarchyViewModelProtocol {
             try await roomList.paginate()
 
             // Read initial results
-            spaceRooms = roomList.rooms()
+            spaceRooms = await roomList.rooms()
             rebuildChildren()
         } catch is CancellationError {
             // Ignore
@@ -152,7 +155,7 @@ public final class SpaceHierarchyViewModel: SpaceHierarchyViewModelProtocol {
 
         do {
             try await roomList.paginate()
-            spaceRooms = roomList.rooms()
+            spaceRooms = await roomList.rooms()
             rebuildChildren()
         } catch is CancellationError {
             // Ignore

@@ -65,8 +65,6 @@ await syncService.start()
 - ``InvitedRoomProxy``
 - ``KnockedRoomProxy``
 - ``BannedRoomProxy``
-- ``RoomProxyType``
-- ``RoomInfoProxy``
 
 ### Timeline
 - ``TimelineProxy``
@@ -93,5 +91,4 @@ await syncService.start()
 - ``RoomDirectorySearchProxy``
 - ``ThreadListServiceProxy``
 - ``MediaProxy``
-- ``QRCodeLoginProxy``
 - ``RoomPreviewProxy``

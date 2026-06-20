@@ -242,7 +242,8 @@ public protocol ClientProxyProtocol: AnyObject, Sendable {
         appDisplayName: String,
         deviceDisplayName: String,
         profileTag: String?,
-        lang: String
+        lang: String,
+        append: Bool
     ) async throws
 
     /// Removes a push notification endpoint.
@@ -337,26 +338,26 @@ public protocol ClientProxyProtocol: AnyObject, Sendable {
     /// contains the authorization URL and opaque state needed for the callback.
     ///
     /// - Parameters:
-    ///   - oidcConfiguration: The OIDC client configuration.
+    ///   - oauthConfiguration: The OAuth client configuration.
     ///   - prompt: An optional prompt hint for the authorization server.
     ///   - loginHint: An optional login hint (e.g. username).
     ///   - deviceId: An optional device ID to reuse.
     ///   - additionalScopes: Optional additional OAuth scopes.
     /// - Returns: The authorization data including the login URL.
-    /// - Throws: `ClientError` if OIDC setup fails.
-    func urlForOidc(
-        oidcConfiguration: OidcConfiguration,
-        prompt: OidcPrompt?,
+    /// - Throws: `ClientError` if OAuth setup fails.
+    func urlForOauth(
+        oauthConfiguration: OAuthConfiguration,
+        prompt: OAuthPrompt?,
         loginHint: String?,
         deviceId: String?,
         additionalScopes: [String]?
     ) async throws -> OAuthAuthorizationData
 
-    /// Completes an OIDC login by exchanging the authorization callback URL for tokens.
+    /// Completes an OAuth login by exchanging the authorization callback URL for tokens.
     ///
     /// - Parameter callbackUrl: The full callback URL received from the browser.
     /// - Throws: `ClientError` if the token exchange fails.
-    func loginWithOidcCallback(callbackUrl: String) async throws
+    func loginWithOauthCallback(callbackUrl: String) async throws
 
     /// Returns the current session data including tokens and OIDC state.
     ///
@@ -439,7 +440,7 @@ public protocol ClientProxyProtocol: AnyObject, Sendable {
 
     /// Creates a handler for logging in by scanning a QR code.
     ///
-    /// - Parameter oidcConfiguration: The OIDC configuration.
+    /// - Parameter oauthConfiguration: The OAuth configuration.
     /// - Returns: The login handler.
-    func newLoginWithQrCodeHandler(oidcConfiguration: OidcConfiguration) -> LoginWithQrCodeHandler
+    func newLoginWithQrCodeHandler(oauthConfiguration: OAuthConfiguration) -> LoginWithQrCodeHandler
 }

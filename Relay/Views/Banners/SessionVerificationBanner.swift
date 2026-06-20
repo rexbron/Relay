@@ -31,7 +31,7 @@ struct SessionVerificationBanner: View {
     @State private var bannerWidth: CGFloat = 0
 
     /// Width threshold below which the banner switches to compact layout.
-    private static let compactThreshold: CGFloat = 180
+    private static let compactThreshold: CGFloat = 140
 
     /// Whether the banner should display in compact mode.
     private var isCompact: Bool {
@@ -119,7 +119,7 @@ struct SessionVerificationBanner: View {
             Button {
                 Task {
                     // swiftlint:disable:next identifier_name
-                    if let vm = try? await matrixService.makeSessionVerificationViewModel() {
+                    if let vm = try? await matrixService.makeSessionVerificationViewModel(acceptingIncomingRequest: true) {
                         matrixService.pendingVerificationRequest = nil
                         verificationItem = VerificationItem(viewModel: vm)
                     }
@@ -145,7 +145,7 @@ struct SessionVerificationBanner: View {
             Button("Approve", systemImage: "checkmark") {
                 Task {
                     // swiftlint:disable:next identifier_name
-                    if let vm = try? await matrixService.makeSessionVerificationViewModel() {
+                    if let vm = try? await matrixService.makeSessionVerificationViewModel(acceptingIncomingRequest: true) {
                         matrixService.pendingVerificationRequest = nil
                         verificationItem = VerificationItem(viewModel: vm)
                     }

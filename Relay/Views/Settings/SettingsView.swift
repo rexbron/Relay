@@ -18,7 +18,7 @@ import SwiftUI
 // MARK: - Settings View
 
 /// The settings window, organized into tabs for account profile, appearance,
-/// behavior, notifications, session management, and encryption status.
+/// behavior, notifications, session management, encryption status, and labs.
 struct SettingsView: View {
     @Environment(\.matrixService) private var matrixService
 
@@ -38,6 +38,8 @@ struct SettingsView: View {
                         .tabItem { Label("Sessions", systemImage: "desktopcomputer") }
                     SettingsEncryptionTab()
                         .tabItem { Label("Encryption", systemImage: "lock.fill") }
+                    SettingsLabsTab()
+                        .tabItem { Label("Labs", systemImage: "flask") }
                 }
             } else {
                 ContentUnavailableView(
@@ -69,4 +71,12 @@ struct SettingsView: View {
 
 #Preview("Verification — Idle") {
     VerificationSheet(viewModel: PreviewSessionVerificationViewModel())
+}
+
+#Preview("Verification — No Other Devices") {
+    VerificationSheet(viewModel: PreviewSessionVerificationViewModel(hasOtherDevices: false))
+}
+
+#Preview("Verification — Recovery Key") {
+    VerificationSheet(viewModel: PreviewSessionVerificationViewModel(state: .enteringRecoveryKey))
 }
