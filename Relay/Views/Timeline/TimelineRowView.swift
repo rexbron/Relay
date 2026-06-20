@@ -183,19 +183,7 @@ struct TimelineRowView: View, Equatable {
                 // row builder, so reading it directly keeps the row the
                 // single source of truth when the table reloads it after a
                 // translation lands.
-                translation: row.translation,
-                canTranslate: canTranslateProvider(message.id),
-                onTranslationAction: {
-                    // Single callback toggles based on current state:
-                    // .translated → revert; otherwise → translate. Dispatched
-                    // through the injected TimelineActions, the upstream
-                    // row-action path.
-                    if case .translated = row.translation {
-                        actions.contextAction(.showOriginal(message))
-                    } else {
-                        actions.contextAction(.translate(message))
-                    }
-                }
+                translation: row.translation
             )
             .id(message.id)
             // When translated, hover tooltip surfaces the original body

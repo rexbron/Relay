@@ -55,18 +55,6 @@ struct MessageView: View { // swiftlint:disable:this type_body_length
     /// shows a translate-glyph badge when `.translated` or `.loading`.
     var translation: MessageTranslationState = .idle
 
-    /// Whether this message is in a state where Translate is meaningful
-    /// (the language is detectable, isn't already in the user's
-    /// readable set, etc.). When `false` and the message isn't
-    /// already translated, we hide the long-press action.
-    var canTranslate: Bool = false
-
-    /// Toggle action invoked from the long-press popover. Wired by the
-    /// caller to either translate the message (when `.idle`/`.failed`)
-    /// or revert to the original (when `.translated`); the popover's
-    /// label switches automatically based on ``translation``.
-    var onTranslationAction: (() -> Void)?
-
     @AppStorage("appearance.coloredBubbles") private var coloredBubbles = false
     @Environment(\.timelineActions) private var actions
     @Environment(\.swipeOffset) private var swipeOffset
