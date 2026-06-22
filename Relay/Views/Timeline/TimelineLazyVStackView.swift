@@ -157,7 +157,6 @@ struct TimelineLazyVStackView: View {
         }
         .contentMargins(.bottom, bottomContentMargin, for: .scrollContent)
         .contentMargins(.bottom, bottomContentMargin, for: .scrollIndicators)
-        .animation(.easeInOut(duration: 0.3), value: bottomContentMargin)
         .scrollPosition($scrollPosition)
         .onScrollGeometryChange(for: ScrollMetrics.self) { geometry in
             // Measure distance from the last actual content, ignoring the
