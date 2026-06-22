@@ -131,6 +131,7 @@ struct TimelineLazyVStackView: View {
                         swipeOffset: swipeState.swipingMessageId == row.id ? swipeState.offset : 0,
                         swipeIsLocked: swipeState.swipingMessageId == row.id && swipeState.isLocked
                     )
+                    .equatable()
                     .id(row.id)
                     .onContinuousHover { phase in
                         switch phase {
