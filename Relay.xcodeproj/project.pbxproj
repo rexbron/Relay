@@ -85,6 +85,13 @@
 			);
 			target = 3B3B82B72FC69A9F008DCEDC /* RelayShareExtension */;
 		};
+		3B8799742FE9B96600349DE3 /* Exceptions for "Relay" folder in "RelayShareExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Utilities/StableNameColor.swift,
+			);
+			target = 3B3B82B72FC69A9F008DCEDC /* RelayShareExtension */;
+		};
 		3BDCC1512F6E468200BA8E23 /* Exceptions for "Relay" folder in "Relay" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -93,16 +100,6 @@
 			target = 3B4AFD882F638A35001F0EA1 /* Relay */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
-/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-		3BSNC0012FFF0001001F0EA1 /* Membership exceptions for "Relay" folder in "RelayShareExtension" target */ = {
-			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
-			buildPhase = 3B3B82B42FC69A9F008DCEDC /* Sources */;
-			membershipExceptions = (
-				Utilities/StableNameColor.swift,
-			);
-		};
-/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		3B11E0892F9A3F600051F7B3 /* RelayTests */ = {
@@ -122,7 +119,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				3BDCC1512F6E468200BA8E23 /* Exceptions for "Relay" folder in "Relay" target */,
-				3BSNC0012FFF0001001F0EA1 /* Membership exceptions for "Relay" folder in "RelayShareExtension" target */,
+				3B8799742FE9B96600349DE3 /* Exceptions for "Relay" folder in "RelayShareExtension" target */,
 			);
 			path = Relay;
 			sourceTree = "<group>";
@@ -605,7 +602,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 46UKXDYHHC;
@@ -627,7 +624,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 0.5.3;
+				MARKETING_VERSION = 0.5.4;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -674,7 +671,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 46UKXDYHHC;
@@ -690,7 +687,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 0.5.3;
+				MARKETING_VERSION = 0.5.4;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
