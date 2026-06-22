@@ -115,6 +115,19 @@ struct TimelineLazyVStackView: View {
     /// spoiling the near-bottom state and causing missed auto-scrolls.
     @State private var isNearBottomLatched = true
 
+    /// IDs of rows currently visible in the scroll viewport, tracked via
+    /// per-row `onScrollVisibilityChange`. Used to advance the read marker
+    /// without requiring `.scrollTargetLayout()`, which causes
+    /// `ScrollPosition` to track view IDs and re-anchor during resize,
+    /// producing jitter when the inspector or sidebar toggles.
+    @State private var visibleRowIDs: Set<String> = []
+
+    /// Delays per-row visibility tracking until the initial scroll position
+    /// and content margins have settled. Without this, `onScrollVisibilityChange`
+    /// fires for every visible row during initial layout, triggering state
+    /// mutations that interfere with the scroll anchor positioning.
+    @State private var visibilityTrackingEnabled = false
+
     // MARK: - Body
 
     var body: some View {
@@ -133,6 +146,14 @@ struct TimelineLazyVStackView: View {
                     )
                     .equatable()
                     .id(row.id)
+                    .onScrollVisibilityChange(threshold: 0.5) { visible in
+                        guard visibilityTrackingEnabled else { return }
+                        if visible {
+                            visibleRowIDs.insert(row.id)
+                        } else {
+                            visibleRowIDs.remove(row.id)
+                        }
+                    }
                     .onContinuousHover { phase in
                         switch phase {
                         case .active: swipeHandler.hoveredRowID = row.id
@@ -157,7 +178,6 @@ struct TimelineLazyVStackView: View {
         }
         .contentMargins(.bottom, bottomContentMargin, for: .scrollContent)
         .contentMargins(.bottom, bottomContentMargin, for: .scrollIndicators)
-        .scrollPosition($scrollPosition)
         .onScrollGeometryChange(for: ScrollMetrics.self) { geometry in
             // Measure distance from the last actual content, ignoring the
             // bottom content inset (compose bar dead space). Using
@@ -199,14 +219,18 @@ struct TimelineLazyVStackView: View {
                 onPaginateForward()
             }
         }
+        .scrollPosition($scrollPosition, anchor: .bottom)
         .onScrollPhaseChange { _, newPhase in
             isUserScrolling = newPhase == .interacting || newPhase == .decelerating
             if newPhase == .idle {
                 onScrollSettled()
             }
         }
-        .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.5) { visibleIDs in
-            onVisibleMessagesChanged(visibleIDs)
+        .onChange(of: visibleRowIDs) { _, newIDs in
+            // Report visible IDs in row order (oldest → newest) so the
+            // caller can advance the read marker to the last element.
+            let ordered = rows.compactMap { newIDs.contains($0.id) ? $0.id : nil }
+            onVisibleMessagesChanged(ordered)
         }
         .onAppear {
             installSwipeMonitor()
@@ -240,7 +264,6 @@ struct TimelineLazyVStackView: View {
                 }
 
                 previousLastRowID = newLastID
-                initialLoadComplete = true
             }
         }
     }
