@@ -393,25 +393,10 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 Button {
                     showingInspector.toggle()
                 } label: {
-                    HStack(spacing: 0) {
-                        if let currentRoom {
-                            AvatarView(name: currentRoom.name,
-                                       mxcURL: currentRoom.avatarURL,
-                                       size: 28)
-                            Text(currentRoom.name)
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                                .truncationMode(.tail)
-                                .frame(maxWidth: 100)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 4)
-
-                            Image(systemName: showingInspector ? "xmark" : "chevron.right")
-                                .font(.system(size: 12, weight: showingInspector ? .bold : .semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .contentShape(.capsule)
+                    ToolbarRoomLabel(
+                        room: currentRoom,
+                        showingInspector: showingInspector
+                    )
                 }
                 .help(showingInspector ? "Hide Inspector" : "Show Inspector")
             }
@@ -713,6 +698,44 @@ private struct SheetModifiers: ViewModifier {
             }
             isJoiningLinkedRoom = false
         }
+    }
+}
+
+/// The label content for the room title toolbar capsule.
+///
+/// Reads `controlSize` from the environment to shrink the avatar when
+/// rendered inside the toolbar overflow menu.
+private struct ToolbarRoomLabel: View {
+    let room: RoomSummary?
+    let showingInspector: Bool
+
+    @Environment(\.controlSize) private var controlSize
+
+    private var avatarSize: CGFloat {
+        controlSize == .regular ? 28 : 16
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if let room {
+                AvatarView(name: room.name,
+                           mxcURL: room.avatarURL,
+                           size: avatarSize)
+                .fixedSize()
+                Text(room.name)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 100)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+
+                Image(systemName: showingInspector ? "xmark" : "chevron.right")
+                    .font(.system(size: 12, weight: showingInspector ? .bold : .semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .contentShape(.capsule)
     }
 }
 
