@@ -110,22 +110,40 @@ struct MessageBubbleContent: View {
     // MARK: - Image Content
 
     private var imageContent: some View {
-        ImageMessageView(message: message)
-            .clipShape(BubbleStyle.shape)
+        VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 2) {
+            ImageMessageView(message: message)
+                .clipShape(BubbleStyle.shape)
+
+            if case .sendingFailed(let reason) = message.sendState {
+                sendFailedLabel(reason)
+            }
+        }
     }
 
     // MARK: - Video Content
 
     private var videoContent: some View {
-        VideoMessageView(message: message)
-            .clipShape(BubbleStyle.shape)
+        VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 2) {
+            VideoMessageView(message: message)
+                .clipShape(BubbleStyle.shape)
+
+            if case .sendingFailed(let reason) = message.sendState {
+                sendFailedLabel(reason)
+            }
+        }
     }
 
     // MARK: - Audio Content
 
     private var audioContent: some View {
-        AudioMessageView(message: message)
-            .clipShape(BubbleStyle.shape)
+        VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 2) {
+            AudioMessageView(message: message)
+                .clipShape(BubbleStyle.shape)
+
+            if case .sendingFailed(let reason) = message.sendState {
+                sendFailedLabel(reason)
+            }
+        }
     }
 
     // MARK: - Emoji-Only Content
@@ -140,47 +158,65 @@ struct MessageBubbleContent: View {
     }
 
     private var emojiOnlyContent: some View {
-        Text(message.body)
-            .font(.system(size: message.body.emojiCount <= 3 ? 72 : 48))
+        VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 2) {
+            Text(message.body)
+                .font(.system(size: message.body.emojiCount <= 3 ? 72 : 48))
+
+            if case .sendingFailed(let reason) = message.sendState {
+                sendFailedLabel(reason)
+            }
+        }
     }
 
     // MARK: - Emote Content
 
     private var emoteContent: some View {
-        MessageTextView(
-            attributedString: emoteParsedBody,
-            isOutgoing: false,
-            onUserTap: { actions.userTap($0) },
-            onRoomTap: actions.roomTap,
-            contextMessage: onPresentReactionPicker != nil ? message : nil,
-            onMessageContextAction: { actions.contextAction($0) },
-            onPresentReactionPicker: onPresentReactionPicker,
-            permissions: actions.permissions,
-            highlightedUserId: message.isHighlighted ? actions.currentUserID : nil,
-            highlightKeywords: message.isHighlighted ? actions.highlightKeywords : []
-        )
-        .padding(.horizontal, BubbleStyle.horizontalPadding)
-        .padding(.vertical, BubbleStyle.verticalPadding)
-        .background(BubbleStyle.emote.backgroundColor)
-        .clipShape(BubbleStyle.shape)
+        VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 2) {
+            MessageTextView(
+                attributedString: emoteParsedBody,
+                isOutgoing: false,
+                onUserTap: { actions.userTap($0) },
+                onRoomTap: actions.roomTap,
+                contextMessage: onPresentReactionPicker != nil ? message : nil,
+                onMessageContextAction: { actions.contextAction($0) },
+                onPresentReactionPicker: onPresentReactionPicker,
+                permissions: actions.permissions,
+                highlightedUserId: message.isHighlighted ? actions.currentUserID : nil,
+                highlightKeywords: message.isHighlighted ? actions.highlightKeywords : []
+            )
+            .padding(.horizontal, BubbleStyle.horizontalPadding)
+            .padding(.vertical, BubbleStyle.verticalPadding)
+            .background(BubbleStyle.emote.backgroundColor)
+            .clipShape(BubbleStyle.shape)
+
+            if case .sendingFailed(let reason) = message.sendState {
+                sendFailedLabel(reason)
+            }
+        }
     }
 
     // MARK: - Special Content (redacted, encrypted, file, etc.)
 
     private var specialContent: some View {
         let specialStyle = BubbleStyle.special(kind: message.kind)
-        return Label {
-            Text(message.body)
-                .font(.callout)
-        } icon: {
-            Image(systemName: iconForKind)
-                .font(.callout)
+        return VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 2) {
+            Label {
+                Text(message.body)
+                    .font(.callout)
+            } icon: {
+                Image(systemName: iconForKind)
+                    .font(.callout)
+            }
+            .foregroundStyle(specialStyle.foregroundStyle)
+            .padding(.horizontal, BubbleStyle.horizontalPadding)
+            .padding(.vertical, BubbleStyle.verticalPadding)
+            .background(specialStyle.backgroundColor)
+            .clipShape(BubbleStyle.shape)
+
+            if case .sendingFailed(let reason) = message.sendState {
+                sendFailedLabel(reason)
+            }
         }
-        .foregroundStyle(specialStyle.foregroundStyle)
-        .padding(.horizontal, BubbleStyle.horizontalPadding)
-        .padding(.vertical, BubbleStyle.verticalPadding)
-        .background(specialStyle.backgroundColor)
-        .clipShape(BubbleStyle.shape)
     }
 
     private var iconForKind: String {
@@ -247,3 +283,158 @@ struct MessageBubbleContent: View {
         return result
     }
 }
+// MARK: - Previews
+
+#Preview("Text") {
+    VStack(spacing: 6) {
+        MessageBubbleContent(
+            message: TimelineMessage(
+                id: "1", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
+                body: "Hey, how's the project going?",
+                timestamp: .now, isOutgoing: false
+            )
+        )
+        MessageBubbleContent(
+            message: TimelineMessage(
+                id: "2", senderID: "@me:matrix.org",
+                body: "Going well! Just pushed a fix.",
+                timestamp: .now, isOutgoing: true
+            )
+        )
+        MessageBubbleContent(
+            message: TimelineMessage(
+                id: "3", senderID: "@me:matrix.org",
+                body: "This one was edited",
+                timestamp: .now, isOutgoing: true, isEdited: true
+            )
+        )
+    }
+    .environment(\.timelineActions, TimelineActions(currentUserID: "@me:matrix.org"))
+    .padding()
+    .frame(width: 450)
+}
+
+#Preview("Send Failures") {
+    VStack(spacing: 6) {
+        MessageBubbleContent(
+            message: TimelineMessage(
+                id: "1", senderID: "@me:matrix.org",
+                body: "This text failed to send",
+                timestamp: .now, isOutgoing: true,
+                sendState: .sendingFailed("Generic API error")
+            )
+        )
+        MessageBubbleContent(
+            message: TimelineMessage(
+                id: "2", senderID: "@me:matrix.org",
+                body: "Image", timestamp: .now, isOutgoing: true, kind: .image,
+                mediaInfo: .init(
+                    mxcURL: "mxc://matrix.org/example",
+                    filename: "photo.jpg", mimetype: "image/jpeg",
+                    width: 800, height: 600
+                ),
+                sendState: .sendingFailed("Media content is no longer available")
+            )
+        )
+        MessageBubbleContent(
+            message: TimelineMessage(
+                id: "3", senderID: "@me:matrix.org",
+                body: "vacation.mp4", timestamp: .now, isOutgoing: true, kind: .video,
+                mediaInfo: .init(
+                    mxcURL: "mxc://matrix.org/video1",
+                    filename: "vacation.mp4", mimetype: "video/mp4",
+                    width: 1920, height: 1080, duration: 127
+                ),
+                sendState: .sendingFailed("Unverified devices in this room")
+            )
+        )
+        MessageBubbleContent(
+            message: TimelineMessage(
+                id: "4", senderID: "@me:matrix.org",
+                body: "voice-note.ogg", timestamp: .now, isOutgoing: true, kind: .audio,
+                mediaInfo: .init(
+                    mxcURL: "mxc://matrix.org/audio1",
+                    filename: "voice-note.ogg", mimetype: "audio/ogg",
+                    size: 245_000, duration: 42
+                ),
+                sendState: .sendingFailed("Session verification required")
+            )
+        )
+        MessageBubbleContent(
+            message: TimelineMessage(
+                id: "5", senderID: "@me:matrix.org",
+                body: "\u{1F44B}", timestamp: .now, isOutgoing: true,
+                sendState: .sendingFailed("Generic API error")
+            )
+        )
+        MessageBubbleContent(
+            message: TimelineMessage(
+                id: "6", senderID: "@me:matrix.org",
+                body: "dances", timestamp: .now, isOutgoing: true, kind: .emote,
+                sendState: .sendingFailed("A user's verification status changed")
+            )
+        )
+        MessageBubbleContent(
+            message: TimelineMessage(
+                id: "7", senderID: "@me:matrix.org",
+                body: "report.pdf", timestamp: .now, isOutgoing: true, kind: .file,
+                sendState: .sendingFailed("Invalid file type: application/pdf")
+            )
+        )
+    }
+    .environment(\.timelineActions, TimelineActions(currentUserID: "@me:matrix.org"))
+    .padding()
+    .frame(width: 450)
+}
+
+#Preview("Special Types") {
+    VStack(spacing: 6) {
+        MessageBubbleContent(
+            message: TimelineMessage(
+                id: "1", senderID: "@mod:matrix.org", senderDisplayName: "Moderator",
+                body: "This message was deleted",
+                timestamp: .now, isOutgoing: false, kind: .redacted
+            )
+        )
+        MessageBubbleContent(
+            message: TimelineMessage(
+                id: "2", senderID: "@bob:matrix.org", senderDisplayName: "Bob",
+                body: "Waiting for encryption key",
+                timestamp: .now, isOutgoing: false, kind: .encrypted
+            )
+        )
+        MessageBubbleContent(
+            message: TimelineMessage(
+                id: "3", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
+                body: "report.pdf",
+                timestamp: .now, isOutgoing: false, kind: .file
+            )
+        )
+    }
+    .environment(\.timelineActions, TimelineActions(currentUserID: "@me:matrix.org"))
+    .padding()
+    .frame(width: 450)
+}
+
+#Preview("Emote") {
+    VStack(spacing: 6) {
+        MessageBubbleContent(
+            message: TimelineMessage(
+                id: "1", senderID: "@alice:matrix.org", senderDisplayName: "Alice",
+                body: "waves hello",
+                timestamp: .now, isOutgoing: false, kind: .emote
+            )
+        )
+        MessageBubbleContent(
+            message: TimelineMessage(
+                id: "2", senderID: "@me:matrix.org", senderDisplayName: "Me",
+                body: "waves back",
+                timestamp: .now, isOutgoing: true, kind: .emote
+            )
+        )
+    }
+    .environment(\.timelineActions, TimelineActions(currentUserID: "@me:matrix.org"))
+    .padding()
+    .frame(width: 450)
+}
+
