@@ -23,6 +23,14 @@ import SwiftUI
 final class ExpandedGroupsState {
     var expandedIDs: Set<String> = []
 
+    /// Invoked after a group's expansion state changes, with the group's ID.
+    /// The table-backed renderer (``TimelineTableViewController``) uses this to
+    /// re-measure the affected row: expanding/collapsing changes the row's
+    /// content height without changing the underlying message data, so the
+    /// height cache would otherwise keep the stale (collapsed) value and clip
+    /// the expanded content.
+    @ObservationIgnored var onToggle: ((String) -> Void)?
+
     func isExpanded(_ groupID: String) -> Bool {
         expandedIDs.contains(groupID)
     }
@@ -33,6 +41,7 @@ final class ExpandedGroupsState {
         } else {
             expandedIDs.insert(groupID)
         }
+        onToggle?(groupID)
     }
 }
 

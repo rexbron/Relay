@@ -69,6 +69,15 @@ struct TimelineTableViewRepresentable: NSViewControllerRepresentable {
 
     private func configureCallbacks(_ vc: TimelineTableViewController, context: Context) {
         let actions = actions
+
+        // When a collapsed system-event group is expanded/collapsed, the row's
+        // content height changes without a `rows` diff, so the table must be
+        // told to re-measure that row (otherwise it stays clipped at the
+        // cached collapsed height).
+        actions.expandedGroups.onToggle = { [weak vc] groupID in
+            vc?.remeasureRow(forMessageID: groupID)
+        }
+
         vc.callbacks = .init(
             onNearBottomChanged: onNearBottomChanged,
             onPaginateBackward: onPaginateBackward,

@@ -818,6 +818,42 @@ final class TimelineTableViewController: NSViewController {
         }
     }
 
+    /// Re-measures a single row whose content height changed without any
+    /// change to the underlying message data — specifically when a collapsed
+    /// system-event group is expanded or collapsed.
+    ///
+    /// `updateRows` only re-measures when `rows` diff, which they don't here
+    /// (only the shared ``ExpandedGroupsState`` flipped). We invalidate the
+    /// cached height for this row and note its new height; `heightOfRow`'s
+    /// measurement host rebuilds the row reading the now-updated expansion
+    /// state, so it returns the full expanded (or collapsed) height.
+    func remeasureRow(forMessageID id: String) {
+        guard let messageIndex = rows.firstIndex(where: { $0.id == id }) else { return }
+        let sentinelOffset = typingUsers.isEmpty ? 0 : 1
+        let rowIndex = messageIndex + sentinelOffset
+
+        // Defer so the live hosting cell has settled its SwiftUI re-render
+        // before we note the new height (matches the resize handler).
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.invalidateHeight(for: id)
+            let scrollBefore = self.scrollView.contentView.bounds.origin
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0
+                context.allowsImplicitAnimation = false
+                self.tableView.noteHeightOfRows(withIndexesChanged: IndexSet(integer: rowIndex))
+            }
+            // Preserve the scroll position; growing a row above the viewport
+            // would otherwise shift the visible content.
+            if self.isNearBottom {
+                self.scrollToBottom(animated: false)
+            } else if abs(scrollBefore.y - self.scrollView.contentView.bounds.origin.y) > 0.5 {
+                self.scrollView.contentView.scroll(to: scrollBefore)
+                self.scrollView.reflectScrolledClipView(self.scrollView.contentView)
+            }
+        }
+    }
+
     // MARK: - Resize Handling
 
     @objc private func viewDidResize(_ notification: Notification) {
