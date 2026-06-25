@@ -88,10 +88,6 @@ final class TimelineActions: Equatable {
     /// replied-to messages are outgoing.
     var currentUserID: String?
 
-    /// The user's notification keywords, used to highlight matching text
-    /// in message bubbles when the message is flagged as highlighted.
-    var highlightKeywords: [String] = []
-
     /// Observable state tracking which collapsed system event groups the user
     /// has expanded. Keyed by the first message's ID in each collapsed group.
     let expandedGroups = ExpandedGroupsState()

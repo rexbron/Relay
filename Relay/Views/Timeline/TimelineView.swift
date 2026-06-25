@@ -261,8 +261,6 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             // @State / @Environment references which remain valid for the
             // lifetime of this view.
             configureTimelineActions()
-            timelineActionsRef.highlightKeywords = (try? await matrixService.getNotificationKeywords()) ?? []
-
             // Cache room summary properties — avoids O(n) room scan on every body evaluation.
             let roomSummary = matrixService.rooms.first(where: { $0.id == roomId })
             isDirectRoom = roomSummary?.isDirect ?? false

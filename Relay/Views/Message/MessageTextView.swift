@@ -74,6 +74,8 @@ struct MessageTextView: NSViewRepresentable {
     final class Coordinator {
         var lastAttributedString: NSAttributedString?
         var lastIsOutgoing: Bool?
+        var lastHighlightedUserId: String?
+        var lastHighlightKeywords: [String] = []
         var cachedResolved: NSAttributedString?
 
         /// Cached result from `sizeThatFits` to avoid redundant
@@ -124,6 +126,8 @@ struct MessageTextView: NSViewRepresentable {
         )
         coordinator.lastAttributedString = attributedString
         coordinator.lastIsOutgoing = isOutgoing
+        coordinator.lastHighlightedUserId = highlightedUserId
+        coordinator.lastHighlightKeywords = highlightKeywords
         coordinator.cachedResolved = resolved
         view.linkTextAttributes = [
             .foregroundColor: linkColor,
@@ -149,6 +153,8 @@ struct MessageTextView: NSViewRepresentable {
         let inputsChanged: Bool = {
             if coordinator.cachedResolved == nil { return true }
             if coordinator.lastIsOutgoing != isOutgoing { return true }
+            if coordinator.lastHighlightedUserId != highlightedUserId { return true }
+            if coordinator.lastHighlightKeywords != highlightKeywords { return true }
             return attributedString !== coordinator.lastAttributedString
         }()
 
@@ -163,6 +169,8 @@ struct MessageTextView: NSViewRepresentable {
             )
             coordinator.lastAttributedString = attributedString
             coordinator.lastIsOutgoing = isOutgoing
+            coordinator.lastHighlightedUserId = highlightedUserId
+            coordinator.lastHighlightKeywords = highlightKeywords
             coordinator.cachedResolved = resolved
 
             view.linkTextAttributes = [

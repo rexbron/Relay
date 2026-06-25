@@ -281,6 +281,17 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
     /// Whether this message mentions the current user (used for visual highlighting).
     public var isHighlighted: Bool
 
+    /// The Matrix user ID whose mention pill should be rendered with the
+    /// highlighted style. Set by the mapper when ``isHighlighted`` is `true`
+    /// so that the view layer can apply the highlight without depending on
+    /// an asynchronously configured environment value.
+    public var highlightedMentionUserId: String?
+
+    /// Notification keywords that matched this message body. Stored at
+    /// mapping time so the view layer can render keyword pills without
+    /// depending on an asynchronously configured environment value.
+    public var highlightKeywords: [String]
+
     /// Reply context, present when this message is a reply to another message.
     public var replyDetail: ReplyDetail?
 
@@ -319,6 +330,8 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
     ///   - mediaInfo: Media attachment metadata, if applicable.
     ///   - reactions: Aggregated reactions. Defaults to an empty array.
     ///   - isHighlighted: Whether the message mentions the current user.
+    ///   - highlightedMentionUserId: The user ID whose mention pill should be highlighted.
+    ///   - highlightKeywords: Notification keywords that matched this message body.
     ///   - replyDetail: Reply context, if this is a reply.
     ///   - isEdited: Whether the message has been edited. Defaults to `false`.
     ///   - sendState: The delivery state for outgoing messages. Defaults to `nil`.
@@ -338,6 +351,8 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         mediaInfo: MediaInfo? = nil,
         reactions: [ReactionGroup] = [],
         isHighlighted: Bool = false,
+        highlightedMentionUserId: String? = nil,
+        highlightKeywords: [String] = [],
         replyDetail: ReplyDetail? = nil,
         isEdited: Bool = false,
         sendState: SendState? = nil,
@@ -357,6 +372,8 @@ public struct TimelineMessage: Identifiable, Sendable, Equatable {
         self.mediaInfo = mediaInfo
         self.reactions = reactions
         self.isHighlighted = isHighlighted
+        self.highlightedMentionUserId = highlightedMentionUserId
+        self.highlightKeywords = highlightKeywords
         self.replyDetail = replyDetail
         self.isEdited = isEdited
         self.sendState = sendState

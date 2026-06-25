@@ -77,8 +77,8 @@ struct MessageBubbleContent: View {
                     onMessageContextAction: { actions.contextAction($0) },
                     onPresentReactionPicker: onPresentReactionPicker,
                     permissions: actions.permissions,
-                    highlightedUserId: message.isHighlighted ? actions.currentUserID : nil,
-                    highlightKeywords: message.isHighlighted ? actions.highlightKeywords : []
+                    highlightedUserId: message.highlightedMentionUserId,
+                    highlightKeywords: message.highlightKeywords
                 )
             }
             .padding(.horizontal, BubbleStyle.horizontalPadding)
@@ -181,8 +181,8 @@ struct MessageBubbleContent: View {
                 onMessageContextAction: { actions.contextAction($0) },
                 onPresentReactionPicker: onPresentReactionPicker,
                 permissions: actions.permissions,
-                highlightedUserId: message.isHighlighted ? actions.currentUserID : nil,
-                highlightKeywords: message.isHighlighted ? actions.highlightKeywords : []
+                highlightedUserId: message.highlightedMentionUserId,
+                highlightKeywords: message.highlightKeywords
             )
             .padding(.horizontal, BubbleStyle.horizontalPadding)
             .padding(.vertical, BubbleStyle.verticalPadding)
