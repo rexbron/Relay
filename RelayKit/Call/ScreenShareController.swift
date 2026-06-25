@@ -234,6 +234,11 @@ extension ScreenShareController: SCStreamOutput {
             bufferCapturer?.capture(sampleBuffer)
         case .audio:
             handleAudio(sampleBuffer)
+        case .microphone:
+            // The macOS 26 SDK can deliver the participant's microphone on the
+            // screen stream. We don't route it here — their mic is already
+            // published as the call's normal LiveKit audio track — so ignore it.
+            break
         @unknown default:
             break
         }
