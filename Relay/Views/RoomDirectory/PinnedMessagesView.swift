@@ -87,7 +87,8 @@ struct PinnedMessagesView: View {
             AvatarView(
                 name: message.displayName,
                 mxcURL: message.senderAvatarURL,
-                size: 24
+                size: 24,
+                colorID: message.senderID
             )
             .padding(.top, 2)
 

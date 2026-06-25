@@ -44,7 +44,8 @@ struct SettingsAccountTab: View {
                     AvatarView(
                         name: resolvedDisplayName,
                         mxcURL: avatarURL,
-                        size: 80
+                        size: 80,
+                        colorID: userId
                     )
                     .overlay(alignment: .bottomTrailing) {
                         Button { showImagePicker = true } label: {

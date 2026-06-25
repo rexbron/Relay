@@ -46,7 +46,8 @@ struct TypingIndicatorRowView: View {
                 AvatarView(
                     name: user.displayName,
                     mxcURL: user.avatarURL,
-                    size: 28
+                    size: 28,
+                    colorID: user.id
                 )
                 .offset(x: CGFloat(index) * 16)
             }

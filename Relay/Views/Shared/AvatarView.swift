@@ -26,7 +26,8 @@ import SwiftUI
 struct AvatarView: View {
     @Environment(\.matrixService) private var matrixService
 
-    /// The display name used to generate initials and the fallback background color.
+    /// The display name used to generate initials. Also used for the fallback
+    /// background color when ``colorID`` is `nil`.
     let name: String
 
     /// The `mxc://` URL for the avatar image, or `nil` to always show initials.
@@ -34,6 +35,12 @@ struct AvatarView: View {
 
     /// The diameter of the avatar in points.
     let size: CGFloat
+
+    /// A stable identifier (e.g. a Matrix user ID) used to derive the fallback
+    /// background color. When `nil`, the ``name`` is used instead. Pass a user
+    /// ID here so that the avatar's color matches other UI elements (like message
+    /// bubbles) that derive color from the same identifier.
+    var colorID: String?
 
     /// The clip shape applied to the avatar. Defaults to a circle.
     var shape: AnyShape = AnyShape(Circle())
@@ -85,7 +92,7 @@ struct AvatarView: View {
     }
 
     private func color(for name: String) -> Color {
-        Color(stableColorFor: name)
+        Color(stableColorFor: colorID ?? name)
     }
 }
 

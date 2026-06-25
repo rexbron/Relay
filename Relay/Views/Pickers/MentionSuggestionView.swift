@@ -103,7 +103,8 @@ private struct MentionRow: View {
                 AvatarView(
                     name: member.displayName ?? member.userId,
                     mxcURL: member.avatarURL,
-                    size: 24
+                    size: 24,
+                    colorID: member.userId
                 )
 
                 VStack(alignment: .leading, spacing: 0) {

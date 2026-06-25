@@ -26,7 +26,8 @@ struct InspectorMemberRow: View {
             AvatarView(
                 name: member.displayName ?? member.userId,
                 mxcURL: member.avatarURL,
-                size: 28
+                size: 28,
+                colorID: member.userId
             )
 
             VStack(alignment: .leading, spacing: 0) {

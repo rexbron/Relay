@@ -76,7 +76,8 @@ struct MessageView: View {
                         AvatarView(
                             name: message.displayName,
                             mxcURL: message.senderAvatarURL,
-                            size: 28
+                            size: 28,
+                            colorID: message.senderID
                         )
                         .onTapGesture(count: 2) { actions.avatarDoubleTap(message) }
                     } else {

@@ -30,7 +30,8 @@ struct MessageSearchRow: View {
                 AvatarView(
                     name: result.senderDisplayName ?? result.sender,
                     mxcURL: result.senderAvatarURL,
-                    size: 36
+                    size: 36,
+                    colorID: result.sender
                 )
 
                 VStack(alignment: .leading, spacing: 3) {

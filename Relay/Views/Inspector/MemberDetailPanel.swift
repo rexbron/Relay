@@ -138,7 +138,7 @@ struct MemberDetailPanel: View {
 
     private var headerSection: some View {
         VStack(spacing: 6) {
-            AvatarView(name: name, mxcURL: profile.avatarURL, size: 80)
+            AvatarView(name: name, mxcURL: profile.avatarURL, size: 80, colorID: profile.userId)
                 .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
 
             Text(name)
