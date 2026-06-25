@@ -284,7 +284,7 @@ private struct ColoredBubblePreview: View {
                 )
                 MiniIncomingBubble(
                     text: "You?",
-                    color: Color(stableColorFor: "@bob:matrix.org")
+                    color: Color(stableColorFor: "@steve:matrix.org")
                 )
                 MiniOutgoingBubble(
                     text: "Great!",
