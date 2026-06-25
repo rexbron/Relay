@@ -429,6 +429,22 @@ public protocol MatrixServiceProtocol: AnyObject, Observable {
     /// Returns the `mxc://` avatar URL of the currently authenticated user.
     func userAvatarURL() async -> String?
 
+    /// Uploads a new avatar image for the currently authenticated user.
+    ///
+    /// - Parameters:
+    ///   - mimeType: The MIME type of the image data (e.g. `"image/png"`).
+    ///   - data: The raw image data.
+    func uploadUserAvatar(mimeType: String, data: Data) async throws
+
+    /// Removes the avatar of the currently authenticated user.
+    func removeUserAvatar() async throws
+
+    /// Returns the homeserver URL for the current session.
+    func homeserverAddress() -> String?
+
+    /// Returns the device ID for the current session.
+    func deviceId() -> String?
+
     // MARK: Devices & Verification
 
     /// Whether the current session has been verified via cross-signing.
@@ -897,6 +913,10 @@ private final class PlaceholderMatrixService: MatrixServiceProtocol {
     func userDisplayName() async -> String? { nil }
     func setDisplayName(_ name: String) async throws {}
     func userAvatarURL() async -> String? { nil }
+    func uploadUserAvatar(mimeType: String, data: Data) async throws {}
+    func removeUserAvatar() async throws {}
+    func homeserverAddress() -> String? { nil }
+    func deviceId() -> String? { nil }
     func getDevices() async throws -> [DeviceInfo] { [] }
     func isCurrentSessionVerified() async -> Bool { false }
     func encryptionState() async -> EncryptionStatus { EncryptionStatus() }

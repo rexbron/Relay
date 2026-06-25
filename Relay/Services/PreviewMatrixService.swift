@@ -171,6 +171,10 @@ final class PreviewMatrixService: MatrixServiceProtocol {
     func userDisplayName() async -> String? { "John Appleseed" }
     func setDisplayName(_ name: String) async throws {}
     func userAvatarURL() async -> String? { nil }
+    func uploadUserAvatar(mimeType: String, data: Data) async throws {}
+    func removeUserAvatar() async throws {}
+    func homeserverAddress() -> String? { "https://matrix.org" }
+    func deviceId() -> String? { "PREVIEW_DEVICE" }
 
     func getDefaultNotificationMode(isOneToOne: Bool) async throws -> DefaultNotificationMode {
         isOneToOne ? .allMessages : .mentionsAndKeywordsOnly

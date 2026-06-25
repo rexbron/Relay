@@ -578,6 +578,24 @@ public final class MatrixService: MatrixServiceProtocol {
         return client.avatarURL?.absoluteString
     }
 
+    public func uploadUserAvatar(mimeType: String, data: Data) async throws {
+        guard let client = currentClient else { return }
+        try await client.uploadAvatar(mimeType: mimeType, data: data)
+    }
+
+    public func removeUserAvatar() async throws {
+        guard let client = currentClient else { return }
+        try await client.removeAvatar()
+    }
+
+    public func homeserverAddress() -> String? {
+        client?.homeserver
+    }
+
+    public func deviceId() -> String? {
+        client?.deviceID
+    }
+
     public func makeTimelineViewModel(roomId: String) -> (any TimelineViewModelProtocol)? {
         if let cached = timelineViewModels[roomId] {
             touchTimelineAccessOrder(roomId)

@@ -111,6 +111,9 @@ public enum RelayError: LocalizedError, Sendable {
     /// The display name could not be updated.
     case displayNameUpdateFailed(String)
 
+    /// The user's avatar could not be updated.
+    case avatarUpdateFailed(String)
+
     /// A direct message room could not be opened or created.
     case dmCreationFailed(String)
 
@@ -174,6 +177,8 @@ public enum RelayError: LocalizedError, Sendable {
             "Sessions Error"
         case .displayNameUpdateFailed:
             "Could Not Update Display Name"
+        case .avatarUpdateFailed:
+            "Could Not Update Avatar"
         case .dmCreationFailed:
             "Could Not Open Conversation"
         case .callFailed:
@@ -232,6 +237,8 @@ public enum RelayError: LocalizedError, Sendable {
         case .sessionsFailed(let reason):
             reason
         case .displayNameUpdateFailed(let reason):
+            reason
+        case .avatarUpdateFailed(let reason):
             reason
         case .dmCreationFailed(let reason):
             reason
