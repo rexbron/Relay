@@ -248,7 +248,12 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 spaceRailView
             }
         }
-        .navigationSplitViewColumnWidth(min: 160, ideal: 300, max: 360)
+        // Keep the sidebar narrow enough that, even at its max, it plus the
+        // 52pt space rail and a usable timeline fit inside the 760pt minimum
+        // window — otherwise NavigationSplitView overflows the window (the
+        // sidebar shoves off the left edge and the detail spills past the
+        // right) instead of compressing the user-dragged sidebar.
+        .navigationSplitViewColumnWidth(min: 160, ideal: 280, max: 300)
     }
 
     // MARK: - Detail

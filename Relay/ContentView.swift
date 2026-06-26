@@ -56,7 +56,12 @@ struct ContentView: View {
             }
         }
         .relayErrorAlert()
-        .frame(minWidth: 700, minHeight: 500)
+        // Sized to fit a quarter-screen tile on a 14" MacBook Pro at its
+        // default scaled resolution (1512×982 pt → quarter ≈ 756×491), with a
+        // few points of margin for macOS tiling gaps. The width must also clear
+        // the sidebar overflow invariant: rail 52 + sidebar max 300 + a usable
+        // timeline (400) = 752.
+        .frame(minWidth: 752, minHeight: 480)
     }
 }
 
