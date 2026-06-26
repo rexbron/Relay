@@ -108,7 +108,7 @@ struct TypingBubble: View {
         SwiftUI.TimelineView(.animation) { context in
             let elapsed = context.date.timeIntervalSince(startDate)
             HStack(spacing: 5) {
-                ForEach(0..<3, id: \.self) { index in
+                ForEach((0..<3).reversed(), id: \.self) { index in
                     let phase = dotPhase(elapsed: elapsed, index: index)
                     Circle()
                         .fill(.secondary)
