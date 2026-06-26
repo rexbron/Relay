@@ -80,21 +80,25 @@ struct BreathingColorBackground: View {
     let colors: [Color]
 
     var body: some View {
-        SwiftUI.TimelineView(.animation) { context in
-            let elapsed = context.date.timeIntervalSince(startDate)
-            let breatheDuration = 3.0
-            let cycleDuration = breatheDuration * Double(colors.count)
-            let progress = (elapsed.truncatingRemainder(dividingBy: cycleDuration)) / cycleDuration
-            let userIndex = min(Int(progress * Double(colors.count)), colors.count - 1)
-            let userProgress = (progress * Double(colors.count))
-                .truncatingRemainder(dividingBy: 1)
+        if colors.isEmpty {
+            Color.clear
+        } else {
+            SwiftUI.TimelineView(.animation) { context in
+                let elapsed = context.date.timeIntervalSince(startDate)
+                let breatheDuration = 3.0
+                let cycleDuration = breatheDuration * Double(colors.count)
+                let progress = (elapsed.truncatingRemainder(dividingBy: cycleDuration)) / cycleDuration
+                let userIndex = min(Int(progress * Double(colors.count)), colors.count - 1)
+                let userProgress = (progress * Double(colors.count))
+                    .truncatingRemainder(dividingBy: 1)
 
-            let mixAmount = sin(userProgress * .pi)
-            let userColor = colors[userIndex]
+                let mixAmount = sin(userProgress * .pi)
+                let userColor = colors[userIndex]
 
-            Color(.unemphasizedSelectedContentBackgroundColor)
-                .opacity(1 - mixAmount)
-                .overlay(Color(userColor).opacity(mixAmount))
+                Color(.unemphasizedSelectedContentBackgroundColor)
+                    .opacity(1 - mixAmount)
+                    .overlay(Color(userColor).opacity(mixAmount))
+            }
         }
     }
 }
