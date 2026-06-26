@@ -83,8 +83,19 @@ final class TimelineActions: Equatable {
     var contextAction: (TimelineRowContextAction) -> Void = { _ in }
 
     /// Presents the reaction picker overlay for a message. Parameters:
-    /// (event ID, bubble frame in the timeline coordinate space, isOutgoing).
+    /// (event ID, bubble frame in **global** coordinates, isOutgoing).
+    ///
+    /// Global coordinates are used so the frame survives crossing the table
+    /// renderer's per-row `NSHostingView` boundary (a named timeline coordinate
+    /// space can't resolve inside a cell); the overlay converts to its local
+    /// space.
     var presentReactionPicker: (String, CGRect, Bool) -> Void = { _, _, _ in }
+
+    /// Streams a message's latest global bubble frame. While that message's
+    /// reaction picker is open, the timeline uses it to keep the picker
+    /// anchored to the bubble as the layout changes (e.g. a window resize).
+    /// Parameters: (event ID, bubble frame in global coordinates).
+    var updateReactionPickerFrame: (String, CGRect) -> Void = { _, _ in }
 
     /// Dismisses the highlight animation on the currently highlighted message.
     var highlightDismissed: () -> Void = {}

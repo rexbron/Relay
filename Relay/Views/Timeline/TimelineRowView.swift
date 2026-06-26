@@ -164,16 +164,15 @@ struct TimelineRowView: View, Equatable {
                 message: message,
                 isLastInGroup: info.isLastInGroup,
                 showSenderName: info.showSenderName,
-                replyIsAdjacentAbove: info.replyIsAdjacentAbove
+                replyIsAdjacentAbove: info.replyIsAdjacentAbove,
+                // Track the precise bubble frame (MessageView is the single
+                // source — capturing here would report the whole row including
+                // the avatar gutter and fight the bubble's own updates).
+                onBubbleFrameChange: { lastBubbleFrame = $0 }
             )
             .id(message.id)
             .help(message.formattedTime)
             .onAppear { onAppear(row) }
-            .onGeometryChange(for: CGRect.self) { proxy in
-                proxy.frame(in: .named("timeline"))
-            } action: { newFrame in
-                lastBubbleFrame = newFrame
-            }
             .contextMenu {
                 contextMenu
             }

@@ -15,12 +15,16 @@
 import SwiftUI
 
 /// A full-area overlay that dims the timeline and presents a ``ReactionPickerCapsule``
-/// above the target message bubble.
+/// just above the target message bubble.
 ///
-/// Presented at the ``TimelineView`` level so the dimming effect covers the
-/// entire message list. Tapping the dimmed backdrop dismisses the overlay.
+/// Presented at the ``TimelineView`` level so the dimming covers the whole
+/// message list and the capsule can extend beyond any single row. Tapping the
+/// dimmed backdrop dismisses the overlay.
 struct ReactionPickerOverlay: View {
-    /// The frame of the message bubble in the overlay's coordinate space.
+    /// The frame of the message bubble in **global** (window) coordinates.
+    /// Captured this way because it must cross the table renderer's per-row
+    /// `NSHostingView` boundary, where a named timeline coordinate space can't
+    /// resolve. The overlay converts it to its own local space below.
     let bubbleFrame: CGRect
 
     /// Whether the target message is outgoing (determines capsule alignment).
@@ -33,45 +37,47 @@ struct ReactionPickerOverlay: View {
     let onDismiss: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
-    @State private var capsuleSize: CGSize = .zero
+
+    /// Vertical gap between the bottom of the capsule and the top of the bubble.
+    private let gap: CGFloat = 8
 
     var body: some View {
         ZStack {
-            // Dimmed backdrop — darker in dark mode, lighter fog in light mode
+            // Dimmed backdrop — darker in dark mode, lighter fog in light mode.
+            // Kept as its own layer so its `.ignoresSafeArea()` expansion can't
+            // grow the capsule's alignment container. Tapping it dismisses.
             (colorScheme == .dark ? Color.black.opacity(0.3) : Color.black.opacity(0.1))
                 .ignoresSafeArea()
                 .onTapGesture { onDismiss() }
 
-            // Capsule positioned above the bubble, edge-aligned
-            ReactionPickerCapsule { emoji in
-                onSelect(emoji)
-                onDismiss()
+            // Anchor the capsule's BOTTOM edge `gap` above the bubble's top,
+            // edge-aligned to the bubble. Bottom/side padding within the
+            // (un-expanded) overlay bounds pins it deterministically — no
+            // capsule-size measurement, so it never overlaps the message.
+            GeometryReader { geo in
+                // Convert the bubble's global frame into this overlay's local
+                // space by subtracting the overlay's own global origin.
+                let origin = geo.frame(in: .global).origin
+                let bubble = bubbleFrame.offsetBy(dx: -origin.x, dy: -origin.y)
+                let bottomInset = max(0, geo.size.height - (bubble.minY - gap))
+                // Align the capsule's trailing edge to the bubble's trailing
+                // edge (for both incoming and outgoing messages).
+                let trailingInset = max(0, geo.size.width - bubble.maxX)
+
+                ReactionPickerCapsule { emoji in
+                    onSelect(emoji)
+                    onDismiss()
+                }
+                .fixedSize()
+                .padding(.bottom, bottomInset)
+                .padding(.trailing, trailingInset)
+                .frame(
+                    width: geo.size.width,
+                    height: geo.size.height,
+                    alignment: .bottomTrailing
+                )
             }
-            .onGeometryChange(for: CGSize.self) { proxy in
-                proxy.size
-            } action: { newSize in
-                capsuleSize = newSize
-            }
-            .position(capsulePosition)
         }
         .transition(.opacity)
-    }
-
-    /// Computes the center point for the capsule, placing it above the bubble
-    /// and edge-aligned so the capsule's trailing edge matches the bubble's
-    /// trailing edge (outgoing) or its leading edge matches the bubble's
-    /// leading edge (incoming).
-    private var capsulePosition: CGPoint {
-        let y = bubbleFrame.minY - 12
-        let halfWidth = capsuleSize.width / 2
-        let x: CGFloat
-        if isOutgoing {
-            // Align the capsule's trailing edge to the bubble's trailing edge.
-            x = bubbleFrame.maxX - halfWidth
-        } else {
-            // Align the capsule's leading edge to the bubble's leading edge.
-            x = bubbleFrame.minX + halfWidth
-        }
-        return CGPoint(x: x, y: y)
     }
 }
