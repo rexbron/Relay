@@ -93,6 +93,12 @@ struct TimelineLazyVStackView: View {
     /// Extra bottom margin so content clears the compose bar overlay.
     var bottomContentMargin: CGFloat = 0
 
+    /// Whether the typing indicator overlay is shown. Drives an animated
+    /// spacer at the bottom of the scroll content to smoothly push
+    /// messages up when the indicator appears and ease them back down
+    /// when it disappears.
+    var typingIndicatorShown = false
+
     @Binding var scrollPosition: ScrollPosition
 
     // MARK: - Private State
@@ -162,11 +168,11 @@ struct TimelineLazyVStackView: View {
                     }
                 }
 
-                TypingIndicatorInjector(
-                    viewModel: viewModel,
-                    scrollPosition: $scrollPosition,
-                    isNearBottom: isNearBottomLatched
-                )
+                // Animated spacer that opens/closes space for the
+                // typing indicator overlay without affecting contentMargins.
+                Color.clear
+                    .frame(height: typingIndicatorShown ? 44 : 0)
+                    .animation(.easeInOut(duration: 0.25), value: typingIndicatorShown)
             }
             .scrollTargetLayout()
         }
@@ -490,33 +496,4 @@ final class SwipeScrollHandler {
     }
 }
 
-// MARK: - Typing Indicator Injector
 
-/// A thin child view that observes only `viewModel.typingUsers`, isolating
-/// typing-state changes from the parent renderer's body re-evaluation.
-/// When typing users appear and the scroll is near bottom, it scrolls
-/// to keep the indicator visible.
-private struct TypingIndicatorInjector: View {
-    let viewModel: any TimelineViewModelProtocol
-    @Binding var scrollPosition: ScrollPosition
-    var isNearBottom: Bool
-
-    var body: some View {
-        let users = viewModel.typingUsers
-        Group {
-            if !users.isEmpty {
-                TypingIndicatorRowView(users: users)
-                    .id("__typing__")
-                    .transition(.opacity.combined(with: .blurReplace))
-            }
-        }
-        .animation(.easeInOut(duration: 0.3), value: users.isEmpty)
-        .onChange(of: users.isEmpty) {
-            if isNearBottom {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    scrollPosition.scrollTo(edge: .bottom)
-                }
-            }
-        }
-    }
-}

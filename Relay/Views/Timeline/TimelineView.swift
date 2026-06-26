@@ -67,6 +67,10 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
     @State private var tableProxy = TimelineTableProxy()
     @State private var isNearBottom = true
     @State private var composeBarHeight: CGFloat = 0
+    /// Keeps the last non-empty user list so the typing indicator
+    /// content stays stable while the removal animation runs.
+    @State private var displayedTypingUsers: [TypingUser] = []
+    @State private var isTypingRevealed = false
     @State private var pendingScrollToBottom = false
     @State private var showUnreadMarker = true
     @State private var unreadMarkerDismissTask: Task<Void, Never>?
@@ -192,14 +196,19 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                         onRoomTap: onRoomTap,
                         onSendWillScroll: { pendingScrollToBottom = true },
                         onHeightChanged: { height in
-                            let changed = height != composeBarHeight
+                            let previous = composeBarHeight
+                            let changed = height != previous
                             composeBarHeight = height
                             if !timelineUseLazyVStack {
                                 tableProxy.setContentInsets(NSEdgeInsets(
                                     top: 0, left: 0, bottom: height + 4, right: 0
                                 ))
                             }
-                            if changed, isNearBottom {
+                            // Only scroll to bottom when the bar grows
+                            // (e.g. typing indicator appearing). When it
+                            // shrinks, the content margin reduction naturally
+                            // keeps the scroll position stable.
+                            if changed, height > previous, isNearBottom {
                                 if timelineUseLazyVStack {
                                     withAnimation(.easeInOut(duration: 0.3)) {
                                         lazyVStackScrollPosition.scrollTo(edge: .bottom)
@@ -210,6 +219,29 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                             }
                         }
                     )
+                }
+            }
+            .overlay(alignment: .bottom) {
+                TypingIndicatorRowView(users: displayedTypingUsers)
+                    .offset(x: isTypingRevealed ? 0 : -60)
+                    .opacity(isTypingRevealed ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.25), value: isTypingRevealed)
+                    .padding(.bottom, composeBarHeight)
+            }
+            .onChange(of: viewModel.typingUsers) {
+                let users = viewModel.typingUsers
+                if !users.isEmpty {
+                    displayedTypingUsers = users
+                }
+                let shouldShow = !users.isEmpty
+                guard shouldShow != isTypingRevealed else { return }
+                isTypingRevealed = shouldShow
+                // Scroll to keep the bottom visible when the typing
+                // indicator changes the content margin.
+                if shouldShow, isNearBottom, timelineUseLazyVStack {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        lazyVStackScrollPosition.scrollTo(edge: .bottom)
+                    }
                 }
             }
             .onDrop(
@@ -593,6 +625,7 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
                 isLive: viewModel.timelineFocus == .live,
                 viewModel: viewModel,
                 bottomContentMargin: composeBarHeight + 4,
+                typingIndicatorShown: isTypingRevealed,
                 scrollPosition: $lazyVStackScrollPosition
             )
         } else {

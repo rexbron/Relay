@@ -959,10 +959,18 @@ public final class TimelineViewModel: TimelineViewModelProtocol {
 
                 let filtered = userIds.filter { $0 != self.currentUserId }
 
-                // Fast path: immediately clear the indicator when nobody
-                // is typing, without waiting for any prior resolution.
+                // Debounce removal: keep the indicator visible briefly
+                // so rapid start/stop cycles don't cause timeline
+                // jumpiness. If a new typing notification arrives before
+                // the delay expires, `resolveTask?.cancel()` above will
+                // prevent the stale clear.
                 if filtered.isEmpty {
-                    self.typingUsers = []
+                    resolveTask = Task {
+                        try? await Task.sleep(for: .seconds(1))
+                        if !Task.isCancelled {
+                            self.typingUsers = []
+                        }
+                    }
                     continue
                 }
 

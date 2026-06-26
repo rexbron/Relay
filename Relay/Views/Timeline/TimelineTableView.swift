@@ -421,6 +421,9 @@ final class TimelineTableViewController: NSViewController {
 
             return hostView
         }
+        // Use a slide animation so the typing indicator row smoothly
+        // pushes timeline content rather than snapping in with a fade.
+        dataSource?.defaultRowAnimation = .slideDown
     }
 
     // MARK: - Updating Rows
