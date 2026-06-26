@@ -834,7 +834,7 @@ final class TimelineTableViewController: NSViewController {
 
         // Defer so the live hosting cell has settled its SwiftUI re-render
         // before we note the new height (matches the resize handler).
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else { return }
             self.invalidateHeight(for: id)
             let scrollBefore = self.scrollView.contentView.bounds.origin
