@@ -64,10 +64,38 @@ struct TypingIndicatorRowView: View {
         TypingBubble()
             .padding(.horizontal, BubbleStyle.horizontalPadding)
             .padding(.vertical, 12)
-            .background(
-                Color(.unemphasizedSelectedContentBackgroundColor),
-                in: BubbleStyle.shape
-            )
+            .background {
+                BreathingColorBackground(
+                    colors: users.prefix(3).map { Color(stableColorFor: $0.id) }
+                )
+                .clipShape(BubbleStyle.shape)
+            }
+    }
+}
+
+// MARK: - Breathing Color Pulse
+
+struct BreathingColorBackground: View {
+    private let startDate = Date()
+    let colors: [Color]
+
+    var body: some View {
+        SwiftUI.TimelineView(.animation) { context in
+            let elapsed = context.date.timeIntervalSince(startDate)
+            let breatheDuration = 3.0
+            let cycleDuration = breatheDuration * Double(colors.count)
+            let progress = (elapsed.truncatingRemainder(dividingBy: cycleDuration)) / cycleDuration
+            let userIndex = min(Int(progress * Double(colors.count)), colors.count - 1)
+            let userProgress = (progress * Double(colors.count))
+                .truncatingRemainder(dividingBy: 1)
+
+            let mixAmount = sin(userProgress * .pi)
+            let userColor = colors[userIndex]
+
+            Color(.unemphasizedSelectedContentBackgroundColor)
+                .opacity(1 - mixAmount)
+                .overlay(Color(userColor).opacity(mixAmount))
+        }
     }
 }
 
