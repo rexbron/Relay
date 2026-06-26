@@ -22,7 +22,7 @@ struct RoomListRow: View {
 
     @State private var rowWidth: CGFloat = 0
 
-    private static let compactThreshold: CGFloat = 140
+    private static let compactThreshold: CGFloat = 100
 
     private var isCompact: Bool {
         rowWidth < Self.compactThreshold
