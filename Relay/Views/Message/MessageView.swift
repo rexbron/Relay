@@ -36,6 +36,11 @@ struct MessageView: View {
     /// timeline, allowing the reply preview bubble to be omitted.
     var replyIsAdjacentAbove: Bool = false
 
+    /// Reports the bubble's global frame as it changes, so the enclosing row
+    /// can anchor the reaction picker to the precise bubble (not the whole
+    /// row, which would include the avatar gutter).
+    var onBubbleFrameChange: ((CGRect) -> Void)? = nil
+
     /// Whether the reply-to message is adjacent above *and* on the same side
     /// (both incoming or both outgoing). Only in this case can we skip the
     /// preview bubble, since the user can see the original directly above.
@@ -157,9 +162,16 @@ struct MessageView: View {
         }
         .padding(.top, hasTopOverlay ? 11 : 0)
         .onGeometryChange(for: CGRect.self) { proxy in
-            proxy.frame(in: .named("timeline"))
+            proxy.frame(in: .global)
         } action: { newFrame in
             bubbleFrame = newFrame
+            // Keep an open reaction picker anchored to this bubble across
+            // layout changes (the timeline ignores this unless this message's
+            // picker is currently open).
+            actions.updateReactionPickerFrame(message.eventID, newFrame)
+            // Report the precise bubble frame up so the row can present the
+            // context-menu picker against the bubble, not the whole row.
+            onBubbleFrameChange?(newFrame)
         }
         .onLongPressGesture {
             presentReactionPickerForBubble()

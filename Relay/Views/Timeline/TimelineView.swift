@@ -542,11 +542,18 @@ struct TimelineView: View { // swiftlint:disable:this type_body_length
             self.handleContextAction(action)
         }
         actions.presentReactionPicker = { messageId, bubbleFrame, isOutgoing in
+            // `bubbleFrame` is in global coordinates; the overlay converts it.
             self.reactionPickerBubbleFrame = bubbleFrame
             self.reactionPickerIsOutgoing = isOutgoing
             withAnimation(.easeOut(duration: 0.15)) {
                 self.reactionPickerMessageId = messageId
             }
+        }
+        actions.updateReactionPickerFrame = { messageId, bubbleFrame in
+            // Track the bubble only while its picker is open, so the picker
+            // follows the message across layout changes (e.g. window resize).
+            guard messageId == self.reactionPickerMessageId else { return }
+            self.reactionPickerBubbleFrame = bubbleFrame
         }
         actions.highlightDismissed = {
             self.highlightedMessageId = nil
