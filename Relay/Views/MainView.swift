@@ -102,8 +102,11 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     private var navigationContent: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebarColumn
+                .navigationSplitViewColumnWidth(min: 160, ideal: 300, max: 360)
         } detail: {
             detailContent
+                .navigationSplitViewColumnWidth(min: 440, ideal: 540)
+                .frame(minHeight: 340)
         }
         .searchable(text: $searchModel.searchText, placement: .sidebar, prompt: "Search\u{2026}")
         .searchFocused($isSearchFocused)
@@ -248,7 +251,6 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 spaceRailView
             }
         }
-        .navigationSplitViewColumnWidth(min: 160, ideal: 300, max: 360)
     }
 
     // MARK: - Detail
