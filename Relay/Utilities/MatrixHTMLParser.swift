@@ -273,7 +273,8 @@ private struct MatrixHTMLParser { // swiftlint:disable:this type_body_length
                     // Collapse whitespace in non-preformatted context.
                     let collapsed = collapseWhitespace(text)
                     // Suppress whitespace-only text between block elements.
-                    if collapsed.allSatisfy(\.isWhitespace) && result.length > 0 {
+                    if collapsed.unicodeScalars.allSatisfy(\.properties.isWhitespace)
+                        && result.length > 0 {
                         let lastChar = result.attributedSubstring(
                             from: NSRange(location: result.length - 1, length: 1)
                         ).string
@@ -749,28 +750,39 @@ private struct MatrixHTMLParser { // swiftlint:disable:this type_body_length
 
     /// Tokenizes HTML into a sequence of text, open-tag, and close-tag tokens.
     /// Handles entity decoding, attribute parsing, and self-closing tags.
+    ///
+    /// Scans using the string's `unicodeScalars` view so that combining marks
+    /// (e.g. U+0E4B) following `<` or `>` are not merged into a single
+    /// grapheme cluster with the delimiter, which would cause `Character`-level
+    /// comparisons like `firstIndex(of: ">")` to fail.
     private func tokenize(_ html: String) -> [Token] {
         var tokens: [Token] = []
-        var index = html.startIndex
+        let scalars = html.unicodeScalars
+        var index = scalars.startIndex
 
-        while index < html.endIndex {
-            if html[index] == "<" {
+        while index < scalars.endIndex {
+            if scalars[index] == "<" {
                 // Try to parse a tag.
-                if let tagEnd = html[index...].firstIndex(of: ">") {
-                    let tagContent = html[html.index(after: index)..<tagEnd]
-                    let tagString = String(tagContent).trimmingCharacters(in: .whitespaces)
+                let afterLT = scalars.index(after: index)
+                if let tagEnd = scalars[afterLT...].firstIndex(of: ">") {
+                    let tagContent = String(scalars[afterLT..<tagEnd])
+                    let tagString = tagContent.trimmingCharacters(in: .whitespaces)
 
                     if tagString.hasPrefix("!--") {
                         // HTML comment — skip entirely.
-                        if let commentEnd = html[index...].range(of: "-->") {
-                            index = commentEnd.upperBound
+                        if let commentEnd = String(scalars[index...]).range(of: "-->") {
+                            let offset = String(scalars[index...]).distance(
+                                from: String(scalars[index...]).startIndex,
+                                to: commentEnd.upperBound
+                            )
+                            index = scalars.index(index, offsetBy: offset)
                         } else {
-                            index = html.endIndex
+                            index = scalars.endIndex
                         }
                         continue
                     } else if tagString.hasPrefix("!") || tagString.hasPrefix("?") {
                         // Doctype or processing instruction — skip.
-                        index = html.index(after: tagEnd)
+                        index = scalars.index(after: tagEnd)
                         continue
                     } else if tagString.hasPrefix("/") {
                         // Close tag.
@@ -792,19 +804,19 @@ private struct MatrixHTMLParser { // swiftlint:disable:this type_body_length
                             // Void tags don't get a close token — handled by not pushing style.
                         }
                     }
-                    index = html.index(after: tagEnd)
+                    index = scalars.index(after: tagEnd)
                 } else {
                     // Malformed: < without matching >. Treat as text.
-                    tokens.append(.text(String(html[index])))
-                    index = html.index(after: index)
+                    tokens.append(.text(String(scalars[index])))
+                    index = scalars.index(after: index)
                 }
             } else {
                 // Accumulate text until the next tag.
                 var textEnd = index
-                while textEnd < html.endIndex && html[textEnd] != "<" {
-                    textEnd = html.index(after: textEnd)
+                while textEnd < scalars.endIndex && scalars[textEnd] != "<" {
+                    textEnd = scalars.index(after: textEnd)
                 }
-                let rawText = String(html[index..<textEnd])
+                let rawText = String(scalars[index..<textEnd])
                 let decoded = decodeHTMLEntities(rawText)
                 tokens.append(.text(decoded))
                 index = textEnd
@@ -981,17 +993,23 @@ private struct MatrixHTMLParser { // swiftlint:disable:this type_body_length
     // MARK: - Whitespace Helpers
 
     /// Collapses runs of whitespace into single spaces (HTML whitespace normalization).
+    ///
+    /// Operates on unicode scalars rather than grapheme clusters so that
+    /// combining marks (e.g. U+0E4B Thai Mai Chattawa) following a space
+    /// are preserved. Swift groups a space + combining mark into a single
+    /// `Character` whose `.isWhitespace` returns `true`, which would
+    /// silently discard the combining mark.
     private func collapseWhitespace(_ text: String) -> String {
         var result = ""
         var lastWasSpace = false
-        for char in text {
-            if char.isWhitespace || char.isNewline {
+        for scalar in text.unicodeScalars {
+            if scalar.properties.isWhitespace || scalar == "\n" {
                 if !lastWasSpace {
                     result.append(" ")
                     lastWasSpace = true
                 }
             } else {
-                result.append(char)
+                result.unicodeScalars.append(scalar)
                 lastWasSpace = false
             }
         }

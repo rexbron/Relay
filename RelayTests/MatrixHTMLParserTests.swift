@@ -646,6 +646,47 @@ struct MatrixHTMLParserTests {
         #expect(firstCharAttrs[.link] == nil)
     }
 
+    // MARK: - Combining Marks in Whitespace (Issue #146)
+
+    @Test func combiningMarkAfterSpacePreserved() {
+        // U+0E4B (Thai Mai Chattawa) is a combining mark. When it follows
+        // a space, Swift groups them into a single Character whose
+        // .isWhitespace returns true. The parser must not discard it.
+        let html = "a \u{0E4B}b"
+        let result = NSAttributedString(matrixHTML: html)!
+        #expect(result.string.contains("\u{0E4B}"))
+    }
+
+    @Test func mentionLinkWithCombiningMarksInDisplayName() {
+        // Simulates a Matrix mention whose display name contains combining
+        // marks adjacent to spaces (e.g. "๋࣭ ⭑ username ๋࣭ ⭑").
+        let displayName = "\u{0E4B}\u{08AD} \u{2B51} username \u{0E4B}\u{08AD} \u{2B51}"
+        let html = """
+            <a href="https://matrix.to/#/@user:example.com">\(displayName)</a>
+            """
+        let result = NSAttributedString(matrixHTML: html)
+        #expect(result != nil, "Parser must not return nil for combining-mark display names")
+        #expect(result?.string.contains("username") == true)
+        // The link attribute should be set on the mention text.
+        if let result {
+            let link = attrs(result, at: 0)[.link] as? URL
+            #expect(link?.absoluteString == "https://matrix.to/#/@user:example.com")
+        }
+    }
+
+    @Test func mentionLinkWithCombiningMarksInContext() {
+        // A mention with combining marks should not swallow surrounding text.
+        let html = """
+            Hello <a href="https://matrix.to/#/@u:e.com">\u{0E4B}\u{08AD} \u{2B51} name</a>!
+            """
+        let result = NSAttributedString(matrixHTML: html)!
+        #expect(result.string.contains("Hello"))
+        #expect(result.string.contains("name"))
+        #expect(result.string.contains("!"))
+        // The combining mark U+0E4B must not be discarded.
+        #expect(result.string.unicodeScalars.contains(Unicode.Scalar(0x0E4B)!))
+    }
+
     // MARK: - Tables
 
     @Test func simpleTable() {
