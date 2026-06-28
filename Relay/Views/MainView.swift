@@ -323,7 +323,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 selectedRoomId: $selectedRoomId,
                 onOpenSettings: {
                     inspectorInitialTab = .general
-                    showingInspector = true
+                    showingInspector.toggle()
                 }
             )
             .inspector(isPresented: $showingInspector) {
