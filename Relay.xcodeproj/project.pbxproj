@@ -269,6 +269,7 @@
 				3B4AFD852F638A35001F0EA1 /* Sources */,
 				3B4AFD862F638A35001F0EA1 /* Frameworks */,
 				3B4AFD872F638A35001F0EA1 /* Resources */,
+				3BHLP0012F700001001F0EA1 /* Index Help Book */,
 				3BRK00042FC00004001F0EA1 /* Embed Frameworks */,
 				3B3B82C52FC69A9F008DCEDC /* Embed Foundation Extensions */,
 			);
@@ -416,6 +417,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "\"${SRCROOT}/scripts/generate-secrets.sh\"\n";
+		};
+		3BHLP0012F700001001F0EA1 /* Index Help Book */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/index-help-book.sh",
+				"$(BUILT_PRODUCTS_DIR)/$(FULL_PRODUCT_NAME)/Contents/Resources/Relay.help/Contents/Resources/en.lproj",
+			);
+			name = "Index Help Book";
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(FULL_PRODUCT_NAME)/Contents/Resources/Relay.help/Contents/Resources/en.lproj/Relay.helpindex",
+				"$(BUILT_PRODUCTS_DIR)/$(FULL_PRODUCT_NAME)/Contents/Resources/Relay.help/Contents/Resources/en.lproj/Relay.cshelpindex",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "\"${SRCROOT}/scripts/index-help-book.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

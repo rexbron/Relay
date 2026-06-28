@@ -20,6 +20,8 @@
     <string>Relay.html</string>
     <key>HPDBookIconPath</key>
     <string>Shared/icon.png</string>
+    <key>HPDBookCSIndexPath</key>
+    <string>Relay.cshelpindex</string>
     <key>HPDBookIndexPath</key>
     <string>Relay.helpindex</string>
     <key>HPDBookTitle</key>
