@@ -223,7 +223,7 @@ create_room() {
             \"topic\": \"${topic}\",
             \"room_alias_name\": \"${alias}\",
             \"preset\": \"${preset}\",
-            \"visibility\": \"private\",
+            \"visibility\": \"public\",
             \"initial_state\": [
                 {
                     \"type\": \"m.room.history_visibility\",
@@ -266,7 +266,7 @@ create_space() {
             \"room_alias_name\": \"${alias}\",
             \"creation_content\": {\"type\": \"m.space\"},
             \"preset\": \"private_chat\",
-            \"visibility\": \"private\",
+            \"visibility\": \"public\",
             \"initial_state\": [
                 {
                     \"type\": \"m.room.join_rules\",
