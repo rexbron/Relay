@@ -50,19 +50,16 @@ struct ReactionPickerOverlay: View {
                 .ignoresSafeArea()
                 .onTapGesture { onDismiss() }
 
-            // Anchor the capsule's BOTTOM edge `gap` above the bubble's top,
-            // edge-aligned to the bubble. Bottom/side padding within the
-            // (un-expanded) overlay bounds pins it deterministically — no
-            // capsule-size measurement, so it never overlaps the message.
+            // Anchor the capsule's bottom edge `gap` above the bubble's top.
+            // Outgoing: trailing-aligned to the bubble's trailing edge.
+            // Incoming: leading-aligned to the bubble's leading edge so the
+            // capsule extends rightward into the visible timeline area.
             GeometryReader { geo in
                 // Convert the bubble's global frame into this overlay's local
                 // space by subtracting the overlay's own global origin.
                 let origin = geo.frame(in: .global).origin
                 let bubble = bubbleFrame.offsetBy(dx: -origin.x, dy: -origin.y)
                 let bottomInset = max(0, geo.size.height - (bubble.minY - gap))
-                // Align the capsule's trailing edge to the bubble's trailing
-                // edge (for both incoming and outgoing messages).
-                let trailingInset = max(0, geo.size.width - bubble.maxX)
 
                 ReactionPickerCapsule { emoji in
                     onSelect(emoji)
@@ -70,11 +67,16 @@ struct ReactionPickerOverlay: View {
                 }
                 .fixedSize()
                 .padding(.bottom, bottomInset)
-                .padding(.trailing, trailingInset)
+                .padding(
+                    isOutgoing ? .trailing : .leading,
+                    isOutgoing
+                        ? max(0, geo.size.width - bubble.maxX)
+                        : max(0, bubble.minX)
+                )
                 .frame(
                     width: geo.size.width,
                     height: geo.size.height,
-                    alignment: .bottomTrailing
+                    alignment: isOutgoing ? .bottomTrailing : .bottomLeading
                 )
             }
         }
