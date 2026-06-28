@@ -63,7 +63,7 @@ struct SettingsAccountTab: View {
                             Button {
                                 Task { await removeAvatar() }
                             } label: {
-                                Image(systemName: "xmark")
+                                Image(systemName: "trash.fill")
                                     .font(.caption2)
                                     .fontWeight(.semibold)
                                     .foregroundStyle(.white)
