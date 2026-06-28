@@ -95,6 +95,7 @@ Only `RelayApp.swift` imports `RelayKit` directly.
   commit messages (e.g. "Add thread support to timeline view").
 - Comments should reflect the current state of the code. Documentation
   should not discuss previous iterations of the code, only the current one.
+- Follow standard, idiomatic, Apple-recommended guidelines as much as possible.
 
 ## Commit Conventions
 
