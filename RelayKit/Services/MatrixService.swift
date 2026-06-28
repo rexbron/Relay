@@ -800,6 +800,7 @@ public final class MatrixService: MatrixServiceProtocol {
         try await room.leave()
         timelineViewModels.removeValue(forKey: id)
         timelineAccessOrder.removeAll { $0 == id }
+        roomListManager.removeRooms(ids: [id])
     }
 
     public func leaveSpace(spaceId: String) async throws -> [LeaveSpaceChild] {
@@ -831,6 +832,9 @@ public final class MatrixService: MatrixServiceProtocol {
             timelineViewModels.removeValue(forKey: id)
             timelineAccessOrder.removeAll { $0 == id }
         }
+        let idSet = Set(allIds)
+        roomListManager.removeRooms(ids: idSet)
+        spaceListManager.removeSpaces(ids: idSet)
     }
 
     public func inviteUser(roomId: String, userId: String) async throws {

@@ -387,6 +387,15 @@ final class RoomListManager {
         )
         onRoomsRebuilt?()
     }
+
+    /// Eagerly removes rooms from the list after a leave operation.
+    ///
+    /// The SDK will eventually deliver a diff that removes these rooms, but
+    /// calling this immediately after `Room.leave()` avoids a visible delay.
+    func removeRooms(ids: Set<String>) {
+        roomEntries.removeAll { ids.contains($0.summary.id) }
+        rebuildRoomSummaries()
+    }
 }
 
 // MARK: - Room Entry

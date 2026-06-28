@@ -259,4 +259,14 @@ final class SpaceListManager {
         // Rebuild the full space list since sub-spaces come from filter data
         rebuildSpaceSummaries()
     }
+
+    /// Eagerly removes spaces from the list after a leave operation.
+    ///
+    /// The SDK will eventually deliver a diff that removes these spaces, but
+    /// calling this immediately after leaving avoids a visible delay.
+    func removeSpaces(ids: Set<String>) {
+        spaceRooms.removeAll { ids.contains($0.roomId) }
+        spaceFilters.removeAll { ids.contains($0.spaceRoom.roomId) }
+        rebuildSpaceDescendants()
+    }
 }
