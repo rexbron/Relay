@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import CryptoKit
+import QuickLook
 import RelayInterface
 import SwiftUI
 
@@ -49,6 +51,8 @@ struct MemberDetailPanel: View {
     @State private var isPerformingAction = false
     @State private var confirmationAction: ModerationAction?
     @State private var showRoleChangeDialog = false
+    @State private var quickLookURL: URL?
+    @State private var isLoadingAvatar = false
 
     private var isSelf: Bool {
         profile.userId == matrixService.userId()
@@ -86,7 +90,8 @@ struct MemberDetailPanel: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .disabled(isPerformingAction)
+        .disabled(isPerformingAction || isLoadingAvatar)
+        .quickLookPreview($quickLookURL)
         .task {
             isIgnored = (try? await matrixService.isUserIgnored(userId: profile.userId)) ?? false
         }
@@ -140,6 +145,19 @@ struct MemberDetailPanel: View {
         VStack(spacing: 6) {
             AvatarView(name: name, mxcURL: profile.avatarURL, size: 80, colorID: profile.userId)
                 .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+                .overlay(alignment: .bottomTrailing) {
+                    if profile.avatarURL != nil {
+                        Button("View Avatar", systemImage: "magnifyingglass") {
+                            Task { await openAvatarQuickLook() }
+                        }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.plain)
+                        .font(.caption2)
+                        .foregroundStyle(.white)
+                        .frame(width: 24, height: 24)
+                        .background(.gray, in: .circle)
+                    }
+                }
 
             Text(name)
                 .font(.title3)
@@ -265,6 +283,30 @@ struct MemberDetailPanel: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal)
+    }
+
+    // MARK: - Avatar Quick Look
+
+    private func openAvatarQuickLook() async {
+        guard let mxcURL = profile.avatarURL, !isLoadingAvatar else { return }
+        isLoadingAvatar = true
+        defer { isLoadingAvatar = false }
+
+        guard let data = await matrixService.mediaContent(
+            mxcURL: mxcURL, mediaSourceJSON: nil
+        ) else { return }
+
+        let hash = Insecure.MD5
+            .hash(data: Data(mxcURL.utf8))
+            .prefix(8)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "\(hash)-avatar.png")
+        guard (try? data.write(to: url)) != nil else { return }
+
+        NSApp.keyWindow?.makeFirstResponder(nil)
+        quickLookURL = url
     }
 
     // MARK: - Action Handling
