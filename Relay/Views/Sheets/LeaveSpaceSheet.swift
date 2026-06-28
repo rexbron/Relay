@@ -38,9 +38,15 @@ struct LeaveSpaceSheet: View {
         self._selectedRoomIds = State(initialValue: Set(children.map(\.roomId)))
     }
 
+    private var allSelected: Bool {
+        selectedRoomIds.count == children.count
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
+            Divider()
+            selectButtons
             Divider()
             childList
             Divider()
@@ -48,7 +54,7 @@ struct LeaveSpaceSheet: View {
         }
         .frame(
             width: 400,
-            height: min(CGFloat(children.count) * 52 + 200, 500)
+            height: min(CGFloat(children.count) * 52 + 240, 540)
         )
     }
 
@@ -64,6 +70,28 @@ struct LeaveSpaceSheet: View {
                 .multilineTextAlignment(.center)
         }
         .padding()
+    }
+
+    // MARK: - Select All / None
+
+    private var selectButtons: some View {
+        HStack {
+            Button("Select All") {
+                selectedRoomIds = Set(children.map(\.roomId))
+            }
+            .disabled(allSelected)
+
+            Button("Select None") {
+                selectedRoomIds.removeAll()
+            }
+            .disabled(selectedRoomIds.isEmpty)
+
+            Spacer()
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .padding(.horizontal)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Child List
