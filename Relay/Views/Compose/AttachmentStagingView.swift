@@ -65,8 +65,9 @@ struct AttachmentStagingView: View {
 
 /// An individual attachment thumbnail with an overlaid remove button.
 ///
-/// Image attachments display a crop-filled preview with an alt-text field below.
-/// Non-image attachments display a file-type icon and filename.
+/// Image attachments display an aspect-ratio-preserving preview with an alt-text
+/// field below. Non-image attachments display a large file-type icon with the
+/// filename underneath, similar to a Finder icon view.
 struct AttachmentThumbnail: View {
     let attachment: StagedAttachment
     let isEditingCaption: Bool
@@ -94,14 +95,9 @@ struct AttachmentThumbnail: View {
 
             if isImage {
                 captionArea
-            } else {
-                Text(attachment.filename)
-                    .font(.caption2)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
             }
         }
-        .frame(width: 80)
+        .fixedSize()
     }
 
     @ViewBuilder
@@ -109,16 +105,20 @@ struct AttachmentThumbnail: View {
         if let thumbnail = attachment.thumbnail {
             Image(nsImage: thumbnail)
                 .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(width: 80, height: 80)
+                .aspectRatio(thumbnail.size, contentMode: .fit)
+                .frame(maxWidth: 80, maxHeight: 80)
                 .clipShape(.rect(cornerRadius: 8))
         } else {
-            Label(
-                attachment.filename,
-                systemImage: ComposeViewModel.iconName(for: attachment.url)
-            )
-            .font(.caption)
-            .lineLimit(2)
+            VStack(spacing: 4) {
+                Image(systemName: ComposeViewModel.iconName(for: attachment.url))
+                    .font(.title)
+                    .foregroundStyle(.secondary)
+                Text(attachment.filename)
+                    .font(.caption2)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .multilineTextAlignment(.center)
+            }
             .frame(width: 80, height: 80)
             .background(.quaternary, in: .rect(cornerRadius: 8))
         }
