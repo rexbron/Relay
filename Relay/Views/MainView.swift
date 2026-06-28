@@ -102,7 +102,11 @@ struct MainView: View { // swiftlint:disable:this type_body_length
     private var navigationContent: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebarColumn
-                .navigationSplitViewColumnWidth(min: 160, ideal: 300, max: 360)
+                .navigationSplitViewColumnWidth(
+                    min: 110 + spaceRailInset,
+                    ideal: 250 + spaceRailInset,
+                    max: 310 + spaceRailInset
+                )
         } detail: {
             detailContent
                 .navigationSplitViewColumnWidth(min: 440, ideal: 540)
@@ -220,6 +224,11 @@ struct MainView: View { // swiftlint:disable:this type_body_length
 
     // MARK: - Sidebar
 
+    /// Extra width the sidebar column needs when the space rail is visible.
+    private var spaceRailInset: CGFloat {
+        matrixService.spaces.isEmpty ? 0 : SpaceRail.width
+    }
+
     @ViewBuilder
     private var sidebarColumn: some View {
         Group {
@@ -246,6 +255,7 @@ struct MainView: View { // swiftlint:disable:this type_body_length
                 )
             }
         }
+        .environment(\.hasSpaceRail, !matrixService.spaces.isEmpty)
         .safeAreaInset(edge: .leading, spacing: 0) {
             if !matrixService.spaces.isEmpty {
                 spaceRailView

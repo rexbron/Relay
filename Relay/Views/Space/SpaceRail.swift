@@ -21,6 +21,9 @@ import SwiftUI
 /// selected, any joined sub-spaces expand out below it with smaller icons, pushing
 /// other spaces down. Clicking Home or a different space collapses the previous group.
 struct SpaceRail: View {
+    /// The fixed width of the space rail column.
+    static let width: CGFloat = 52
+
     @Environment(\.matrixService) private var matrixService
     @Binding var selectedSpaceId: String?
     var onSpaceTapped: (() -> Void)?
@@ -97,7 +100,7 @@ struct SpaceRail: View {
             .animation(.easeInOut(duration: 0.25), value: selectedSpaceId)
         }
         .scrollIndicators(.hidden)
-        .frame(width: 52)
+        .frame(width: Self.width)
         .accessibilityLabel("Spaces")
     }
 

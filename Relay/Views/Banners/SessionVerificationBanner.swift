@@ -28,6 +28,7 @@ struct SessionVerificationBanner: View {
     @Environment(\.matrixService) private var matrixService
     @Binding var verificationItem: VerificationItem?
     @State private var isDismissed = false
+    @Environment(\.hasSpaceRail) private var hasSpaceRail
     @State private var bannerWidth: CGFloat = 0
 
     /// Width threshold below which the banner switches to compact layout.
@@ -35,7 +36,8 @@ struct SessionVerificationBanner: View {
 
     /// Whether the banner should display in compact mode.
     private var isCompact: Bool {
-        bannerWidth < Self.compactThreshold
+        let effectiveWidth = hasSpaceRail ? bannerWidth : bannerWidth - SpaceRail.width
+        return effectiveWidth < Self.compactThreshold
     }
 
     /// Whether the banner should be visible.

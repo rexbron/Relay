@@ -20,12 +20,14 @@ import SwiftUI
 struct RoomListRow: View {
     let room: RoomSummary
 
+    @Environment(\.hasSpaceRail) private var hasSpaceRail
     @State private var rowWidth: CGFloat = 0
 
     private static let compactThreshold: CGFloat = 100
 
     private var isCompact: Bool {
-        rowWidth < Self.compactThreshold
+        let effectiveWidth = hasSpaceRail ? rowWidth : rowWidth - SpaceRail.width
+        return effectiveWidth < Self.compactThreshold
     }
 
     /// Whether the room name should appear bold (has notification-worthy unread activity).

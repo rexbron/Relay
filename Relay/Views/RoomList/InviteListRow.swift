@@ -27,12 +27,14 @@ struct InviteListRow: View {
     let onTap: () -> Void
 
     @State private var isAccepting = false
+    @Environment(\.hasSpaceRail) private var hasSpaceRail
     @State private var rowWidth: CGFloat = 0
 
     private static let compactThreshold: CGFloat = 140
 
     private var isCompact: Bool {
-        rowWidth < Self.compactThreshold
+        let effectiveWidth = hasSpaceRail ? rowWidth : rowWidth - SpaceRail.width
+        return effectiveWidth < Self.compactThreshold
     }
 
     var body: some View {

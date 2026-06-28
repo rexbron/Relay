@@ -23,13 +23,15 @@ import SwiftUI
 /// sidebar widths.
 struct OfflineBanner: View {
     @Environment(\.matrixService) private var matrixService
+    @Environment(\.hasSpaceRail) private var hasSpaceRail
     @State private var bannerWidth: CGFloat = 0
 
     /// Width threshold below which the banner switches to compact layout.
     private static let compactThreshold: CGFloat = 140
 
     private var isCompact: Bool {
-        bannerWidth < Self.compactThreshold
+        let effectiveWidth = hasSpaceRail ? bannerWidth : bannerWidth - SpaceRail.width
+        return effectiveWidth < Self.compactThreshold
     }
 
     /// When the radio is off (`NWPathMonitor` reports no path) we say
