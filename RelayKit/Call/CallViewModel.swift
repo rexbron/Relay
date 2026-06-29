@@ -74,11 +74,6 @@ public final class CallViewModel: CallViewModelProtocol {
     /// The LiveKit key provider used for per-participant AES-GCM frame encryption.
     @ObservationIgnored
     private var keyProvider: BaseKeyProvider?
-    /// `true` when the HKDF-SHA256 LKRTCFrameCryptorKeyProvider was
-    /// successfully swapped in. `false` means we fell back to the
-    /// default PBKDF2 provider and interop with Element Call will fail.
-    @ObservationIgnored
-    private var hkdfKeyProviderInstalled: Bool = false
     /// The local participant's current encryption key (raw 16 bytes).
     @ObservationIgnored
     private var localEncryptionKey: Data?
@@ -187,20 +182,16 @@ public final class CallViewModel: CallViewModelProtocol {
             // decrypt our frames. Swift BaseKeyProvider defaults are
             // ratchetWindowSize: 0, keyRingSize: 16; Element Call uses 10/256.
             //
-            // Additionally: swap in an HKDF-SHA256-backed
-            // LKRTCFrameCryptorKeyProvider. The LiveKit Swift SDK's default
-            // initializer path constructs the ObjC provider with PBKDF2
-            // (libwebrtc's default), but Element Call / livekit-client JS
-            // derives the AES-GCM key with HKDF from the same raw IKM —
-            // so the two sides produce different AES keys from matching
+            // Additionally: use HKDF-SHA256 key derivation. Element Call /
+            // livekit-client JS derives the AES-GCM key with HKDF from the
+            // same raw IKM, while the SDK default is PBKDF2 — the two sides
+            // would otherwise produce different AES keys from matching
             // fingerprints, and every frame's auth tag fails on the peer.
             // See CallEncryptionService.makeHKDFKeyProvider for details.
-            let result = CallEncryptionService.makeHKDFKeyProvider(
+            self.keyProvider = CallEncryptionService.makeHKDFKeyProvider(
                 ratchetWindowSize: 10,
                 keyRingSize: 256
             )
-            self.keyProvider = result.provider
-            self.hkdfKeyProviderInstalled = result.hkdfInstalled
         }
         self.matrixRoom = encryptionContext.matrixRoom
     }
@@ -235,13 +226,10 @@ public final class CallViewModel: CallViewModelProtocol {
                 EncryptionOptions(keyProvider: $0, encryptionType: .gcm)
             }
             if isE2eeEnabled {
-                let kdfDetail = hkdfKeyProviderInstalled
-                    ? "HKDF-SHA256 key derivation active (Element Call interop path)."
-                    : "WARNING: HKDF swap failed — using default PBKDF2. Element Call peers will produce different AES keys from the same IKM and frames will fail to decrypt."
                 activityLog?.log(
-                    category: .call, severity: hkdfKeyProviderInstalled ? .debug : .warning, source: "CallViewModel",
+                    category: .call, severity: .debug, source: "CallViewModel",
                     summary: "LiveKit E2EE enabled",
-                    detail: "GCM frame encryption active. \(kdfDetail)",
+                    detail: "GCM frame encryption active. HKDF-SHA256 key derivation active (Element Call interop path).",
                     roomId: roomID
                 )
             } else {

@@ -288,84 +288,33 @@ struct CallEncryptionService {
 
     // MARK: - Key Provider Setup
 
-    /// Builds a `BaseKeyProvider` whose internal `LKRTCFrameCryptorKeyProvider`
-    /// is configured for **HKDF-SHA256** key derivation instead of the LiveKit
-    /// Swift SDK's default of **PBKDF2**.
+    /// Builds a `BaseKeyProvider` configured for **HKDF-SHA256** key derivation
+    /// instead of the LiveKit Swift SDK's default of **PBKDF2**.
     ///
-    /// Why this exists: `BaseKeyProvider`'s public inits forward to the 6-arg
-    /// ObjC initializer which hard-codes PBKDF2 (libwebrtc's default). Element
-    /// Call / livekit-client JS imports raw key material as HKDF and derives
-    /// the AES-GCM key with HKDF-SHA256, salt `"LKFrameEncryptionKey"`,
-    /// info = 128 zero bytes. Starting from byte-identical IKM, PBKDF2 on
-    /// our side and HKDF on the peer produce **different AES keys**, so every
-    /// frame's GCM auth tag fails on the peer. The symptom is the same as
-    /// the "maximum ratchet attempts exceeded / key marked as invalid" loop
-    /// we were chasing — symmetric, codec-independent, survives timing and
+    /// Why HKDF: Element Call / livekit-client JS imports raw key material as
+    /// HKDF and derives the AES-GCM key with HKDF-SHA256, salt
+    /// `"LKFrameEncryptionKey"`, info = 128 zero bytes. Starting from
+    /// byte-identical IKM, PBKDF2 on our side and HKDF on the peer produce
+    /// **different AES keys**, so every frame's GCM auth tag fails on the peer.
+    /// The symptom is the "maximum ratchet attempts exceeded / key marked as
+    /// invalid" loop — symmetric, codec-independent, surviving timing and
     /// identity fixes.
     ///
-    /// The 7-arg ObjC init that accepts `keyDerivationAlgorithm:` is exposed
-    /// in `webrtc-xcframework` 144.7559.x and newer. We look it up via the
-    /// Objective-C runtime so we don't need a direct module dependency on
-    /// `LiveKitWebRTC` from RelayKit. If the runtime lookup fails (older
-    /// framework), we fall back to the default PBKDF2 provider so the call
-    /// still builds — but interop with Element Call will stay broken.
+    /// client-sdk-swift 2.15.0+ exposes `keyDerivationAlgorithm` directly on
+    /// `KeyProviderOptions` (livekit/client-sdk-swift#999), so we set it
+    /// officially rather than reaching through the ObjC runtime as we did
+    /// against older SDKs.
     static func makeHKDFKeyProvider(
         ratchetWindowSize: Int32 = 10,
         keyRingSize: Int32 = 256
-    ) -> (provider: BaseKeyProvider, hkdfInstalled: Bool, fallbackReason: String?) {
+    ) -> BaseKeyProvider {
         let options = KeyProviderOptions(
             sharedKey: false,
             ratchetWindowSize: ratchetWindowSize,
-            keyRingSize: keyRingSize
+            keyRingSize: keyRingSize,
+            keyDerivationAlgorithm: .hkdf
         )
-        let provider = BaseKeyProvider(options: options)
-
-        guard let cls = NSClassFromString("LKRTCFrameCryptorKeyProvider") as? NSObject.Type else {
-            return (provider, false, "LKRTCFrameCryptorKeyProvider class not found at runtime")
-        }
-
-        let initSel = NSSelectorFromString(
-            "initWithRatchetSalt:ratchetWindowSize:sharedKeyMode:uncryptedMagicBytes:failureTolerance:keyRingSize:discardFrameWhenCryptorNotReady:keyDerivationAlgorithm:"
-        )
-        // Swift blocks `NSObject.alloc()`, so go through the ObjC runtime.
-        let allocSel = NSSelectorFromString("alloc")
-        typealias AllocFunc = @convention(c) (AnyClass, Selector) -> AnyObject
-        let allocImp = unsafeBitCast(
-            (cls as AnyClass).method(for: allocSel),
-            to: AllocFunc.self
-        )
-        let allocated = allocImp(cls, allocSel)
-        guard (allocated as AnyObject).responds(to: initSel) else {
-            return (provider, false, "LKRTCFrameCryptorKeyProvider does not expose keyDerivationAlgorithm: init (webrtc-xcframework may be < 144.x)")
-        }
-
-        typealias InitFunc = @convention(c) (
-            AnyObject, Selector, NSData, Int32, ObjCBool, NSData?, Int32, Int32, ObjCBool, UInt
-        ) -> AnyObject
-        let imp = unsafeBitCast(
-            (allocated as AnyObject).method(for: initSel),
-            to: InitFunc.self
-        )
-        // RTCKeyDerivationAlgorithmHKDF is the second enum case (== 1).
-        let hkdfKeyDerivation: UInt = 1
-        let hkdfRtc = imp(
-            allocated,
-            initSel,
-            options.ratchetSalt as NSData,
-            options.ratchetWindowSize,
-            ObjCBool(options.sharedKey),
-            options.uncryptedMagicBytes as NSData,
-            options.failureTolerance,
-            options.keyRingSize,
-            ObjCBool(false),
-            hkdfKeyDerivation
-        )
-
-        guard let ivar = class_getInstanceVariable(BaseKeyProvider.self, "rtcKeyProvider") else {
-            return (provider, false, "rtcKeyProvider ivar not found on BaseKeyProvider")
-        }
-        object_setIvar(provider, ivar, hkdfRtc)
-        return (provider, true, nil)
+        return BaseKeyProvider(options: options)
     }
 
     /// Sets a raw key on a `BaseKeyProvider` for the given participant, bypassing

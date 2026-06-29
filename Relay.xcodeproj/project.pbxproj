@@ -932,7 +932,7 @@
 			repositoryURL = "https://github.com/livekit/client-sdk-swift";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 2.0.0;
+				minimumVersion = 2.15.0;
 			};
 		};
 		3BMRST032FB10003001F0EA1 /* XCRemoteSwiftPackageReference "matrix-rust-components-swift" */ = {
